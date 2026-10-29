@@ -135,7 +135,7 @@ NumericalEarth currently ships connectors for the following data products:
 - `:sea_level_pressure` - Sea-level pressure (Pa).
 - `:downwelling_shortwave_radiation` - Downward shortwave radiation (W m⁻²).
 - `:downwelling_longwave_radiation` - Downward longwave radiation (W m⁻²).
-- `:rain_freshwater_flux` - Liquid precipitation flux (kg m⁻² s⁻¹).
+- `:rain_freshwater_flux` - Liquid water precipitation flux (kg m⁻² s⁻¹).
 - `:snow_freshwater_flux` - Solid precipitation flux (kg m⁻² s⁻¹).
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).

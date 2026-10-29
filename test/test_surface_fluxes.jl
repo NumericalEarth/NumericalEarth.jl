@@ -9,7 +9,7 @@ using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
                                                               SimilarityScales,
-                                                              surface_specific_humidity,
+                                                              surface_specific_humidity, saturation_humidity_slope,
                                                               SkinTemperature,
                                                               BulkTemperature,
                                                               DiffusiveFlux,
@@ -20,6 +20,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               CriticalSaturation,
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
+                                                              InterfaceFluxScales, InterfaceVelocities,
                                                               compute_interface_humidity,
                                                               saturation_specific_humidity,
                                                               ImpureSaturationSpecificHumidity,
@@ -138,8 +139,8 @@ end
             @test all(Array(interior(assessed_diffusivity)) .≈ 3e-3)
 
             # The skin temperature solve runs with the assessed diffusivity
-            Tₛ = interfaces.atmosphere_ocean_interface.temperature
-            @test all(isfinite, Array(interior(Tₛ)))
+            Tⁱⁿ = interfaces.atmosphere_ocean_interface.temperature
+            @test all(isfinite, Array(interior(Tⁱⁿ)))
 
             # The diffusivity operation is stripped from the kernel arguments
             # unless the temperature formulation needs it
@@ -179,7 +180,7 @@ end
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
             Tᵒᶜ = θ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
-            q_formulation = interfaces.atmosphere_ocean_interface.formulation.specific_humidity
+            q_formulation = interfaces.atmosphere_ocean_interface.formulation.state.specific_humidity
             qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
             g = ocean.model.buoyancy.formulation.gravitational_acceleration
 
@@ -340,6 +341,18 @@ end
     end
 end
 
+@testset "Saturation humidity slope" begin
+    for FT in (Float32, Float64), phase in (Thermodynamics.Liquid(), Thermodynamics.Ice())
+        ℂ, p, h = AtmosphereThermodynamicsParameters(FT), FT(101325), FT(1//8)
+        q(T) = saturation_specific_humidity(ℂ, T, p, phase)
+        # Fourth-order central difference across the range the surface balances sample
+        for T in FT.((200, 240, 273.15, 288, 300, 320, 340))
+            @test saturation_humidity_slope(ℂ, T, p, phase) ≈ (-q(T + 2h) + 8q(T + h) - 8q(T - h) + q(T - 2h)) / 12h rtol=1e-3
+        end
+        @inferred saturation_humidity_slope(ℂ, FT(300), p, phase)
+    end
+end
+
 @testset "SkinHumidity vapor-flux balance" begin
     ℂ = AtmosphereThermodynamicsParameters(Float64)
     ℙₐ = (; thermodynamics_parameters = ℂ)
@@ -353,19 +366,20 @@ end
     # temperature does not enter the vapor balance.
     Tᵈ = 295.0
     Ψˡᵃ = (; T = Tᵈ) # land state: the bulk reservoir temperature
-    Tₛ = 310.0 # skin temperature, deliberately ≠ Tᵈ — qˢ must be independent of it
+    Tⁱⁿ = 310.0 # skin temperature, deliberately ≠ Tᵈ — qˢ must be independent of it
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵈ, pᵃᵗ, Thermodynamics.Liquid())
     @test qᵛ⁺ > qᵃᵗ # reservoir saturation exceeds the sub-saturated air
 
-    # AirLandInterfaceState with an upward moisture flux (q★ < 0 ⟹ qˢ > qᵃᵗ).
-    mkΨₛ(q) = AirLandInterfaceState(0.3, -0.01, -1e-4, 0.0, 0.0, Tₛ, q)
+    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ Ξq.
+    mkΨⁱⁿ(q) = AirLandInterfaceState(InterfaceFluxScales(0.3, -0.01, -1e-4, 0.0, 0.2),
+                                    InterfaceVelocities(0.0, 0.0), Tⁱⁿ, q)
 
     # Drive the fixed point to convergence for a few saturation depths
     converge(d) = begin
         sh = SkinHumidity(surface_thickness=d, vapor_diffusivity=2e-2)
         q = qᵛ⁺
         for _ in 1:100
-            q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψˡᵃ, ℙₐ)
+            q = compute_interface_humidity(sh, Tⁱⁿ, mkΨⁱⁿ(q), Ψₐ, Ψˡᵃ, nothing, ℙₐ)
         end
         return q
     end
@@ -387,8 +401,8 @@ end
 
     # Zero turbulent flux (first iterate) ⟹ saturated surface qˢ = qᵛ⁺
     sh = SkinHumidity(surface_thickness=0.1, vapor_diffusivity=2e-2)
-    Ψₛ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0)
-    @test compute_interface_humidity(sh, Tₛ, Ψₛ⁰, Ψₐ, Ψˡᵃ, ℙₐ) ≈ qᵛ⁺
+    Ψⁱⁿ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tⁱⁿ, 0.0)
+    @test compute_interface_humidity(sh, Tⁱⁿ, Ψⁱⁿ⁰, Ψₐ, Ψˡᵃ, nothing, ℙₐ) ≈ qᵛ⁺
 end
 
 @testset "FractionalHumidity (Manabe critical wetness)" begin
@@ -396,8 +410,8 @@ end
     ℙₐ = (; thermodynamics_parameters = ℂ)
     pᵃᵗ = 101325.0
     Ψₐ = (; p = pᵃᵗ, q = 0.005, T = 290.0)
-    Tₛ = 295.0
-    qᵛ⁺ = saturation_specific_humidity(ℂ, Tₛ, pᵃᵗ, Thermodynamics.Liquid())
+    Tⁱⁿ = 295.0
+    qᵛ⁺ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, Thermodynamics.Liquid())
 
     # Manabe efficiency: β = min(𝒮/𝒮ᶜ, 1), 𝒮ᶜ = 0.75
     cs = CriticalSaturation(0.75)
@@ -409,32 +423,32 @@ end
     # Constant efficiency ignores the land state
     @test evaporation_efficiency(0.3, (𝒮 = 0.9,)) == 0.3
 
-    # qˢ = β · qᵛ⁺(Tₛ), with β derived from the land state
-    Ψₛ = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0)
+    # qˢ = β · qᵛ⁺(Tⁱⁿ), with β derived from the land state
+    Ψⁱⁿ = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tⁱⁿ, 0.0)
     Ψˡᵃ(𝒮) = (; T = 295.0, 𝒮)
     fh = FractionalHumidity(efficiency = cs)
-    @test compute_interface_humidity(fh, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(0.0),   ℙₐ) ≈ 0.0
-    @test compute_interface_humidity(fh, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(0.375), ℙₐ) ≈ 0.5 * qᵛ⁺
-    @test compute_interface_humidity(fh, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(1.0),   ℙₐ) ≈ qᵛ⁺ # saturated
+    @test compute_interface_humidity(fh, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(0.0),   nothing, ℙₐ) ≈ 0.0
+    @test compute_interface_humidity(fh, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(0.375), nothing, ℙₐ) ≈ 0.5 * qᵛ⁺
+    @test compute_interface_humidity(fh, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(1.0),   nothing, ℙₐ) ≈ qᵛ⁺ # saturated
 
     # Constant-efficiency FractionalHumidity is a uniform fraction of saturation
     fc = FractionalHumidity(efficiency = 0.4)
-    @test compute_interface_humidity(fc, Tₛ, Ψₛ, Ψₐ, Ψˡᵃ(0.1), ℙₐ) ≈ 0.4 * qᵛ⁺
+    @test compute_interface_humidity(fc, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(0.1), nothing, ℙₐ) ≈ 0.4 * qᵛ⁺
 end
 
 @testset "Saturation vapor pressure enhancement (Gill 1982)" begin
     ℂ = AtmosphereThermodynamicsParameters(Float64)
-    pᵃᵗ, Tₛ, Sₛ = 101325.0, 293.15, 35.0
+    pᵃᵗ, Tⁱⁿ, Sₛ = 101325.0, 293.15, 35.0
     phase = Thermodynamics.Liquid()
 
     εᵈᵛ⁻¹ = 1 / Thermodynamics.Parameters.Rv_over_Rd(ℂ)
-    pᵛ⁺ = 0.98 * Thermodynamics.saturation_vapor_pressure(ℂ, Tₛ, phase)
-    fᵛ = 1 + 1e-8 * pᵃᵗ * (4.5 + 6e-4 * (Tₛ - celsius_to_kelvin)^2)
+    pᵛ⁺ = 0.98 * Thermodynamics.saturation_vapor_pressure(ℂ, Tⁱⁿ, phase)
+    fᵛ = 1 + 1e-8 * pᵃᵗ * (4.5 + 6e-4 * (Tⁱⁿ - celsius_to_kelvin)^2)
     qᵛ⁺(pᵛ) = εᵈᵛ⁻¹ * pᵛ / (pᵃᵗ - (1 - εᵈᵛ⁻¹) * pᵛ)
 
     unenhanced = ImpureSaturationSpecificHumidity(phase, 0.98)
     enhanced = ImpureSaturationSpecificHumidity(phase, 0.98; saturation_enhancement = GillSaturationEnhancement())
 
-    @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
-    @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
+    @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
+    @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
 end
