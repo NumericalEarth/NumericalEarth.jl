@@ -1,19 +1,23 @@
 [deps]
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "f90db3288b403d3f1367958e429c6473a77922ee"}
+Breeze = {rev = "f90db3288b403d3f1367958e429c6473a77922ee", url = "https://github.com/NumericalEarth/Breeze.jl"}
 NumericalEarth = {path = "../.."}
 
 [compat]
 Breeze = "0.12"
 CUDA = "5.9.5, 6"
+Enzyme = "0.13"
 Reactant = "0.2.289"
+Statistics = "<0.0.1, 1"
 Test = "<0.0.1, 1"
 julia = "1.10"
 
