@@ -990,6 +990,11 @@ where ``k_i`` is the ice thermal conductivity and ``h_i`` is the ice thickness. 
 ice thickness exceeds the consolidation threshold. The conductive flux modifies the heat balance equation,
 coupling ice thermodynamics more tightly with the ocean.
 
+The conductive flux only enters the interface balance that determines ``T_*``, ``S_*`` and ``q``.
+The heat flux returned to the ocean and to the base of the sea ice is the turbulent ocean flux
+``\rho_o c_o \gamma_T (T_o - T_*)`` alone, because the sea-ice thermodynamics already accounts for
+conduction through the ice in its surface energy balance.
+
 ### Choosing a formulation
 
 | Feature | `IceBathHeatFlux` | `ThreeEquationHeatFlux` |
@@ -1079,8 +1084,8 @@ The plots reveal key differences between the formulations:
    additional heat sink from the cold ice.
 
 3. **Heat flux**: The three-equation formulation captures the feedback between interface salinity, freezing point
-   depression, and heat flux. When conductive flux is included, the cold ice interior extracts heat from the
-   interface, shifting the heat flux toward freezing (more negative values) across all ocean temperatures.
+   depression, and heat flux. When conductive flux is included, the cold ice interior lowers the interface
+   temperature, which increases the turbulent heat flux drawn from the ocean across all ocean temperatures.
 
 ### Configuring sea ice-ocean fluxes
 

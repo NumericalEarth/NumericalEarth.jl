@@ -10,7 +10,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_
                                                               SeaIceOceanInterface,
                                                               ComponentInterfaces
 
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
+using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature, ConductiveFlux
+using Oceananigans.Fields: ConstantField
 
 @testset "Ocean-sea ice heat flux formulations" begin
 
@@ -176,6 +177,48 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             @test Sb ≤ Sᵒᶜ
             @test Tb ≈ melting_temperature(liquidus, Sb)
         end
+    end
+
+    @testset "Interface heat flux excludes conduction through the ice" begin
+        liquidus = LinearLiquidus(Float64)
+        ocean_properties = (reference_density = 1025.0, heat_capacity = 3991.0)
+        ρᵒᶜ = ocean_properties.reference_density
+        cᵒᶜ = ocean_properties.heat_capacity
+        αₕ = 0.0095
+        αₛ = αₕ / 35
+        u★ = 0.002
+        ℰ  = 334e3
+        k  = 2.0
+        hˢⁱ = 1.0
+        ℵ  = 0.8
+        Tˢⁱ = -15.0
+
+        ocean_state = (; T = -1.0, S = 34.0)
+        ice_state = (; S = 5.0, h = hˢⁱ, hc = 0.1, ℵ, T = Tˢⁱ)
+
+        bare = ThreeEquationHeatFlux()
+        conducting = ThreeEquationHeatFlux(ConductiveFlux(conductivity=k), ConstantField(Tˢⁱ), αₕ, αₛ, u★)
+
+        for (flux, kᵢ) in ((bare, 0.0), (conducting, k))
+            Q, T★, S★ = compute_interface_heat_flux(flux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+            T★′, S★′, q = solve_interface_conditions(flux, ocean_state.T, ocean_state.S, ice_state,
+                                                     αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
+
+            Fᵒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (ocean_state.T - T★)
+            Fᶜ = kᵢ * (Tˢⁱ - T★) / hˢⁱ
+
+            @test T★ ≈ T★′
+            @test S★ ≈ S★′
+            @test Q ≈ Fᵒ * ℵ
+            @test ℰ * q ≈ Fᵒ + Fᶜ
+        end
+
+        Q_bare, T★_bare, = compute_interface_heat_flux(bare, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+        Q_cond, T★_cond, = compute_interface_heat_flux(conducting, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+
+        # Cold ice draws the interface colder, so the ocean loses more heat, not less
+        @test T★_cond < T★_bare
+        @test Q_cond > Q_bare > 0
     end
 end
 
