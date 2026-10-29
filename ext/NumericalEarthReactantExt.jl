@@ -15,9 +15,9 @@ const OceananigansReactantExt = Base.get_extension(
 )
 
 # Any EarthSystemModel (every component combination) carried on `ReactantState`.
-const ReactantESM{R, A, L, I, O, F, C} = Union{
-    EarthSystemModel{R, A, L, I, O, F, C, <:ReactantState},
-    EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
+const ReactantESM{R, A, L, I, O, F, C, MV, SB} = Union{
+    EarthSystemModel{R, A, L, I, O, F, C, MV, SB, <:ReactantState},
+    EarthSystemModel{R, A, L, I, O, F, C, MV, SB, <:Distributed{ReactantState}},
 }
 
 function Oceananigans.TimeSteppers.reconcile_state!(model::ReactantESM)
