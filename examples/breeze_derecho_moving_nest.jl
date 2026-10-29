@@ -78,8 +78,10 @@ waypoints = [DateTime(2026, 8, 11,  6, 00) => (-94.5, 42.3),   # central Iowa (e
              DateTime(2026, 8, 11, 16, 09) => (-87.41, 41.62), # Gary/Chicago airport: 99 mph
              DateTime(2026, 8, 11, 18, 00) => (-85.9, 41.5)]   # southwest Michigan (extrapolated)
 
+# The simulated line trails the reported positions by about 1.5° of longitude, so the nest is centered
+# that far west of the waypoints.
 track = PrescribedTrack(seconds_after_start.(first.(waypoints)),
-                        first.(last.(waypoints)),
+                        first.(last.(waypoints)) .- 1.5,
                         last.(last.(waypoints)))
 
 # ## The nest and its corridor
@@ -238,8 +240,8 @@ U  = @lift frame("U",  iterations[$n])
 qʳ = @lift 1e3 * frame("qʳ", iterations[$n])
 
 fig = Figure(size = (1500, 500))
-Label(fig[0, 1:6], @lift(@sprintf("11 August 2026 derecho — ERA5 → 3 km moving nest — %s UTC",
-                                  start_date + Second(round(Int, times[$n])))),
+Label(fig[0, 1:6], @lift(@sprintf("11 August 2026 derecho — ERA5 → 1/%d° moving nest — %s UTC",
+                                  round(Int, 1 / Δλ), start_date + Second(round(Int, times[$n])))),
       fontsize = 20, tellwidth = false)
 
 panels = (("|U| at the surface (m s⁻¹)", U,  :speed,   (0, 35)),
