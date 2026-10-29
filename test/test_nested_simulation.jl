@@ -12,7 +12,7 @@ using Oceananigans.Grids: node
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
 using Oceananigans.Forcings: MultipleForcings
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
@@ -136,7 +136,7 @@ end
     parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
     set!(parent.temperature, (λ, φ, z, t) -> 290)
 
-    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+    child_grid = ConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
                                            standard_parallels = (33, 45), central_longitude = -100,
                                            latitude_of_origin = 39, z = (0, 1))
     loc = (Center(), Center(), Center())
