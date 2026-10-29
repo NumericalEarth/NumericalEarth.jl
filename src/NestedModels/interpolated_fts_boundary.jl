@@ -19,6 +19,7 @@
 # This whole file collapses to a deprecation shim once an analogous native
 # path lands upstream in Oceananigans (parallel to PR #5575 for `Relaxation`).
 
+using GPUArraysCore: @allowscalar
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
@@ -148,7 +149,7 @@ function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX},
     j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny:Ny)) : 1:Ny
     line = Field(operation; indices = (i, j, 1:1))
     compute!(line)
-    return extrema(interior(line))
+    return @allowscalar extrema(interior(line))
 end
 
 function validate_axis_bracket(label, (src_lo, src_hi), (sim_lo, sim_hi))
@@ -164,10 +165,11 @@ function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) w
     source_loc  = Oceananigans.instantiated_location(source)
     source_grid = source.grid
 
-    validate_axis_bracket("x", extrema(ξnodes(source_grid, source_loc...)),
+    # On ReactantState these are views of device arrays, which only reduce element by element on the host
+    validate_axis_bracket("x", @allowscalar(extrema(ξnodes(source_grid, source_loc...))),
                           boundary_coordinate_extent(ξnode, grid, dim, SideType, LX, LY))
 
-    validate_axis_bracket("y", extrema(ηnodes(source_grid, source_loc...)),
+    validate_axis_bracket("y", @allowscalar(extrema(ηnodes(source_grid, source_loc...))),
                           boundary_coordinate_extent(ηnode, grid, dim, SideType, LX, LY))
 
     return nothing
