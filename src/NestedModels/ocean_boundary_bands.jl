@@ -9,9 +9,9 @@
 # condition and forcing kernels never interpolate the parent in space, and memory scales with the
 # boundary, not with the length of the run.
 
-using Oceananigans.Fields: Field, interpolate, validate_indices
+using Oceananigans.Fields: Field, interpolate
 using Oceananigans.Grids: Bounded, Center, Face, FullyConnected, LeftConnected, RightConnected, inactive_cell, new_data, topology,
-                          λnode, φnode, rnode, ξnode, ηnode
+                          validate_indices, λnode, φnode, rnode, ξnode, ηnode
 using Oceananigans.Operators: Δz
 using Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Utils: KernelParameters, launch!
