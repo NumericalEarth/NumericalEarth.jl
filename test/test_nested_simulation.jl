@@ -5,7 +5,8 @@ using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
-using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
+using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, OnDisk, InMemory, Cyclical
+using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate
 using Oceananigans.Grids: node, x_domain, y_domain
@@ -913,6 +914,36 @@ end
     m₂ = memory_index(fts.backend, fts.time_indexing, length(fts.times), n₂)
     @test 1 ≤ m₁ ≤ length(fts.backend)
     @test 1 ≤ m₂ ≤ length(fts.backend)
+end
+
+@testset "StateExchanger: a streaming parent's window stays put over the last interval" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    parent_grid = RectilinearGrid(CPU(); size = (4, 4, 2), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times = 0.0:1.0:4.0
+    path = joinpath(mktempdir(), "parent_temperature.jld2")
+    on_disk = FieldTimeSeries{Center, Center, Center}(parent_grid, times; backend = OnDisk(), path, name = "T")
+    field = CenterField(parent_grid)
+    for n in eachindex(times)
+        set!(field, 280 + times[n])
+        set!(on_disk, field, n)
+    end
+
+    temperature = FieldTimeSeries(path, "T"; backend = InMemory(3), time_indexing = Cyclical(), architecture = CPU())
+    parent = PrescribedAtmosphere(parent_grid, collect(times); temperature)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.pressure, (x, y, z, t) -> 9.0e4)
+
+    exchanger = ext.state_exchanger(parent, 1.0e5, ThermodynamicConstants(); condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+
+    # The child window is clamped at levels 3:5 and the parent, stepped to 3.5, needs levels 4 and 5.
+    for _ in 1:2
+        NumericalEarth.NestedModels.exchange_state!(exchanger, 3.5)
+        parent.clock.time = 3.5
+        update_state!(parent)
+        @test temperature.backend.start == 3
+    end
 end
 
 @testset "StateExchanger: moving-window runtime queries match full-memory queries on CPU()" begin

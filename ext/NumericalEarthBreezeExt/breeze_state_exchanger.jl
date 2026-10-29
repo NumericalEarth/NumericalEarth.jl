@@ -304,11 +304,10 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     window = length(p.ρᵈ.backend)
     start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
 
-    # Keep the parent levels `start` and `start + 1` resident, by index: the parent's own `update_state!`
-    # asks for the pair bracketing `time`, and a 3-level parent window holds both requests only when this
-    # one does not also ask for the level below `start`, as bracketing `Time(times[start])` would.
+    # Hold the child window's levels `start:start+window-1` in the parent's own (possibly limited-memory)
+    # FTS windows; they also bracket the parent's clock, which trails `time` by at most one interval.
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, start, start + 1)
+        update_field_time_series!(fts, start, start + window - 1)
     end
 
     moved = p.ρᵈ.backend.start != start
