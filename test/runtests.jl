@@ -54,7 +54,10 @@ if filter_tests!(testsuite, args)
         end
     end
 
-    delete!(testsuite, "reactant/test_reactant")
+    # test/reactant has its own environment and CI job
+    for name in filter(startswith("reactant/"), collect(keys(testsuite)))
+        delete!(testsuite, name)
+    end
     delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
     if gpu_test
