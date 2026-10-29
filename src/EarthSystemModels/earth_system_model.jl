@@ -376,7 +376,7 @@ grid = LatitudeLongitudeGrid(GPU();
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -418,7 +418,7 @@ grid = LatitudeLongitudeGrid(size = (20, 20, 4),
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
