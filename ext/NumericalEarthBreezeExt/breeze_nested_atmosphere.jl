@@ -35,10 +35,11 @@ using Oceananigans:
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain, constructor_arguments
-using Oceananigans.Grids: LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
+using Oceananigans.Grids: LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, Bounded
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
 using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
@@ -337,18 +338,58 @@ rather than steepening. `parent_surface_elevation` replaces the parent's own sur
 A `mover` (a [`NestMover`](@ref)) makes the nest follow a feature: it is attached to the returned
 `NestedModel` together with a builder that rebuilds the child on a translated grid from the same
 `parent_atmosphere`, state exchanger and keyword arguments (see [`translate_domain!`](@ref)). The
-`terrain` of a moving nest must then be a topography dataset, and any `relaxation_mask` or
-`drag_surface_temperature` given explicitly must not be bound to the initial grid.
+`terrain` of a moving nest is regridded once over the whole parent domain, from which every
+child grid takes its window; an elevation `Field` given as `terrain` must then cover that domain
+at the child's resolution, and any `relaxation_mask` or `drag_surface_temperature` given
+explicitly must not be bound to the initial grid.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedComponent},
-                                                              child_grid; mover = nothing, kw...)
-    nested_model = build_nested_atmosphere_model(parent_atmosphere, child_grid; kw...)
-    isnothing(mover) && return nested_model
+                                                              child_grid; mover = nothing, terrain = nothing, kw...)
+    isnothing(mover) && return build_nested_atmosphere_model(parent_atmosphere, child_grid; terrain, kw...)
 
+    corridor = corridor_elevation(terrain, parent_atmosphere, child_grid)
+    build(grid; exchanger = nothing) =
+        build_nested_atmosphere_model(parent_atmosphere, grid; exchanger, terrain = terrain_window(corridor, grid), kw...)
+    nested_model = build(child_grid)
     exchanger = nested_model.exchanger
-    rebuild(grid) = build_nested_atmosphere_model(parent_atmosphere, grid; exchanger, kw...)
     return NestedModel(parent_atmosphere, nested_model.child, exchanger, nested_model.child_callbacks,
-                       NestMover(mover, rebuild))
+                       NestMover(mover, grid -> build(grid; exchanger)))
+end
+
+# The elevation over every grid a moving child can visit: a topography dataset is regridded once
+# onto the child's cells extended to the parent's domain, and each child grid takes its window.
+corridor_elevation(::Nothing, parent_atmosphere, child_grid) = nothing
+corridor_elevation(elevation::AbstractField, parent_atmosphere, child_grid) = elevation
+
+function corridor_elevation(dataset, parent_atmosphere, child_grid)
+    λ₁, λ₂ = x_domain(child_grid)
+    φ₁, φ₂ = y_domain(child_grid)
+    λ₃, λ₄ = x_domain(parent_atmosphere.grid)
+    φ₃, φ₄ = y_domain(parent_atmosphere.grid)
+    Δλ, Δφ = child_grid.Δλᶠᵃᵃ, child_grid.Δφᵃᶠᵃ
+    west  = ceil(Int, (λ₁ - λ₃) / Δλ)
+    east  = ceil(Int, (λ₄ - λ₂) / Δλ)
+    south = ceil(Int, (φ₁ - φ₃) / Δφ)
+    north = ceil(Int, (φ₄ - φ₂) / Δφ)
+    Nx, Ny, _ = size(child_grid)
+    corridor_grid = LatitudeLongitudeGrid(architecture(child_grid), eltype(child_grid);
+                                          size = (Nx + west + east, Ny + south + north, 1),
+                                          longitude = (λ₁ - west * Δλ, λ₂ + east * Δλ),
+                                          latitude  = (φ₁ - south * Δφ, φ₂ + north * Δφ),
+                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    return regrid_topography(corridor_grid; dataset)
+end
+
+terrain_window(::Nothing, grid) = nothing
+
+function terrain_window(elevation, grid)
+    i₀ = round(Int, (x_domain(grid)[1] - x_domain(elevation.grid)[1]) / grid.Δλᶠᵃᵃ)
+    j₀ = round(Int, (y_domain(grid)[1] - y_domain(elevation.grid)[1]) / grid.Δφᵃᶠᵃ)
+    Nx, Ny, _ = size(grid)
+    window = Field{Center, Center, Nothing}(grid)
+    interior(window) .= interior(elevation, i₀+1:i₀+Nx, j₀+1:j₀+Ny, :)
+    fill_halo_regions!(window)
+    return window
 end
 
 function build_nested_atmosphere_model(parent_atmosphere, child_grid;
