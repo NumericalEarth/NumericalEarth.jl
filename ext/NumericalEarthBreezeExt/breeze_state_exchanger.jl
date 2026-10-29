@@ -304,13 +304,11 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     window = length(p.ρᵈ.backend)
     start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
 
-    # Advance the parent's own (possibly limited-memory) FTS windows to bracket the child window's LOWER
-    # edge `times[start]`, NOT `time` (= t + Δt). A parent bracketed on t+Δt holds a forward window from
-    # n₁ that EXCLUDES the n₁-1 (= start) level the 3-level child window needs, so on a window-move recompute
-    # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
-    # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
+    # Keep the parent levels `start` and `start + 1` resident, by index: the parent's own `update_state!`
+    # asks for the pair bracketing `time`, and a 3-level parent window holds both requests only when this
+    # one does not also ask for the level below `start`, as bracketing `Time(times[start])` would.
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(times[start]))
+        update_field_time_series!(fts, start, start + 1)
     end
 
     moved = p.ρᵈ.backend.start != start
