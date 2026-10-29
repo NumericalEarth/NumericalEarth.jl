@@ -1178,3 +1178,88 @@ end
     @test all(x_domain(shifted) .≈ (-1 + 2Δλ, 1 + 2Δλ))
     @test shifted.z.formulation isa typeof(terrain_grid.z.formulation)
 end
+
+@testset "Moving nest: the coupled surfaces relocate with the child on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 60.0, 120.0, 180.0]
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (24, 16, 8),
+                                        longitude = (-4, 4), latitude = (34, 39.333),
+                                        z = (0, 16000), halo = (5, 5, 5),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + λ)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 0)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Bounded, Bounded, Bounded))
+    Δλ, Δφ = 2/8, 2/8
+    track = PrescribedTrack([0.0, 10.0], [0.0, 1.0], [36.6, 37.1])
+
+    # The land lives on the child's horizontal grid, wherever the child is.
+    function surfaces(grid)
+        surface_grid = LatitudeLongitudeGrid(architecture(grid); size = size(grid)[1:2],
+                                             longitude = x_domain(grid), latitude = y_domain(grid),
+                                             halo = (5, 5), topology = (Bounded, Bounded, Flat))
+        land = SlabLand(surface_grid)
+        set!(land; T = (λ, φ) -> 290 + λ, M = 20)
+        return (; land)
+    end
+
+    function coupled_model(schedule)
+        nest = nested_atmosphere_model(parent, child_grid; mover = NestMover(track; schedule),
+                                       relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
+                                       coriolis = nothing, terrain = nothing, parent_condensates = nothing)
+        ext.initialize_nested_child!(nest, nothing, first(times), ""; balancer = false)
+        atmosphere = Simulation(nest; Δt = 0.5, verbose = false)
+        return EarthSystemModel(; atmosphere, surfaces(child_grid)..., surfaces)
+    end
+
+    # Translate by hand: the land state carries over by index, the exposed strip is what the builder
+    # makes, and the exchange grid is the shifted grid.
+    model = coupled_model(TimeInterval(1e9))
+    @test isnothing(model.atmosphere.model.mover)
+    @test model.mover isa NestMover
+    time_step!(model, 0.5)
+    set!(model.land; T = (λ, φ) -> 295 + φ)
+    old_temperature = Array(interior(model.land.temperature))
+    clock = model.clock
+
+    translate_domain!(model, (2, 1))
+
+    grid = model.interfaces.exchanger.grid
+    @test grid === model.land.grid
+    @test all(x_domain(grid) .≈ (-1 + 2Δλ, 1 + 2Δλ))
+    @test all(y_domain(grid) .≈ (35.6 + Δφ, 37.6 + Δφ))
+    @test all(x_domain(model.atmosphere.model.child.grid) .≈ x_domain(grid))
+    @test model.clock === clock
+    new_temperature = Array(interior(model.land.temperature))
+    @test new_temperature[1:6, 1:7, :] == old_temperature[3:8, 2:8, :]
+    λ = Array(λnodes(grid, Center()))
+    @test all(new_temperature[7:8, :, 1] .≈ 290 .+ λ[7:8])
+    @test all(new_temperature[:, 8, 1] .≈ 290 .+ λ)
+    @test all(isfinite, Array(interior(surface_temperature(model.interfaces))))
+
+    time_step!(model, 0.5)
+    for (name, field) in pairs(prognostic_fields(model.atmosphere.model.child))
+        @test all(isfinite, Array(interior(field)))
+    end
+    @test all(isfinite, Array(interior(model.land.temperature)))
+    @test all(isfinite, Array(interior(model.land.water_storage)))
+
+    # Follow the track on the coupled model's schedule: the land ends up under the relocated child.
+    model = coupled_model(TimeInterval(5))
+    simulation = Simulation(model; Δt = 0.5, stop_time = 10.0, verbose = false)
+    run!(simulation)
+
+    @test length(model.mover.track) == 2
+    @test all(NumericalEarth.NestedModels.domain_center(model.land.grid) .≈ (1.0, 37.1))
+    @test model.land.grid === model.interfaces.exchanger.grid
+    @test model.clock.time ≈ 10.0
+    @test all(isfinite, Array(interior(model.land.temperature)))
+end

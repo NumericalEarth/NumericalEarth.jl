@@ -3,7 +3,7 @@ using Oceananigans
 using Oceananigans.TimeSteppers: Clock
 using KernelAbstractions: @kernel, @index
 
-mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
+mutable struct EarthSystemModel{R, A, L, I, O, F, C, MV, SB, Arch} <: AbstractModel{Nothing, Arch}
     architecture :: Arch
     clock :: C
     radiation :: R
@@ -12,6 +12,8 @@ mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Noth
     sea_ice :: I
     ocean :: O
     interfaces :: F
+    mover :: MV      # relocates a moving nest with the surfaces under it (see `NestMover`); `nothing` for a fixed domain
+    surfaces :: SB   # builds the surface components on the atmosphere's grid after a relocation; `nothing` for a fixed domain
 end
 
 const ESM = EarthSystemModel
@@ -153,6 +155,13 @@ default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_mode
 default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
 
 """
+$(TYPEDSIGNATURES)
+
+Return `atmosphere` without its nest mover, and the mover. Default: `atmosphere` unchanged and `nothing`.
+"""
+detach_mover(atmosphere) = (atmosphere, nothing)
+
+"""
     materialize_sea_ice(sea_ice, ocean)
 
 Return a fully-materialized `sea_ice` component that has access to the ocean's grid.
@@ -169,7 +178,8 @@ materialize_sea_ice!(sea_ice, ocean) = sea_ice
                      ocean_heat_capacity = heat_capacity(ocean),
                      sea_ice_reference_density = reference_density(sea_ice),
                      sea_ice_heat_capacity = heat_capacity(sea_ice),
-                     interfaces = nothing)
+                     interfaces = nothing,
+                     surfaces = nothing)
 
 Construct a coupled earth system model. Components are passed in struct order
 (top to bottom): radiation, atmosphere, land, sea_ice, ocean. Pass `nothing`
@@ -205,6 +215,10 @@ Keyword Arguments
 - `sea_ice_heat_capacity`: Heat capacity for sea ice. Defaults to value from sea ice model.
 - `interfaces`: Component interfaces for coupling. Defaults to `nothing` and will be constructed automatically.
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
+- `surfaces`: for a moving nest (a nested `atmosphere` with a `NestMover`), `grid -> (; land, ocean, radiation,
+  ocean_fraction, …)`: the components and interface keyword arguments that depend on the atmosphere's grid,
+  rebuilt on the shifted grid after every relocation (see `translate_domain!`); the other interface keyword
+  arguments carry over. The coupled model takes the nest's mover over and relocates nest and surfaces together.
 """
 function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           clock = default_earth_system_clock(atmosphere),
@@ -213,6 +227,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
+                          surfaces = nothing,
                           interface_kw...) # e.g. `atmosphere_land_interface_state`
 
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
@@ -241,6 +256,9 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     land       = adopt_clock(land, clock)
     sea_ice    = adopt_clock(sea_ice, clock)
     ocean      = adopt_clock(ocean, clock)
+
+    atmosphere, mover = detach_mover(atmosphere)
+    rebuild_surfaces = isnothing(surfaces) ? nothing : grid -> merge((; interface_kw...), surfaces(grid))
 
     if atmosphere isa Simulation
         if !isnothing(atmosphere.callbacks)
@@ -274,8 +292,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     arch = architecture(interfaces.exchanger.grid)
 
     # Allocate per-surface InterfaceRadiationFlux on the exchange grid.
-    surfaces = present_surfaces(ocean, sea_ice, land)
-    allocate_interface_fluxes!(radiation, interfaces.exchanger.grid, surfaces)
+    allocate_interface_fluxes!(radiation, interfaces.exchanger.grid, present_surfaces(ocean, sea_ice, land))
 
     earth_system_model = EarthSystemModel(arch,
                                           clock,
@@ -284,7 +301,9 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                           land,
                                           sea_ice,
                                           ocean,
-                                          interfaces)
+                                          interfaces,
+                                          mover,
+                                          rebuild_surfaces)
 
     # Make sure the initial temperature of the ocean
     # is not below freezing and above melting near the surface

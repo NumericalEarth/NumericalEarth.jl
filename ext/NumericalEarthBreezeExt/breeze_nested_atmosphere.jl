@@ -20,7 +20,7 @@ using NumericalEarth:
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, NestMover, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
+using NumericalEarth.NestedModels: NestedModel, copy_overlap!, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
 
 using Oceananigans:
     Oceananigans,
@@ -347,8 +347,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     exchanger = nested_model.exchanger
     rebuild(grid) = build_nested_atmosphere_model(parent_atmosphere, grid; exchanger, kw...)
-    return NestedModel(parent_atmosphere, nested_model.child, exchanger, nested_model.child_callbacks,
-                       NestMover(mover, rebuild))
+    return NestedModel(parent_atmosphere, nested_model.child, exchanger, nested_model.child_callbacks, mover, rebuild)
 end
 
 function build_nested_atmosphere_model(parent_atmosphere, child_grid;
@@ -599,23 +598,13 @@ terrain_skeleton(z::TerrainFollowingVerticalDiscretization) =
 terrain_skeleton(::LinearDecay) = LinearDecay()
 terrain_skeleton(f::TwoLevelDecay) = TwoLevelDecay(; f.large_scale_height, f.small_scale_height)
 
-# new[i, j, k] ← old[i + iₛ, j + jₛ, k] over the cells both grids hold.
-function copy_overlap!(new, old, shift)
-    iₛ, jₛ = shift
-    Nx, Ny, _ = size(interior(new))
-    i = max(1, 1 - iₛ):min(Nx, Nx - iₛ)
-    j = max(1, 1 - jₛ):min(Ny, Ny - jₛ)
-    view(interior(new), i, j, :) .= view(interior(old), i .+ iₛ, j .+ jₛ, :)
-    return new
-end
-
-# Rebuild the child on the shifted grid with the mover's builder (same parent, exchanger and
+# Rebuild the child on the shifted grid with the nest's builder (same parent, exchanger and
 # settings), fill it from the parent-derived prognostics at the current time with the flow following
 # the terrain, overwrite the overlap with the old child's state, and recompute the reference state
 # from the new domain mean. The old child's clock carries over, so the simulation's time is untouched.
-function NumericalEarth.NestedModels.translate_domain!(nested_model::NestedModel, shift)
+function NumericalEarth.NestedModels.translated_nest(nested_model::NestedModel, shift)
     old = nested_model.child
-    rebuilt = nested_model.mover.rebuild(translated_grid(old.grid, shift))
+    rebuilt = nested_model.rebuild(translated_grid(old.grid, shift))
     new = rebuilt.child
     new.clock = nested_model.clock
 
@@ -640,9 +629,8 @@ function NumericalEarth.NestedModels.translate_domain!(nested_model::NestedModel
 
     set!(new; compute_reference_state = true)
 
-    nested_model.child = new
-    nested_model.child_callbacks = rebuilt.child_callbacks
-    return nested_model
+    return NestedModel(nested_model.parent, new, nested_model.exchanger, rebuilt.child_callbacks,
+                       nested_model.mover, nested_model.rebuild)
 end
 
 function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))

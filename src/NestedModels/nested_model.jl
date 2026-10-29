@@ -36,18 +36,19 @@ Construct via [`child_model`](@ref) plus this wrapper, or use the
 [`NestedSimulation`](@ref) convenience that bundles model construction and
 `Simulation` wrapping.
 """
-mutable struct NestedModel{P, M, X, CB, MV, C, TS, A} <: AbstractModel{TS, A}
+mutable struct NestedModel{P, M, X, CB, MV, RB, C, TS, A} <: AbstractModel{TS, A}
     parent          :: P
     child           :: M
     exchanger       :: X    # mediates parent state → child variables (see `exchange_state!`); `nothing` if unused
     child_callbacks :: CB   # callbacks added to the child's at every time step (e.g. boundary relaxation)
     mover           :: MV   # relocates the child to follow a feature (see `NestMover`); `nothing` for a fixed nest
+    rebuild         :: RB   # builds the child on another grid (see `translate_domain!`); `nothing` for a fixed nest
     clock           :: C    # shared reference to the child's clock (Simulation/run! read `model.clock`)
 end
 
-NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callbacks=(), mover=nothing) where {TS, A} =
-    NestedModel{typeof(parent), typeof(child), typeof(exchanger), typeof(child_callbacks), typeof(mover), typeof(child.clock), TS, A}(
-        parent, child, exchanger, child_callbacks, mover, child.clock)
+NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callbacks=(), mover=nothing, rebuild=nothing) where {TS, A} =
+    NestedModel{typeof(parent), typeof(child), typeof(exchanger), typeof(child_callbacks), typeof(mover), typeof(rebuild), typeof(child.clock), TS, A}(
+        parent, child, exchanger, child_callbacks, mover, rebuild, child.clock)
 
 # Refresh the parent-derived child state held by the exchanger to the current `time`. The exchanger
 # (a NumericalEarth object; see the Breeze extension's `StateExchanger`) recomputes the child
