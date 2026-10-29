@@ -121,14 +121,14 @@ end
 end
 
 function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    isnothing(al_interface) && return nothing
+    atmosphere_land_interface = coupled_model.interfaces.atmosphere_land_interface
+    isnothing(atmosphere_land_interface) && return nothing
 
     state = land.model.state
     grid = land.model.grid
     arch = architecture(grid)
 
-    interface_fluxes = al_interface.fluxes
+    interface_fluxes = atmosphere_land_interface.fluxes
     atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
     Jˢⁿ = hasproperty(atmos_state, :Jˢⁿ) ? atmos_state.Jˢⁿ : ZeroField()
@@ -145,7 +145,7 @@ function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
             state.windspeed,
             state.rainfall,
             state.snowfall,
-            al_interface.temperature,
+            atmosphere_land_interface.temperature,
             interface_fluxes.sensible_heat,
             interface_fluxes.latent_heat,
             atmos_state.u,

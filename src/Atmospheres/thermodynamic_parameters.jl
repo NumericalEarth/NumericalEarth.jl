@@ -71,7 +71,7 @@ end
 const CP{FT} = ConstitutiveParameters{FT} where FT
 
 @inline gas_constant(p::CP)   = p.gas_constant
-@inline molmass_dryair(p::CP) = p.dry_air_molar_mass
+@inline EarthSystemModels.molmass_dryair(p::CP) = p.dry_air_molar_mass
 @inline molmass_water(p::CP)  = p.water_molar_mass
 @inline Rv_over_Rd(p::CP)     = molmass_dryair(p) / molmass_water(p)
 @inline R_v(p::CP)            = gas_constant(p) / molmass_water(p)
@@ -230,7 +230,7 @@ const ATP = AtmosphereThermodynamicsParameters
 @inline R_d(p::ATP)            = R_d(p.constitutive)
 @inline R_v(p::ATP)            = R_v(p.constitutive)
 @inline gas_constant(p::ATP)   = gas_constant(p.constitutive)
-@inline molmass_dryair(p::ATP) = molmass_dryair(p.constitutive)
+@inline EarthSystemModels.molmass_dryair(p::ATP) = molmass_dryair(p.constitutive)
 @inline molmass_water(p::ATP)  = molmass_water(p.constitutive)
 @inline Rv_over_Rd(p::ATP)     = Rv_over_Rd(p.constitutive)
 @inline LH_v0(p::ATP)          = LH_v0(p.phase_transitions)
