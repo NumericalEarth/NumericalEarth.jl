@@ -20,11 +20,14 @@ using NumericalEarth:
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
+                                   VectorComponent
 
 using Oceananigans:
     Oceananigans,
     WENO,
+    KernelFunctionOperation,
+    @at,
     ValueBoundaryCondition,
     NormalFlowBoundaryCondition,
     Field,
@@ -39,6 +42,7 @@ using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
+using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
 using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
@@ -149,7 +153,10 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     ρᵈ = dynamics_density(child.dynamics)
     θ = Oceananigans.fields(child.formulation).θ
 
-    relaxation(field, target) = Relaxation(rate, field, mask, FieldTimeSeriesTarget(target, target.grid),
+    fts_target(target) = FieldTimeSeriesTarget(target, target.grid)
+    fts_target(target::VectorComponent) = target
+
+    relaxation(field, target) = Relaxation(rate, field, mask, fts_target(target),
                                            Oceananigans.instantiated_location(field), nothing)
     specific(name, field, target) = SpecificForcing(relaxation(field, target), ρᵈ,
                                                     Oceananigans.instantiated_location(child_fields[name]))
@@ -159,8 +166,8 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     names = (:ρθ, :ρu, :ρv, moisture_name)
     strips = NamedTuple{sides}(
         (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
-                                       specific(:ρu, child.velocities.u, prognostic.u[side]),
-                                       specific(:ρv, child.velocities.v, prognostic.v[side]),
+                                       specific(:ρu, child.velocities.u, VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
+                                       specific(:ρv, child.velocities.v, VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
                                        relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
          region = regions[side])
         for side in sides)
@@ -387,7 +394,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
     # asymmetrically for Center fields).
     energy_key = energy_bc_key()
-    dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv),
+    dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ,
+                              ρu = vector_component(Val(:u), prognostic.ρu, prognostic.ρv),
+                              ρv = vector_component(Val(:v), prognostic.ρu, prognostic.ρv)),
                              NamedTuple{(energy_key,)}((prognostic.ρθ,)))
     bc_variables = merge(dry_bc_variables, moist_variables)
 
@@ -428,7 +437,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     relax = if isnothing(relaxation_rate) || boundary_parent
         NamedTuple()
     else
-        specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
+        specific_targets = (ρθ = prognostic.θ,
+                            ρu = vector_component(Val(:u), prognostic.u, prognostic.v),
+                            ρv = vector_component(Val(:v), prognostic.u, prognostic.v))
         specific = parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask)
         moist = parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask)
         merge(map(SpecificForcing, specific), moist)
@@ -544,6 +555,29 @@ end
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
+# A parent prognostic is one source per variable, or a per-side `NamedTuple` of them for a
+# `BoundaryPrescribedComponent`.
+vector_component(::Val{C}, eastward, northward) where C = VectorComponent{C}(eastward, northward)
+
+vector_component(::Val{C}, eastward::NamedTuple, northward::NamedTuple) where C =
+    map((uᵉ, vᵉ) -> VectorComponent{C}(uᵉ, vᵉ), eastward, northward)
+
+@inline rotated_x_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[1]
+@inline rotated_y_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[2]
+
+child_momentum(prognostic, child_grid, t₀) =
+    (interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center)),
+     interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center)))
+
+# Rotate at cell centers with `intrinsic_vector`, then interpolate to the staggered locations.
+function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
+    ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid, t₀)
+    ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid, t₀)
+    ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
+    ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
+    return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
+end
+
 function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
     field = Field{loc...}(child_grid)
     interpolate!(field, fts[Time(t₀)])
@@ -565,8 +599,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
     ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
     ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
-    ρu   = interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center))
-    ρv   = interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center))
+    ρu, ρv = child_momentum(prognostic, child_grid, t₀)
 
     ρ   = Field(ρᵈ + ρqᵛᵉ)
     qᵛᵉ = Field(ρqᵛᵉ / ρ)
