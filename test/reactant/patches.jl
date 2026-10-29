@@ -30,7 +30,7 @@ end
 # extent while a nested model is built). Here they work from host copies of the node arrays, one transfer
 # each; traced arrays are left alone, so inside a program the broadcast traces.
 # Retire when: OceananigansReactantExt defines host-returning `xnodes`/`ynodes` for its lat-lon grid
-# (the hailmary's patch A11, AeFS projects/4dvar-hailmary/patches.jl).
+# (CliMA/Oceananigans.jl#6325).
 if !(@isdefined ReactantLatLonGrid)
     const ReactantLatLonGrid = Base.get_extension(Oceananigans, :OceananigansReactantExt).Grids.ReactantStateLatitudeLongitudeGrid
 end
@@ -61,4 +61,4 @@ end
 # parent grid and a computed boundary line with `extrema`; on a GPU ReactantState grid those are views of
 # device arrays, which reduce only element by element on the host. It runs under `@allowscalar` for now.
 # The proper fix copies the nodes to the host in one transfer, as `host_nodes` (patch 2) does for
-# `xnodes`/`ynodes`.
+# `xnodes`/`ynodes` (NumericalEarth/NumericalEarth.jl#856).
