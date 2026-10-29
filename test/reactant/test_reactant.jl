@@ -5,7 +5,7 @@ using Oceananigans: Oceananigans, CPU, interior, set!
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
-using Oceananigans.TimeSteppers: time_step!, update_state!, first_time_step!
+using Oceananigans.TimeSteppers: Clock, time_step!, update_state!, first_time_step!
 using Oceananigans.Units: minutes
 using NumericalEarth
 using CUDA
@@ -53,6 +53,26 @@ end
     @test any(state.T .!= 0)
 end
 
+@testset "Reactant land energy flux assembly" begin
+    for (temperature, expected_flux) in ((BulkTemperature(), 200),
+                                        (SoilSkinTemperature(1.5, 0.05), -150))
+        grid = LatitudeLongitudeGrid(ReactantState(); size = 1, latitude = 10, longitude = 10,
+                                     z = (-1, 0), topology = (Flat, Flat, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0e8])
+        land = SlabLand(grid)
+        fluxes = SimilarityTheoryFluxes(; solver_stop_criteria=FixedIterations(8))
+        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_state=(; temperature, specific_humidity=BulkHumidity()))
+        interface = model.interfaces.atmosphere_land_interface
+        set!(land; T=290)
+        set!(interface.temperature, 295)
+        set!(interface.fluxes.sensible_heat, 80)
+        set!(interface.fluxes.latent_heat, 120)
+
+        Reactant.@jit NumericalEarth.EarthSystemModels.update_net_fluxes!(model, land)
+        @test only(Array(interior(land.fluxes.surface_energy_flux))) ≈ expected_flux
+    end
+end
+
 # A coupled model whose state is `set!` *after* construction must reconcile that state on the
 # first compiled step (issue #403): under `@trace` the `if clock.iteration == 0` guard can't
 # branch on the traced iteration, so the Reactant extension no-ops `maybe_prepare_first_time_step!`
@@ -82,7 +102,7 @@ end
                                            water_vapor_roughness_length = 0.01,
                                            solver_stop_criteria         = IC.FixedIterations(8))
         interface = atmosphere_land_interface(grid, atmos, land; fluxes)
-        return AtmosphereLandModel(atmos, land; atmosphere_land_interface = interface)
+        return AtmosphereLandModel(atmos, land; clock = Clock(grid), atmosphere_land_interface = interface)
     end
 
     Δt = 10minutes
@@ -115,6 +135,17 @@ end
     T_reactant = Reactant.to_number(compiled_run(reactant_model, Δt, N))
 
     @test T_reactant ≈ T_cpu rtol=1e-4
+end
+
+# Broadcasting into `interior` of a ReactantState field reads device memory element by element, which
+# Reactant refuses, so the level pressure goes through `set!`.
+@testset "ERA5 pressure_level_field on ReactantState" begin
+    levels = Float32[1000, 850, 500] .* 100
+    for arch in (CPU(), ReactantState())
+        grid = LatitudeLongitudeGrid(arch, Float32; size = (4, 4, 3), longitude = (0, 1), latitude = (0, 1), z = (0, 1))
+        pressure = NumericalEarth.DataWrangling.ERA5.pressure_level_field(grid, (; pressure_levels = levels), arch)
+        @test all(Array(interior(pressure))[i, j, :] == levels for i in 1:4, j in 1:4)
+    end
 end
 
 include("test_reactant_nested.jl")

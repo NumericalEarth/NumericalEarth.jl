@@ -8,6 +8,8 @@ using NumericalEarth
 using Breeze
 using CUDA
 
+include("patches.jl")
+
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
 Reactant.set_default_backend(gpu_test ? "gpu" : "cpu")
 

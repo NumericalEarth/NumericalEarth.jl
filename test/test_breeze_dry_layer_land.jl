@@ -38,7 +38,7 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
         storage_height = 1000,
         retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
         hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-        deep_liquid_flux = NoDeepLiquidFlux(),
+        deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
         runoff = NoRunoff())
     energy = WaterCoupledEnergy(eltype(land_grid);
         dry_heat_capacity = 1e6,
@@ -51,21 +51,20 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
     land = SlabLand(land_grid; hydrology, energy)
     set!(land; T = T₀, M = M₀)
 
-    # Default `BulkTemperature()` on the temperature side: Tⁱⁿ = Tˡᵃ. The
+    # Default `BulkTemperature()` on the temperature side: Tᵍʳⁿᵈ = Tˡᵃ. The
     # χ-interpolation in the humidity formulation collapses gracefully:
-    # Tᵉ = Tˡᵃ when Tⁱⁿ = Tˡᵃ.
+    # Tᵉ = Tˡᵃ when Tᵍʳⁿᵈ = Tˡᵃ.
+    specific_humidity = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05,
+            dry_layer_onset_saturation = 0.5,
+            dry_layer_exponent = 2.0),
+        vapor_exchange = DryLayerVaporPistonVelocity(
+            minimum_dry_layer_depth = 1e-4,
+            molecular_diffusivity = 2.5e-5,
+            tortuosity = PowerLawTortuosity()))
     al = atmosphere_land_interface(land_grid, atmosphere, land;
-        specific_humidity = DryLayerHumidity(;
-            dry_layer_depth = StorageBasedDryLayerDepth(
-                maximum_dry_layer_depth = 0.05,
-                dry_layer_onset_saturation = 0.5,
-                dry_layer_exponent = 2.0),
-            vapor_exchange = DryLayerVaporPistonVelocity(
-                minimum_dry_layer_depth = 1e-4,
-                molecular_diffusivity = 2.5e-5,
-                tortuosity = PowerLawTortuosity()),
-            thermal_exchange_depth = 0.10,
-            porosity = 0.4))
+                                   state = (temperature = BulkTemperature(), specific_humidity))
 
     radiation = nothing
     if with_radiation
@@ -136,11 +135,10 @@ end
             update_state!(model_with_radiation)
             surface_energy_with_radiation = Array(interior(model_with_radiation.land.fluxes.surface_energy_flux))
 
-            # Net radiative flux into the surface, reconstructed from the kernel's
-            # own stored diagnostics (downwelling stored negative, upwelling positive).
+            # Net upward radiative flux (downwelling negative, upwelling positive).
             rf = model_with_radiation.radiation.interface_fluxes.land
             ΣQʳᵃᵈ = Array(interior(rf.downwelling_longwave)) .+
-                    Array(interior(rf.downwelling_shortwave)) .-
+                    Array(interior(rf.downwelling_shortwave)) .+
                     Array(interior(rf.upwelling_longwave))
 
             model_without_radiation = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0, with_radiation = false)
@@ -150,9 +148,7 @@ end
             @test maximum(abs, ΣQʳᵃᵈ) > 0   # radiation contributes a nonzero flux
             # ... which actually changed the surface energy flux (not dropped):
             @test surface_energy_with_radiation != surface_energy_without_radiation
-            # `surface_energy_flux` is positive-upward, so net-downward radiation
-            # enters as −ΣQʳᵃᵈ, added on top of the turbulent flux:
-            @test surface_energy_with_radiation ≈ surface_energy_without_radiation .- ΣQʳᵃᵈ
+            @test surface_energy_with_radiation ≈ surface_energy_without_radiation .+ ΣQʳᵃᵈ
         end
     end
 end

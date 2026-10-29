@@ -19,6 +19,17 @@
 
 using Accessors: @set
 using NumericalEarth.NestedModels: NestedModel
+using NumericalEarth.EarthSystemModels.InterfaceComputations: initialize_land_interface!, update_surface_temperature!
+
+function Oceananigans.initialize!(model::NumericalEarth.EarthSystemModels.EarthSystemModel{<:Breeze.RadiativeTransferModel})
+    Oceananigans.initialize!(model.interfaces.exchanger, model)
+    if model.clock.iteration == 0
+        initialize_land_interface!(model)
+        update_surface_temperature!(model)
+        update_state!(component_model(model.atmosphere); compute_tendencies=false)
+    end
+    return nothing
+end
 
 """
 $(TYPEDSIGNATURES)
@@ -91,6 +102,6 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(
     nest = atmosphere.model
     child = nest.child
     child = @set child.radiation = CoupledRadiation(radiative_transfer_model)
-    nest = NestedModel(nest.parent, child, nest.exchanger)
-    return Simulation(nest; Δt = atmosphere.Δt)
+    nest = NestedModel(nest.parent, child, nest.exchanger, nest.child_callbacks)
+    return Simulation(nest; Δt = atmosphere.Δt, verbose = atmosphere.verbose)
 end

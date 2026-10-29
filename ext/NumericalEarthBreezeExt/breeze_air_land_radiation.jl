@@ -1,81 +1,94 @@
 #####
-##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
+##### Surface coupling for the Breeze RRTMGP `RadiativeTransferModel`.
 #####
-##### Each coupled step adds the net upward surface radiative flux, ℐˡʷꜛ + ℐˡʷꜜ + (1 - α) ℐˢʷꜜ,
-##### to the slab's `surface_energy_flux` (positive = upward; downwelling stored negative).
-##### Longwave up is rebuilt from the live surface state, ℐˡʷꜛ = ε σ Tₛ⁴ - (1 - ε) ℐˡʷꜜ, since
-##### the RTM's own upwelling longwave is stale between scheduled solves. Shortwave keeps only
-##### the absorbed fraction (1 - α): Breeze stores gross SW↓ with no upwelling field to read
-##### back. Exact for coincident direct/diffuse albedos — the coupled configuration.
-##### TODO: distinct direct/diffuse albedos need Breeze to expose the direct/diffuse SW↓ split.
-#####
+
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Fields: ConstantField, Field
+using Oceananigans.Grids: Center
+using NumericalEarth.EarthSystemModels.InterfaceComputations: radiative_surface
+using NumericalEarth: stateindex
+using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 const BreezeRTM = Breeze.RadiativeTransferModel
+const GrayBreezeRTM = Breeze.RadiativeTransferModel{<:Number, <:Any, <:Any, Nothing}
 
-# Bind the interfaces' diagnostic skin temperature — what the atmosphere actually sees;
-# equal to land.temperature only for bulk formulations — into an RTM constructed without
-# one. Explicit construction wins; with no land interface, Breeze errors at first solve.
-function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
-    isnothing(rtm.surface_radiation.surface_temperature) || return rtm
+# A canopy column radiates σ (Tʳᵃᵈ)⁴ and reflects αʳᵃᵈ; any other land radiates at its interface
+# temperature through the configured optics. Without land, a configured temperature is kept.
+function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_properties(rtm::BreezeRTM, interfaces)
+    land = interfaces.atmosphere_land_interface
+    if !isnothing(land)
+        properties = radiative_surface(land, rtm.surface_radiation.direct_surface_albedo,
+                                       rtm.surface_radiation.surface_emissivity)
+        diffuse = radiative_surface(land, rtm.surface_radiation.diffuse_surface_albedo,
+                                    rtm.surface_radiation.surface_emissivity)
+        emissivity = properties.emissivity isa Number ? ConstantField(properties.emissivity) : properties.emissivity
+        return @set rtm.surface_radiation = Breeze.AtmosphereModels.SurfaceRadiation(
+            properties.temperature, emissivity, properties.albedo, diffuse.albedo)
+    end
+
+    !isnothing(rtm.surface_radiation.surface_temperature) && return rtm
     Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
     isnothing(Tˢ) && return rtm
     return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
-# A Breeze RTM needs no exchange state; without this method the generic constructor
-# would pass the RTM's solver internals into the flux kernel, which cannot compile on GPU.
-NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::BreezeRTM, exchange_grid; kw...) = nothing
+# The RTM's configured surface optics, which the land kernels read as the ground's. The blue-sky
+# albedo is captured here, before the land's radiating surface replaces the RTM's albedos.
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
+    ϵ = rtm.surface_radiation.surface_emissivity
+    α = Field{Center, Center, Nothing}(exchange_grid)
+    state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
+               surface_properties = (; land = SurfaceRadiationProperties(α, ϵ)),
+               configured_albedo = blue_sky_albedo(rtm))
 
-# Empty `surface_properties` keeps radiation out of the turbulent-flux kernel:
-# with a Breeze RTM the radiative term enters via `apply_air_land_radiative_fluxes!` below.
-NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(::BreezeRTM) =
-    (surface_properties = NamedTuple(),)
+    return ComponentExchanger(state, nothing)
+end
 
-@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, Tˢ, ε, σ, ℐˡʷꜜ, ℐˢʷꜜ, α)
+# Downwelling fluxes are negative in both Breeze and the interface state.
+@kernel function _interpolate_breeze_radiation_state!(state, ℐꜜˢʷ, ℐꜜˡʷ, albedo)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        εᵢⱼ = ε[i, j, 1]
-        ℐˡʷꜛ = εᵢⱼ * σ * Tˢ[i, j, 1]^4 - (1 - εᵢⱼ) * ℐˡʷꜜ[i, j, 1]
-        Es[i, j, 1] += ℐˡʷꜛ + ℐˡʷꜜ[i, j, 1] + (1 - α[i, j, 1]) * ℐˢʷꜜ[i, j, 1]
+        state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ[i, j, 1]
+        state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ[i, j, 1]
+        state.surface_properties.land.albedo[i, j, 1] = stateindex(albedo, i, j, 1)
     end
 end
 
-# The generic method reads `PrescribedRadiation`-style `interface_fluxes`;
-# a Breeze RTM carries its surface flux fields directly on the model.
-function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
-        coupled_model :: NumericalEarth.EarthSystemModels.EarthSystemModel{<:BreezeRTM})
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, rtm::BreezeRTM, coupled_model)
+    state = exchanger.state
 
-    land = coupled_model.land
-    isnothing(land) && return nothing
-
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    isnothing(al_interface) && return nothing
-
-    fluxes = land.fluxes
-    hasproperty(fluxes, :surface_energy_flux) || return nothing
-    Es = fluxes.surface_energy_flux
-
-    rtm = coupled_model.radiation
-    grid = land.grid
-    arch = architecture(grid)
-    σ = convert(eltype(grid), NumericalEarth.Radiations.default_stefan_boltzmann_constant)
-    Tˢ = rtm.surface_radiation.surface_temperature
-    ε = rtm.surface_radiation.surface_emissivity
-
-    # Equals `diffuse_surface_albedo` in the coupled configuration; always indexable.
-    α = rtm.surface_radiation.direct_surface_albedo
-
-    launch!(arch, grid, :xy,
-            _apply_breeze_air_land_radiative_fluxes!,
-            Es,
-            Tˢ,
-            ε,
-            σ,
-            rtm.downwelling_longwave_flux,
+    launch!(architecture(exchange_grid), exchange_grid, :xy,
+            _interpolate_breeze_radiation_state!,
+            state,
             rtm.downwelling_shortwave_flux,
-            α)
+            rtm.downwelling_longwave_flux,
+            state.configured_albedo)
+
     return nothing
 end
+
+# σ is NumericalEarth's default: Breeze's `stefan_bolzmann_constant` is not reachable from the
+# model, so land emission pairs with atmospheric absorption only while Breeze keeps that default.
+function NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(rtm::BreezeRTM, exchanger)
+    FT = eltype(rtm.downwelling_shortwave_flux)
+    return (σ = convert(FT, default_stefan_boltzmann_constant),
+            surface_properties = exchanger.state.surface_properties)
+end
+
+# Gray optics transmits the direct beam only.
+blue_sky_albedo(rtm::GrayBreezeRTM) = rtm.surface_radiation.direct_surface_albedo
+
+# Two-stream optics reflect the direct and diffuse beams with their own albedos;
+# their blend is the ratio of upwelling to downwelling shortwave at the surface face k = 1.
+blue_sky_albedo(rtm::BreezeRTM) =
+    KernelFunctionOperation{Center, Center, Nothing}(reflected_shortwave_fraction,
+                                                     rtm.downwelling_shortwave_flux.grid,
+                                                     rtm.upwelling_shortwave_flux,
+                                                     rtm.downwelling_shortwave_flux)
+
+@inline reflected_shortwave_fraction(i, j, k, grid, ℐꜛˢʷ, ℐꜜˢʷ) =
+    @inbounds ifelse(ℐꜜˢʷ[i, j, 1] < 0, - ℐꜛˢʷ[i, j, 1] / ℐꜜˢʷ[i, j, 1], zero(grid))
 
 # The air–sea analog: dispatch peels off no-ocean and prescribed-SST (no net fluxes) cases.
 # A responsive ocean under a Breeze RTM raises a MethodError until its radiative heating
