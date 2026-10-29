@@ -1177,6 +1177,23 @@ end
     shifted = ext.translated_grid(terrain_grid, (2, 1))
     @test all(x_domain(shifted) .≈ (-1 + 2Δλ, 1 + 2Δλ))
     @test shifted.z.formulation isa typeof(terrain_grid.z.formulation)
+
+    # The elevation is a window of the corridor's wherever the child goes: the corridor's cells align
+    # with the child's, which starts 12 cells east and 6 north of the corridor's corner.
+    corridor_grid = LatitudeLongitudeGrid(arch; size = (32, 20, 1), longitude = (-4, 4), latitude = (34.1, 39.1),
+                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    corridor = Field{Center, Center, Nothing}(corridor_grid)
+    set!(corridor, (λ, φ) -> 1000 * exp(-(λ^2 + (φ - 36.6)^2) / 0.25))
+    model = nested_atmosphere_model(parent, terrain_grid; mover = NestMover(track), terrain = corridor,
+                                    terrain_smoothing_passes = 0, terrain_blend_width = 0,
+                                    relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
+                                    coriolis = nothing, parent_condensates = nothing)
+    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    translate_domain!(model, (2, 1))
+    Nx, Ny, _ = size(terrain_grid)
+    bottom_height = Field{Center, Center, Face}(model.child.grid)
+    set!(bottom_height, (λ, φ, z) -> z)
+    @test Array(interior(bottom_height, :, :, 1)) == Array(interior(corridor, 14 .+ (1:Nx), 7 .+ (1:Ny), 1))
 end
 
 @testset "Moving nest: the coupled surfaces relocate with the child on $(arch)" for arch in test_architectures
