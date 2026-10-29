@@ -216,12 +216,13 @@ cancellation — and hence energy conservation under water exchange at the slab
 temperature — is exact only when both use the mass flux hydrology actually
 applied this step.
 
-The clock is ticked first; subsequent closures see `land.clock.time =
-t + Δt`. Time-dependent property providers should therefore evaluate
-at the post-step time (consistent with `Atmospheres` and `Radiations`),
+Hydrology caches start-of-step properties before the clock is ticked; subsequent
+closures see `land.clock.time = t + Δt`. Time-dependent property providers should
+therefore evaluate at the post-step time (consistent with `Atmospheres` and `Radiations`),
 and every `FieldTimeSeries` among them is brought into memory at that time.
 """
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
+    prepare_time_step!(land.hydrology, land)
     tick!(land.clock, Δt)
     time = land.clock.time
 
@@ -353,10 +354,10 @@ Radiative contributions are added on top in
 `apply_air_land_radiative_fluxes!`.
 """
 function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    isnothing(al_interface) && return nothing
+    atmosphere_land_interface = coupled_model.interfaces.atmosphere_land_interface
+    isnothing(atmosphere_land_interface) && return nothing
 
-    interface_fluxes = land_surface_fluxes(al_interface, land.temperature)
+    interface_fluxes = land_surface_fluxes(atmosphere_land_interface, land.temperature)
     fluxes = land.fluxes
     grid = land.grid
     arch = architecture(grid)
