@@ -4,16 +4,17 @@ using NumericalEarth
 using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
-using Oceananigans: prognostic_fields
+using Oceananigans: prognostic_fields, instantiated_location
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
-using Oceananigans.Fields: location
+using Oceananigans.Fields: location, interpolate
 using Oceananigans.Grids: node
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
-                                       regularize_boundary_condition, LeftBoundary, RightBoundary
+                                       regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
+using Oceananigans.Operators: intrinsic_vector, rotation_angle
 using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
-using Oceananigans.Forcings: MultipleForcings
+using Oceananigans.Forcings: MultipleForcings, evaluate_target
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
               SpecificForcing, SaturationAdjustment, WarmPhaseEquilibrium, moisture_prognostic_name,
@@ -154,6 +155,83 @@ end
     set!(narrow.temperature, (λ, φ, z, t) -> 290)
     @test_throws ArgumentError regularize_boundary_condition(NM.Interpolated(narrow.temperature),
                                                              child_grid, loc, 1, LeftBoundary)
+end
+
+@testset "VectorComponent rotates a geographic parent pair into the child's frame" begin
+    # `getbc` here is evaluated on the host, so this is a CPU test: `on_architecture` does not move a
+    # boundary condition's source, and a host-side query of device-resident sources scalar-indexes.
+    # The device path is covered by the stepping testsets below.
+    NM = NumericalEarth.NestedModels
+
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (32, 32, 4), longitude = (-130, -65),
+                                        latitude = (20, 55), z = (0, 1),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+    uᵉ, vᵉ = parent.velocities.u, parent.velocities.v
+    set!(uᵉ, (λ, φ, z, t) -> 10)
+    set!(vᵉ, (λ, φ, z, t) -> 0)
+
+    @test_throws ArgumentError NM.VectorComponent{:w}(uᵉ, vᵉ)
+
+    loc = (Center(), Center(), Center())
+    j, k = 10, 2
+
+    # A conformal-conic child east of its central meridian: grid-x is not east, so a purely eastward
+    # parent must acquire a grid-y component.
+    ccg = LambertConformalConicGrid(CPU(); size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                                    standard_parallels = (33, 45), central_longitude = -100,
+                                    latitude_of_origin = 39, z = (0, 1))
+    regularized(C, grid) = regularize_boundary_condition(NM.Interpolated(NM.VectorComponent{C}(uᵉ, vᵉ)),
+                                                         grid, loc, 1, LeftBoundary)
+    uᵢ = getbc(regularized(:u, ccg), j, k, ccg, nothing)
+    vᵢ = getbc(regularized(:v, ccg), j, k, ccg, nothing)
+
+    θ = rotation_angle(1, j, ccg)
+    @test abs(θ) > 1e-3                      # the test is vacuous on a grid that needs no rotation
+    @test abs(vᵢ) > 0.1                      # a grid-aligned pair would leave this zero
+    @test hypot(uᵢ, vᵢ) ≈ 10 rtol = 1e-4     # a rotation preserves the magnitude
+    @test abs(atan(vᵢ, uᵢ)) ≈ abs(θ) rtol = 1e-3
+
+    # The pair is the child grid's own intrinsic vector, and each component selects its own slot.
+    uᵒ, vᵒ = intrinsic_vector(1, j, k, ccg, 10, 0)
+    @test uᵢ ≈ uᵒ rtol = 1e-5
+    @test vᵢ ≈ vᵒ rtol = 1e-5
+
+    # A `Relaxation` target reaches the rotation through `evaluate_target` rather than `getbc`.
+    @test evaluate_target(1, j, k, ccg, NM.VectorComponent{:u}(uᵉ, vᵉ), loc, 0.0) ≈ uᵒ rtol = 1e-5
+    @test evaluate_target(1, j, k, ccg, NM.VectorComponent{:v}(uᵉ, vᵉ), loc, 0.0) ≈ vᵒ rtol = 1e-5
+
+    # On a child whose axes are already geographic the rotation is the identity.
+    llg = LatitudeLongitudeGrid(CPU(); size = (10, 10, 4), longitude = (-105, -95), latitude = (35, 43),
+                                z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    @test getbc(regularized(:u, llg), j, k, llg, nothing) ≈ 10 rtol = 1e-4
+    @test abs(getbc(regularized(:v, llg), j, k, llg, nothing)) < 1e-5
+    @test evaluate_target(1, j, k, llg, NM.VectorComponent{:u}(uᵉ, vᵉ), loc, 0.0) ≈ 10 rtol = 1e-4
+    @test abs(evaluate_target(1, j, k, llg, NM.VectorComponent{:v}(uᵉ, vᵉ), loc, 0.0)) < 1e-5
+
+    # A C-grid parent's components sit at two different locations, and each is read at its own.
+    staggered = LatitudeLongitudeGrid(CPU(); size = (40, 32, 4), longitude = (-110, -90),
+                                      latitude = (30, 46), z = (0, 1),
+                                      topology = (Bounded, Bounded, Bounded))
+    uˢ = XFaceField(staggered)
+    vˢ = YFaceField(staggered)
+    set!(uˢ, (λ, φ, z) -> 10 + (λ + 100))   # 1 m/s per degree, so half a 0.5° cell is 0.25 m/s
+    set!(vˢ, (λ, φ, z) -> φ - 38)
+
+    vc = NM.VectorComponent{:u}(uˢ, vˢ)
+    @test vc.eastward_loc  === instantiated_location(uˢ)
+    @test vc.northward_loc === instantiated_location(vˢ)
+
+    ℓu = (Face(), Center(), Center())
+    X  = node(1, j, k, ccg, ℓu...)
+    uₒ = interpolate(X, uˢ, instantiated_location(uˢ), staggered)
+    vₒ = interpolate(X, vˢ, instantiated_location(vˢ), staggered)
+    @test evaluate_target(1, j, k, ccg, vc, ℓu, 0.0) ≈ intrinsic_vector(1, j, k, ccg, uₒ, vₒ)[1] rtol = 1e-12
+
+    # Reading the northward component at the consumer's location instead moves the result.
+    vₓ = interpolate(X, vˢ, ℓu, staggered)
+    @test !isapprox(intrinsic_vector(1, j, k, ccg, uₒ, vₓ)[1],
+                    intrinsic_vector(1, j, k, ccg, uₒ, vₒ)[1]; rtol = 1e-6)
 end
 
 @testset "parent_boundary_conditions: bc_types selects BC kind per field" begin
