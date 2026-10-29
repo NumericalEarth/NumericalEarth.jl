@@ -13,7 +13,9 @@ using NumericalEarth.JRA55
 using NumericalEarth.WOA
 
 using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.Fields: interpolate!
+using Oceananigans.Fields: interpolate!, interior
+using Oceananigans: set!
+using Oceananigans.TimeSteppers: update_state!
 
 using CFTime
 using Dates
@@ -55,6 +57,57 @@ test_fields = Dict(
 #####
 ##### Test utilities
 #####
+
+scalar(field) = Array(interior(field))[1, 1, 1]
+
+bare_soil_humidity(FT) = DryLayerHumidity(FT;
+    dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015, dry_layer_onset_saturation = 0.5,
+                                                dry_layer_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5,
+                                                 tortuosity = ConstantTortuosity()))
+
+# Single-column land components; `rain = nothing` skips precipitation and `radiation = nothing` omits radiation.
+function coupled_land_components(arch, FT = Float64;
+                                 grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
+                                                              z = (-1, 0), topology = (Flat, Flat, Bounded)),
+                                 air_temperature = 300.0, air_specific_humidity = 0.008, wind = 3.0, pressure = 101325.0,
+                                 rain = nothing, hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
+                                 land_temperature = 298.0, water = 45.0, surface_storage = nothing,
+                                 shortwave = 600.0, longwave = 350.0, α = 0.2, ϵ = 0.95,
+                                 radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
+                                                                 land_surface = SurfaceRadiationProperties(α, ϵ)))
+    atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10, boundary_layer_height = 512)
+    fill!(parent(atmosphere.temperature), air_temperature)
+    fill!(parent(atmosphere.specific_humidity), air_specific_humidity)
+    fill!(parent(atmosphere.velocities.u), wind)
+    fill!(parent(atmosphere.pressure), pressure)
+    isnothing(rain) || (fill!(parent(atmosphere.precipitation_flux.rain), rain); update_state!(atmosphere))
+    land = SlabLand(grid; hydrology, energy = SlabEnergy(FT), surface_storage)
+    set!(land; T = land_temperature)
+    isnothing(water) || fill!(parent(land.water_storage), water)
+
+    if !isnothing(radiation)
+        fill!(parent(radiation.downwelling_shortwave), shortwave)
+        fill!(parent(radiation.downwelling_longwave), longwave)
+        update_state!(radiation)
+    end
+    return grid, atmosphere, land, radiation
+end
+
+const coupled_land_component_keys = (:grid, :air_temperature, :air_specific_humidity, :wind, :pressure, :rain,
+                                     :hydrology, :land_temperature, :water, :surface_storage, :shortwave, :longwave,
+                                     :α, :ϵ, :radiation)
+
+# Component keywords go to `coupled_land_components`, the rest to `AtmosphereLandModel`.
+function coupled_land_model(arch, FT = Float64; time = nothing, kw...)
+    nt = (; kw...)
+    _, atmosphere, land, radiation = coupled_land_components(arch, FT; nt[filter(in(coupled_land_component_keys), keys(nt))]...)
+    model = AtmosphereLandModel(atmosphere, land; radiation, nt[filter(!in(coupled_land_component_keys), keys(nt))]...)
+    isnothing(time) || (model.clock.time = time)
+    update_state!(model.land)
+    update_state!(model)
+    return model
+end
 
 function test_setting_from_metadata(arch, dataset, start_date, inpainting;
                                     loc = (Center, Center, Center),

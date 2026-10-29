@@ -51,9 +51,9 @@ function SurfacePartition(grid, atmosphere, ocean_fraction, ao_interface, al_int
     þ = Field{Center, Center, Nothing}(grid)
     set!(þ, ocean_fraction)
     fill_halo_regions!(þ)
-    Tₛ = feels_surface ? Field{Center, Center, Nothing}(grid) : nothing
+    Tⁱⁿ = feels_surface ? Field{Center, Center, Nothing}(grid) : nothing
 
-    return SurfacePartition(þ, Tₛ)
+    return SurfacePartition(þ, Tⁱⁿ)
 end
 
 #####
@@ -82,14 +82,14 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
             ℵ,
             interfaces.atmosphere_ocean_interface.temperature,
             Tᵃⁱ,
-            interfaces.atmosphere_land_interface.temperature,
+            EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface),
             interfaces.ocean_properties.temperature_units,
             sea_ice_units)
 
     return nothing
 end
 
-@kernel function _update_surface_temperature!(Tₛ, þ, ℵ, Tᵃᵒ, Tᵃⁱ, Tᵃˡ, ocean_units, sea_ice_units)
+@kernel function _update_surface_temperature!(Tⁱⁿ, þ, ℵ, Tᵃᵒ, Tᵃⁱ, Tᵃˡ, ocean_units, sea_ice_units)
     i, j = @index(Global, NTuple)
     @inbounds begin
         þᵢ = þ[i, j, 1]
@@ -97,6 +97,6 @@ end
         Tᵒ = convert_to_kelvin(ocean_units, Tᵃᵒ[i, j, 1])
         Tⁱ = convert_to_kelvin(sea_ice_units, Tᵃⁱ[i, j, 1])
         Tˡ = Tᵃˡ[i, j, 1]
-        Tₛ[i, j, 1] = (1 - þᵢ) * Tˡ + þᵢ * ((1 - ℵᵢ) * Tᵒ + ℵᵢ * Tⁱ)
+        Tⁱⁿ[i, j, 1] = (1 - þᵢ) * Tˡ + þᵢ * ((1 - ℵᵢ) * Tᵒ + ℵᵢ * Tⁱ)
     end
 end
