@@ -192,14 +192,18 @@ filename = name * "_slices.jld2"
 simulation.output_writers[:slices] = JLD2Writer(nest, outputs; schedule = TimeInterval(10minutes),
                                                 filename, overwrite_files = true)
 
+wall_clock = Ref(time_ns())
+
 function progress(sim)
     child = sim.model.child
     u, v, w = child.velocities
     ρ  = child.dynamics.total_density
     λ₀, φ₀ = Oceananigans.Grids.x_domain(child.grid)[1], Oceananigans.Grids.y_domain(child.grid)[1]
-    @info @sprintf("iter=%4d, t=%s, Δt=%s, nest origin=(%.2f°, %.2f°), max|u|=(%6.1f, %6.1f, %5.1f), ρ ∈ [%.3f, %.3f]",
-                   sim.model.clock.iteration, prettytime(sim), prettytime(sim.Δt), λ₀, φ₀,
+    elapsed = 1e-9 * (time_ns() - wall_clock[])
+    @info @sprintf("iter=%4d, t=%s, Δt=%s, wall=%s, nest origin=(%.2f°, %.2f°), max|u|=(%6.1f, %6.1f, %5.1f), ρ ∈ [%.3f, %.3f]",
+                   sim.model.clock.iteration, prettytime(sim), prettytime(sim.Δt), prettytime(elapsed), λ₀, φ₀,
                    maximum(abs, u), maximum(abs, v), maximum(abs, w), minimum(ρ), maximum(ρ))
+    wall_clock[] = time_ns()
     return nothing
 end
 

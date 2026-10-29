@@ -82,10 +82,10 @@ function relocate!(nested_model, mover::NestMover)
     shift = cell_shift(nested_model.child.grid, mover.tracker(nested_model, t)...)
     maximum(abs, shift) < mover.tolerance && return nothing
 
-    translate_domain!(nested_model, shift)
+    elapsed = @elapsed translate_domain!(nested_model, shift)
 
     λ₀, φ₀ = domain_center(nested_model.child.grid)
     push!(mover.track, (t, λ₀, φ₀))
-    @info "Relocated the nest by $shift cells to ($(λ₀)°, $(φ₀)°) at t = $(prettytime(t))"
+    @info "Relocated the nest by $shift cells to ($(λ₀)°, $(φ₀)°) at t = $(prettytime(t)) in $(prettytime(elapsed))"
     return nothing
 end
