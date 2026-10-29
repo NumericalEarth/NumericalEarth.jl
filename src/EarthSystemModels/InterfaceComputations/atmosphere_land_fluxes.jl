@@ -37,8 +37,12 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
                                    state               = default_al_interface_state(land),
                                    velocity_difference = RelativeVelocity())
-    validate_flux_formulation(fluxes, grid)
     validate_surface_storage(land, state)
+    return build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)
+end
+
+function build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)
+    validate_flux_formulation(fluxes, grid)
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     formulation = InterfaceFormulation(fluxes, state, velocity_difference)
     interface_temperature = build_interface_temperature(temperature_formulation(state), grid)
@@ -55,17 +59,21 @@ function initialize_land_interface!(coupled_model)
     interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(interface) && return nothing
     exchanger = coupled_model.interfaces.exchanger
+    EarthSystemModels.interpolate_state!(exchanger.land, exchanger.grid, coupled_model.land, coupled_model)
+    initialize_land_interface!(coupled_model, interface)
+    return nothing
+end
+
+function initialize_land_interface!(coupled_model, interface, surface_state = land_surface_state(coupled_model.land))
+    exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)
     clock = coupled_model.clock
-    EarthSystemModels.interpolate_state!(exchanger.land, grid, coupled_model.land, coupled_model)
     state = interface.formulation.state
     leaf_area_index = canopy_leaf_area_index(specific_humidity_formulation(state))
     vegetation, time_interpolator = kernel_surface_field(leaf_area_index, arch, clock.time)
-    surface_state = land_surface_state(coupled_model.land)
-    storage = surface_state.state
     launch!(arch, grid, :xy, _initialize_land_interface!, interface.temperature,
-            exchanger.land.state.T, storage, grid, clock, state, vegetation, time_interpolator)
+            exchanger.land.state.T, surface_state.state, grid, clock, state, vegetation, time_interpolator)
     return nothing
 end
 
@@ -207,7 +215,8 @@ compute_atmosphere_land_fluxes!(coupled_model, Δt) =
 
 compute_atmosphere_land_fluxes!(coupled_model, ::Nothing, Δt) = nothing
 
-function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interface, Δt)
+function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interface, Δt,
+                                         surface_state = land_surface_state(coupled_model.land))
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)
@@ -226,7 +235,6 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
     FT = eltype(grid)
-    surface_state = land_surface_state(coupled_model.land)
     land_state = merge(exchanger.land.state,
                        (surface_storage = surface_state.state,
                         thermal_exchange_depth = thermal_exchange_depth(temperature_formulation(interface_formulation.state))))
