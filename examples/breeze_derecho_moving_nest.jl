@@ -180,7 +180,7 @@ conjure_time_step_wizard!(simulation, IterationInterval(3); cfl = 0.5, max_Δt =
 
 k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
 
-slice(operation, k) = Array(interior(compute!(Field(operation; indices = (:, :, k)))))
+slice(operation, k) = Array(interior(compute!(Field(operation; indices = (:, :, k)))))[:, :, 1]
 
 outputs = (U  = model -> slice(sqrt(model.child.velocities.u^2 + model.child.velocities.v^2), 1),
            θᵛ = model -> slice(VirtualPotentialTemperature(model.child), 1),
