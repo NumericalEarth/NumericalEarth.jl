@@ -107,7 +107,7 @@ dry_layer_onset_saturation = 0.5   # onset saturation 𝒮ᶜ, read by `make_dry
 # saturated and arrested evaporation phases. We start *below* `𝒮ᶜ`, so a dry surface layer is
 # already present (`δᵛ > 0`) and evaporation is initially throttled. The pulse amplitude
 # stays below the soil infiltration capacity, so the `InfiltrationCapacityRunoff` model does not
-# shed water. With `NoDeepLiquidFlux` closing the bottom, evaporation is the only water sink.
+# shed water. With `NoDeepLiquidWaterFlux` closing the bottom, evaporation is the only water sink.
 # The pulse drives storage briefly past the saturation value `Mˡᵃ⁺ = ρˡ ν hˡᵃ`. Using the
 # augmented liquid fraction as the tracer, it can go above saturation, carrying the excess
 # as a positive pressure head (`𝒮` pinned at 1).
@@ -155,21 +155,19 @@ variably_saturated_hydrology(FT, porosity; slab_depth) = VariablySaturatedHydrol
     storage_height         = 1000,
     retention_curve        = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
     hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2),
-    deep_liquid_flux       = NoDeepLiquidFlux(),
+    deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
     runoff                 = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 
 # The dry-layer humidity closure: the front depth grows from 0 (saturated skin)
 # toward `δᵛ_max` as the slab dries past `𝒮ᶜ`, and `qⁱⁿ` is solved from the
 # vapor-flux balance through it.
-make_dry_layer_humidity(porosity) = DryLayerHumidity(;
+make_dry_layer_humidity() = DryLayerHumidity(;
     dry_layer_depth = StorageBasedDryLayerDepth(; maximum_dry_layer_depth = 0.05,
                                                 dry_layer_onset_saturation,
                                                 dry_layer_exponent      = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4,
                                                  molecular_diffusivity   = 2.5e-5,
-                                                 tortuosity              = PowerLawTortuosity()),
-    thermal_exchange_depth = 0.10,
-    porosity)
+                                                 tortuosity              = PowerLawTortuosity()))
 
 # Now, we assemble the coupled model used by the *differentiable* stages.
 # For differentiability purposes, the turbulent fluxes use a fixed-iteration Monin–Obukhov solver
@@ -181,16 +179,15 @@ make_dry_layer_humidity(porosity) = DryLayerHumidity(;
 # but a Reactant `ConcreteRNumber` clock on a `ReactantState` grid — the latter
 # advances model time *inside* the compiled XLA loop, so the time-dependent forcing
 # is sampled correctly each step.
-function coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology, humidity_porosity,
+function coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology,
                                  exchanger_correction = nothing)
     slab_land = SlabLand(grid; energy, hydrology)
     fluxes = NumericalEarth.EarthSystemModels.InterfaceComputations.default_atmosphere_land_fluxes(
                  slab_land, eltype(grid); solver_stop_criteria = FixedIterations(8))
-    al_interface = atmosphere_land_interface(grid, atmosphere, slab_land;
-                                             specific_humidity = make_dry_layer_humidity(humidity_porosity),
-                                             fluxes)
     return AtmosphereLandModel(atmosphere, slab_land; radiation,
-                               atmosphere_land_interface = al_interface,
+                               atmosphere_land_fluxes = fluxes,
+                               atmosphere_land_interface_state = (temperature = BulkTemperature(),
+                                                                  specific_humidity = make_dry_layer_humidity()),
                                exchanger_correction, clock = Clock(grid))
 end
 
@@ -201,8 +198,7 @@ function dry_layer_model(grid, times, 𝒫̇)
     hydrology  = variably_saturated_hydrology(eltype(grid), porosity; slab_depth)
     atmosphere = forced_atmosphere(grid, times, 𝒫̇)
     radiation  = forced_radiation(grid, times)
-    return coupled_slab_land_model(grid, atmosphere, radiation;
-                                   energy, hydrology, humidity_porosity = porosity)
+    return coupled_slab_land_model(grid, atmosphere, radiation; energy, hydrology)
 end
 
 # ## Integration length
@@ -561,11 +557,10 @@ atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0
                                                 temperature_roughness_length = 0.01,
                                                 water_vapor_roughness_length = 0.01)
 
-interface_specific_humidity = make_dry_layer_humidity(nominal_porosity)
-
 al_interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
                                          fluxes = atmosphere_land_fluxes,
-                                         specific_humidity = interface_specific_humidity)
+                                         state = (temperature = BulkTemperature(),
+                                                  specific_humidity = make_dry_layer_humidity()))
 
 model = AtmosphereLandModel(atmosphere, slab_land;
                             radiation,
@@ -590,14 +585,14 @@ end
 add_callback!(simulation, progress, IterationInterval(144))  # ~12 h
 
 # The variably-saturated hydrology reports a signed vapor flux `Jᵛ` (positive
-# upward — evaporation) and a liquid precipitation flux `Pˡ` (positive downward).
+# upward — evaporation) and a liquid water precipitation flux `Pˡ` (positive downward).
 
 outputs = (T = slab_land.temperature,
            W = slab_land.water_storage,
            𝒮 = slab_land.saturation,
            Q = slab_land.fluxes.surface_energy_flux,
            E = slab_land.fluxes.vapor_flux,
-           P = slab_land.fluxes.liquid_precipitation_flux)
+           P = slab_land.fluxes.liquid_water_precipitation_flux)
 
 filename = "era5_forced_slab_land"
 
@@ -710,7 +705,7 @@ nothing #hide
 #
 # The pointwise reading of the map relies on columns being independent: the
 # hydrology has no lateral coupling (`InfiltrationCapacityRunoff` is a per-cell
-# sink whose cap depends only on precipitation, not on ν, and `NoDeepLiquidFlux`
+# sink whose cap depends only on precipitation, not on ν, and `NoDeepLiquidWaterFlux`
 # closes the bottom), so with the scalar objective `L = Σ T(λ, φ)` the cross terms
 # vanish and `dL/dν(λ, φ) = ∂T(λ, φ)/∂ν(λ, φ)` is exactly the pointwise
 # sensitivity. A per-cell finite difference checks both the adjoint and this
@@ -814,11 +809,11 @@ function porosity_field_on(grid, value)
     return ν
 end
 
-function era5_slab_land_model(grid, forcing, porosity_field, porosity_scalar; exchanger_correction = nothing)
+function era5_slab_land_model(grid, forcing, porosity_field; exchanger_correction = nothing)
     energy    = soil_energy(eltype(grid); deep_time_scale = 12hours)
     hydrology = variably_saturated_hydrology(eltype(grid), porosity_field; slab_depth)
     return coupled_slab_land_model(grid, forcing.atmos, forcing.rad;
-                                   energy, hydrology, humidity_porosity = porosity_scalar,
+                                   energy, hydrology,
                                    exchanger_correction)
 end
 
@@ -853,7 +848,7 @@ atmosphere_elevation = Array(interior(z_era5_patch, :, :, 1))
 patch_correction     = AltitudeCorrection(surface_elevation, atmosphere_elevation; lapse_rate = Γ_lapse)
 
 function run_forward(grid, forcing, T₀, porosity_field)
-    model = era5_slab_land_model(grid, forcing, porosity_field, nominal_porosity;
+    model = era5_slab_land_model(grid, forcing, porosity_field;
                                  exchanger_correction = patch_correction)
     parent(model.land.temperature) .= parent(T₀)
     set!(model.land; M = initial_water_storage)
@@ -877,7 +872,7 @@ forward = run_forward(cpu_grid, cpu_forcing, T₀_cpu, cpu_porosity)
 grid_ad    = make_land_grid(ReactantState())
 forcing_ad = transfer_forcing(grid_ad, cpu_forcing)
 model_ad   = era5_slab_land_model(grid_ad, forcing_ad,
-                                  porosity_field_on(grid_ad, nominal_porosity), nominal_porosity;
+                                  porosity_field_on(grid_ad, nominal_porosity);
                                   exchanger_correction = patch_correction)
 
 # Populate the state-exchanger regridder explicitly before the compiled run.
