@@ -5,7 +5,8 @@ using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
-using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
+using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, OnDisk, InMemory, Cyclical
+using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate
 using Oceananigans.Grids: node
@@ -13,7 +14,7 @@ using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
 using Oceananigans.Operators: intrinsic_vector, rotation_angle
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
 using Oceananigans.Forcings: MultipleForcings, evaluate_target
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
@@ -137,9 +138,9 @@ end
     parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
     set!(parent.temperature, (λ, φ, z, t) -> 290)
 
-    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
-                                           standard_parallels = (33, 45), central_longitude = -100,
-                                           latitude_of_origin = 39, z = (0, 1))
+    child_grid = ConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                                    standard_parallels = (33, 45), central_longitude = -100,
+                                    latitude_of_origin = 39, z = (0, 1))
     loc = (Center(), Center(), Center())
     bc = NM.Interpolated(parent.temperature)
 
@@ -178,9 +179,9 @@ end
 
     # A conformal-conic child east of its central meridian: grid-x is not east, so a purely eastward
     # parent must acquire a grid-y component.
-    ccg = LambertConformalConicGrid(CPU(); size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
-                                    standard_parallels = (33, 45), central_longitude = -100,
-                                    latitude_of_origin = 39, z = (0, 1))
+    ccg = ConformalConicGrid(CPU(); size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                             standard_parallels = (33, 45), central_longitude = -100,
+                             latitude_of_origin = 39, z = (0, 1))
     regularized(C, grid) = regularize_boundary_condition(NM.Interpolated(NM.VectorComponent{C}(uᵉ, vᵉ)),
                                                          grid, loc, 1, LeftBoundary)
     uᵢ = getbc(regularized(:u, ccg), j, k, ccg, nothing)
@@ -770,8 +771,8 @@ end
 @testset "Boundary relaxation mask and parent region follow a Lambert-conformal child's walls on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     Nx, Ny, width = 40, 30, 5
-    grid = LambertConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
-                                     standard_parallel = 38.5, z = (0, 1))
+    grid = ConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
+                              standard_parallel = 38.5, z = (0, 1))
 
     mask = CenterField(grid)
     set!(mask, ext.boundary_relaxation_mask(grid, width))
@@ -913,6 +914,36 @@ end
     m₂ = memory_index(fts.backend, fts.time_indexing, length(fts.times), n₂)
     @test 1 ≤ m₁ ≤ length(fts.backend)
     @test 1 ≤ m₂ ≤ length(fts.backend)
+end
+
+@testset "StateExchanger: a streaming parent's window stays put over the last interval" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    parent_grid = RectilinearGrid(CPU(); size = (4, 4, 2), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times = 0.0:1.0:4.0
+    path = joinpath(mktempdir(), "parent_temperature.jld2")
+    on_disk = FieldTimeSeries{Center, Center, Center}(parent_grid, times; backend = OnDisk(), path, name = "T")
+    field = CenterField(parent_grid)
+    for n in eachindex(times)
+        set!(field, 280 + times[n])
+        set!(on_disk, field, n)
+    end
+
+    temperature = FieldTimeSeries(path, "T"; backend = InMemory(3), time_indexing = Cyclical(), architecture = CPU())
+    parent = PrescribedAtmosphere(parent_grid, collect(times); temperature)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.pressure, (x, y, z, t) -> 9.0e4)
+
+    exchanger = ext.state_exchanger(parent, 1.0e5, ThermodynamicConstants(); condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+
+    # The child window is clamped at levels 3:5 and the parent, stepped to 3.5, needs levels 4 and 5.
+    for _ in 1:2
+        NumericalEarth.NestedModels.exchange_state!(exchanger, 3.5)
+        parent.clock.time = 3.5
+        update_state!(parent)
+        @test temperature.backend.start == 3
+    end
 end
 
 @testset "StateExchanger: moving-window runtime queries match full-memory queries on CPU()" begin
