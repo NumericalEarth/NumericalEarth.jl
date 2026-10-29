@@ -1,12 +1,13 @@
 module InterfaceComputations
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES, SIGNATURES
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
-using Oceananigans: Oceananigans, location
+using Oceananigans: Oceananigans, location, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
-using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
+using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, ZeroField
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
+using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices, update_field_time_series!
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -23,9 +24,14 @@ export
     PolynomialNeutralDragCoefficient,
     LargeYeagerTransferCoefficients,
     LinearStableStabilityFunction,
+    FreeConvectionMomentumStabilityFunction,
+    FreeConvectionScalarStabilityFunction,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     ConvectiveGustiness,
     SubgridVelocityCorrection,
@@ -42,11 +48,20 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CanopyInterface,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    ExponentialSoilResistance,
+    GroundSurfaceResistance,
+    JarvisConductance,
+    AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
     atmosphere_land_interface,
     surface_layer_diagnostics,
@@ -59,8 +74,10 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           celsius_to_kelvin,
                            default_latent_heat_of_fusion,
                            thermodynamics_parameters,
+                           molmass_dryair,
                            surface_layer_height,
                            boundary_layer_height
 
@@ -78,9 +95,10 @@ net_fluxes(::Nothing) = nothing
 ##### with concrete methods for `PrescribedRadiation`.
 #####
 
-# `nothing` fallback (radiation is off). Concrete methods for
-# `PrescribedRadiation` (and future radiation types) are added in `Radiations`.
-@inline kernel_radiation_properties(::Nothing) = nothing
+# `nothing` fallback (radiation is off). Concrete methods for `PrescribedRadiation` (and
+# future radiation types) are added in `Radiations`; the exchanger is for radiations whose
+# surface optics the interfaces read from it.
+@inline kernel_radiation_properties(::Nothing, ::Nothing) = nothing
 
 @inline function air_sea_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
     z = zero(eltype(grid))
@@ -100,6 +118,12 @@ end
 #####
 ##### Utilities
 #####
+
+# Optional kernel outputs: a `nothing` slot is skipped at compile time.
+@inline maybe_write!(::Nothing, i, j, value) = nothing
+@inline maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
+@inline maybe_accumulate!(::Nothing, i, j, value) = nothing
+@inline maybe_accumulate!(field, i, j, value) = @inbounds field[i, j, 1] += value
 
 @kernel function _compute_fractional_indices!(indices_tuple, exchange_grid, source_grid, ℓx, ℓy)
     i, j = @index(Global, NTuple)
@@ -168,8 +192,13 @@ end
 
 # Turbulent fluxes
 include("roughness_lengths.jl")
+include("moisture_stress.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
+include("stomatal_conductance.jl")
+include("absorbed_par.jl")
+include("canopy_conductance.jl")
+include("canopy_air_space.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
@@ -190,5 +219,6 @@ include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
 include("sea_ice_ocean_fluxes.jl")
 include("surface_layer_diagnostics.jl")
+include("checkpointing.jl")
 
 end # module
