@@ -474,6 +474,7 @@ end_date   = last(dates)
 Nt         = length(dates)
 
 atmosphere = ERA5PrescribedAtmosphere(arch; dataset, start_date, end_date, region,
+                                      pressure = :surface_pressure,
                                       surface_layer_height  = 10,
                                       boundary_layer_height = 800)
 
@@ -772,7 +773,8 @@ end
 
 function inmemory_forcing(land_grid)
     era5_atmos = ERA5PrescribedAtmosphere(CPU(); dataset, start_date = patch_start_date, end_date = patch_end_date,
-                                          region = patch_region, surface_layer_height, boundary_layer_height)
+                                          region = patch_region, pressure = :surface_pressure,
+                                          surface_layer_height, boundary_layer_height)
     era5_rad   = ERA5PrescribedRadiation(CPU(); dataset, start_date = patch_start_date, end_date = patch_end_date,
                                          region = patch_region, land_surface)
     times = era5_atmos.velocities.u.times

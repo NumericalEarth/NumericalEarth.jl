@@ -1210,13 +1210,14 @@ end
     netcdf_names = Dict(ERA5_dataset_variable_names[name] => ERA5_netcdf_variable_names[name]
                         for name in keys(ERA5_netcdf_variable_names))
 
-    # Dewpoint, surface pressure, total precipitation and snowfall change every hour, so each snapshot of qᵛ and of
+    # Dewpoint, pressures, total precipitation and snowfall change every hour, so each snapshot of qᵛ and of
     # the rain is distinct. Precipitation and snowfall are hourly depths (m): 3.6e-3 m is 1e-3 kg m⁻² s⁻¹. At hour 0
     # the snowfall exceeds the total precipitation, so the rain is floored at zero.
     hourly_value(nc_name, time) = nc_name == "d2m" ? 260 + Dates.hour(time) :
                                   nc_name == "sp"  ? 9e4 + 1e3 * Dates.hour(time) :
                                   nc_name == "tp"  ? 3.6e-3 * (1 + Dates.hour(time)) :
-                                  nc_name == "sf"  ? 3.6e-3 * 1.5 : 1
+                                  nc_name == "sf"  ? 3.6e-3 * 1.5 :
+                                  nc_name == "msl" ? 1.01e5 + 1e2 * Dates.hour(time) : 1
 
     function fake_retrieve(product, request, path)
         times = vec([DateTime(parse(Int, y), parse(Int, m), parse(Int, d), parse(Int, h[1:2]))
@@ -1243,7 +1244,7 @@ end
 
     mktempdir() do dir
         names = (:eastward_velocity, :northward_velocity, :temperature,
-                 :dewpoint_temperature, :surface_pressure, :total_precipitation, :snowfall)
+                 :dewpoint_temperature, :mean_sea_level_pressure, :total_precipitation, :snowfall)
         download(MetadataSet(names...; dataset, start_date, end_date, dir, region); retrieve = fake_retrieve)
 
         atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset, start_date, end_date, dir, region,
@@ -1256,8 +1257,8 @@ end
         for n in (1, 5, 8)
             time = start_date + Hour(n - 1)
             Tᵈ = Float32(hourly_value("d2m", time))
-            pˢ = Float32(hourly_value("sp", time))
-            @test all(interior(qᵛ[n]) .≈ saturation_specific_humidity(ℂ, Tᵈ, pˢ, Liquid()))
+            p  = Float32(hourly_value("msl", time))
+            @test all(interior(qᵛ[n]) .≈ saturation_specific_humidity(ℂ, Tᵈ, p, Liquid()))
         end
 
         rain = atmosphere.precipitation_flux.rain
@@ -1272,6 +1273,14 @@ end
             @test all(interior(rain[n]) .≈ max(Jᵖ - Jˢⁿ, 0))
         end
         @test all(interior(rain[1]) .== 0)
+
+        download(MetadataSet(:surface_pressure; dataset, start_date, end_date, dir, region); retrieve = fake_retrieve)
+        atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset, start_date, end_date, dir, region,
+                                              time_indices_in_memory = 3, pressure = :surface_pressure)
+        time = start_date + Hour(4)
+        @test all(interior(atmosphere.pressure[5]) .≈ Float32(hourly_value("sp", time)))
+        @test all(interior(atmosphere.specific_humidity[5]) .≈
+                  saturation_specific_humidity(ℂ, Float32(hourly_value("d2m", time)), Float32(hourly_value("sp", time)), Liquid()))
     end
 end
 
