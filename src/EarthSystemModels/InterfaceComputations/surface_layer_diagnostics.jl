@@ -11,23 +11,23 @@ using ..EarthSystemModels: DegreesKelvin
     ℂᵃᵗ = interface_state.thermodynamics_parameters
 
     @inbounds begin
-        Tₛ = convert_to_kelvin(interface_state.temperature_units, interface_state.temperature[i, j, 1])
-        qₛ = interface_state.specific_humidity[i, j, 1]
+        Tⁱⁿ = convert_to_kelvin(interface_state.temperature_units, interface_state.temperature[i, j, 1])
+        qⁱⁿ = interface_state.specific_humidity[i, j, 1]
         u★ = interface_state.fluxes.friction_velocity[i, j, 1]
         θ★ = interface_state.fluxes.temperature_scale[i, j, 1]
         q★ = interface_state.fluxes.water_vapor_scale[i, j, 1]
     end
 
-    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, interface_state.gravitational_acceleration)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, interface_state.gravitational_acceleration)
     L★ = monin_obukhov_length(u★, b★, ℱ.von_karman_constant)
 
     # The admissible roughness formulations do not read the bulk velocity.
     U = zero(u★)
-    ℓu₀ = roughness_length(ℱ.roughness_lengths.momentum, u★, U, ℂᵃᵗ, Tₛ)
-    ℓθ₀ = roughness_length(ℱ.roughness_lengths.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
-    ℓq₀ = roughness_length(ℱ.roughness_lengths.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
+    ℓu₀ = roughness_length(ℱ.roughness_lengths.momentum, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓθ₀ = roughness_length(ℱ.roughness_lengths.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓq₀ = roughness_length(ℱ.roughness_lengths.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
 
-    return (; formulation = ℱ, L★, Tₛ, qₛ, u★, θ★, q★, ℓu₀, ℓθ₀, ℓq₀)
+    return (; formulation = ℱ, L★, Tⁱⁿ, qⁱⁿ, u★, θ★, q★, ℓu₀, ℓθ₀, ℓq₀)
 end
 
 # The similarity profile `Π` at the geometric height `z`, undefined inside the
@@ -97,7 +97,7 @@ end
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πθ = displaced_similarity_profile(ℱ, ℱ.stability_functions.temperature, z, scales.ℓθ₀, scales.L★)
-    θ = similarity_theory_state(scales.Tₛ, scales.θ★, ℱ.von_karman_constant, Πθ)
+    θ = similarity_theory_state(scales.Tⁱⁿ, scales.θ★, ℱ.von_karman_constant, Πθ)
 
     # `θ★` scales a potential temperature referenced to z = 0; the diagnostic is in situ.
     @inbounds qᵃᵗ = interface_state.atmosphere_specific_humidity[i, j, 1]
@@ -109,11 +109,11 @@ end
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πq = displaced_similarity_profile(ℱ, ℱ.stability_functions.water_vapor, z, scales.ℓq₀, scales.L★)
-    return similarity_theory_state(scales.qₛ, scales.q★, ℱ.von_karman_constant, Πq)
+    return similarity_theory_state(scales.qⁱⁿ, scales.q★, ℱ.von_karman_constant, Πq)
 end
 
 """
-$(SIGNATURES)
+$(TYPEDSIGNATURES)
 
 Return the named tuple `(; u, v, T, q)` of lazy `KernelFunctionOperation`s that evaluate the
 Monin--Obukhov profile of `interface` at the requested heights above the interface: the wind
@@ -121,6 +121,9 @@ components at `velocity_height`, the in-situ temperature at `temperature_height`
 specific humidity at `specific_humidity_height`, all in meters. The heights default to the WMO
 observation heights, `velocity_height = 10` and `temperature_height = specific_humidity_height
 = 2`, and `interface` defaults to `model.interfaces.atmosphere_land_interface`.
+
+For tiled land, each variable is the area-weighted mean of the two tile profiles.
+Pass `interface.vegetated` or `interface.bare` to obtain an individual tile's profile.
 
 Each variable is the similarity profile evaluated with the scales that `interface` stored at
 the last flux solve,
@@ -195,7 +198,7 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
     FT = eltype(grid)
 
     interface_state = (fluxes = interface.fluxes,
-                       temperature = interface.temperature,
+                       temperature = interface_node_temperature(interface.temperature),
                        specific_humidity = interface.specific_humidity,
                        atmosphere_specific_humidity = interfaces.exchanger.atmosphere.state.q,
                        atmosphere_velocities = (u = interfaces.exchanger.atmosphere.state.u,
@@ -214,4 +217,25 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
             v = SurfaceLayerOperation(similarity_theory_y_velocity, grid, interface_state, convert(FT, velocity_height)),
             T = SurfaceLayerOperation(similarity_theory_temperature, grid, interface_state, convert(FT, temperature_height)),
             q = SurfaceLayerOperation(similarity_theory_specific_humidity, grid, interface_state, convert(FT, specific_humidity_height)))
+end
+
+function surface_layer_diagnostics(model, interface::TiledLandInterface; kw...)
+    vegetated = surface_layer_diagnostics(model, interface.vegetated; kw...)
+    bare = surface_layer_diagnostics(model, interface.bare; kw...)
+    grid = model.interfaces.exchanger.grid
+
+    return map(vegetated, bare) do vegetated_profile, bare_profile
+        KernelFunctionOperation{Center, Center, Nothing}(tiled_surface_layer_profile, grid,
+                                                         vegetated_profile, bare_profile,
+                                                         interface.cover_fraction, model.clock)
+    end
+end
+
+@inline function tiled_surface_layer_profile(i, j, k, grid, vegetated, bare, cover_fraction, clock)
+    f = clamp(state2dindex(cover_fraction, i, j, grid, Time(clock.time)), 0, 1)
+    @inbounds vegetated_value = vegetated[i, j, k]
+    @inbounds bare_value = bare[i, j, k]
+    # A zero-area tile's profile can be NaN (e.g. below its roughness length), and 0 * NaN = NaN
+    return ifelse(f == 0, bare_value, ifelse(f == 1, vegetated_value,
+                  f * vegetated_value + (1 - f) * bare_value))
 end

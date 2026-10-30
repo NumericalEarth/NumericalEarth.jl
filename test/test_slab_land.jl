@@ -13,6 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
                                                               iterate_interface_fluxes,
+                                                              land_surface_fluxes,
                                                               RelativeVelocity,
                                                               celsius_to_kelvin,
                                                               land_temperature,
@@ -228,9 +229,10 @@ end
         P = CenterField(grid)
         E = CenterField(grid)
         Jʳⁿ = CenterField(grid)  # atmospheric rainfall flux on exchange grid
-        interface_fluxes = (sensible_heat = CenterField(grid),
-                           latent_heat   = CenterField(grid),
-                           water_vapor  = CenterField(grid))
+        model = coupled_land_model(arch; grid)
+        interface = model.interfaces.atmosphere_land_interface
+        interface_fluxes = interface.fluxes
+        land_fluxes = land_surface_fluxes(interface, model.land.temperature)
 
         # Evaporation in model convention is positive upward => water-vapor flux > 0
         fill!(parent(interface_fluxes.sensible_heat), 0)
@@ -243,7 +245,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0.5; atol=1e-12)
@@ -255,7 +257,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0.5; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -269,7 +271,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 1.7; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -284,7 +286,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, Es, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(only(Array(interior(Es))), -3; atol=1e-12)
     end
