@@ -14,7 +14,7 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "f90db3288b403d3f1367958e429c6473a77922ee"}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "eb66ca6548130af370418b95a0b568539086cb05"}
 NumericalEarth = {path = ".."}
 
 [compat]
