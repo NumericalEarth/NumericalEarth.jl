@@ -2,6 +2,7 @@ module Oceans
 
 export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean, TimeInterpolatedPotential,
        ScalarSelfAttractionAndLoading, SphericalHarmonicSelfAttractionAndLoading,
+       AsymptoticLoadLoveNumbers, ConvolutionLoadingOperator, loading_gradient!, loading_gradient_transpose!,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
@@ -68,6 +69,7 @@ include("slab_ocean.jl")
 include("prescribed_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("self_attraction_and_loading.jl")
+include("convolution_self_attraction_and_loading.jl")
 include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
