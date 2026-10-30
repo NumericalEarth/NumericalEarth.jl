@@ -437,12 +437,12 @@ end
 
 # Fraction of the start-of-step node value surviving in the step mean of the node
 # balance C dx/dt = Σg (x^{eq} − x): m = (τ/Δt)(1 − e^{−Δt/τ}) with τ = C/Σg. A massless
-# node (C = 0) or Δt = 0 gives 0, the diagnostic equilibrium.
+# node (C = 0) gives 0, the equilibrium; Δt = 0 gives the limit m = 1, the stored node.
 @inline function node_memory(Σg, C, Δt)
     FT = typeof(Σg)
     τ  = C / max(Σg, eps(FT))
     m  = -(τ / max(Δt, eps(FT))) * expm1(-Δt / τ)
-    return ifelse((Δt > 0) & (C > 0), m, zero(FT))
+    return ifelse(C > 0, ifelse(Δt > 0, m, one(FT)), zero(FT))
 end
 
 # Canopy-air node value: the conductance-weighted mean of its sources, blended with the
@@ -464,12 +464,12 @@ $(TYPEDSIGNATURES)
 
 Advance a prognostic canopy-air node value `x` toward its conductance-weighted
 `equilibrium` ``x^{eq}`` over `Δt`, the exact solution of ``C \\, dx/dt = Σg (x^{eq} - x)``
-at fixed conductances: ``x ← x^{eq} + (x - x^{eq}) e^{-Δt Σg / C}``. `Δt = 0` or
-`C = 0` return the equilibrium.
+at fixed conductances: ``x ← x^{eq} + (x - x^{eq}) e^{-Δt Σg / C}``. `C = 0` returns
+the equilibrium.
 """
 @inline function advance_canopy_air(x, equilibrium, Σg, C, Δt)
     FT = typeof(x)
-    decay = ifelse((Δt > 0) & (C > 0), exp(-Δt * Σg / max(C, eps(FT))), zero(FT))
+    decay = ifelse(C > 0, exp(-Δt * Σg / max(C, eps(FT))), zero(FT))
     return equilibrium + (x - equilibrium) * decay
 end
 
@@ -481,8 +481,8 @@ $(TYPEDSIGNATURES)
 
 Solve the leaf and ground energy balances by quasi-Newton iteration, using the analytical
 step-mean canopy-air temperature and humidity over `Δt` at fixed effective conductances
-and sources. `Δt = 0` computes diagnostic equilibrium.
-Without canopy-air storage, the node balances its heat and vapor fluxes instantaneously.
+and sources. `Δt = 0` holds the stored canopy-air state fixed. Without canopy-air storage,
+the node balances its heat and vapor fluxes instantaneously.
 The leaf-conductance derivative is evaluated by a one-sided difference.
 """
 @inline function canopy_air_space_solve(c::CanopyInterface, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)

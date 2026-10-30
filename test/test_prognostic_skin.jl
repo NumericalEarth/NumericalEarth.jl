@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
+using NumericalEarth.EarthSystemModels: step_interface!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilSkinTemperature, EnergyBalanceTemperature, SoilConductiveFlux
 using NumericalEarth.Radiations: default_stefan_boltzmann_constant
@@ -16,7 +17,7 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
 
 @testset "Prognostic energy-balance skin" begin
     for arch in test_architectures
-        windy = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=storage)
+        windy = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); atmosphere_land_interface_storage=storage)
                  for storage in (PrognosticSkin(heat_capacity = 1e5), nothing)]
         for _ in 1:36, model in windy
             time_step!(model, 300.0)
@@ -25,14 +26,14 @@ calm = (; shortwave = 50.0, wind = 0.2, air_temperature = 304.0, land_temperatur
         @test scalar(prognostic.temperature) ≈ scalar(diagnostic.temperature) atol = 0.5
         @test scalar(prognostic.fluxes.latent_heat) ≈ scalar(diagnostic.fluxes.latent_heat) atol = 10
 
-        # The storage tendency closes the surface energy balance up to linearization error.
+        # Over an interface step, the storage tendency closes the surface energy balance up to linearization error.
         C, Δt, Λ, σ = 1e5, 300.0, 30.0, default_stefan_boltzmann_constant
-        model = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin(heat_capacity=C), calm...)
+        model = bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); atmosphere_land_interface_storage=PrognosticSkin(heat_capacity=C), calm...)
         interface = model.interfaces.atmosphere_land_interface
         Tⁱⁿ⁻, worst = scalar(interface.temperature), 0.0
         for _ in 1:48
             Tˡᵃ = scalar(model.land.temperature)
-            time_step!(model, Δt)
+            step_interface!(model.interfaces, model, Δt)
             Tⁱⁿ   = scalar(interface.temperature)
             𝒬ᵍʳⁿᵈ = Λ * (Tⁱⁿ - Tˡᵃ)
             𝒬ᵛ   = scalar(interface.fluxes.latent_heat)
@@ -54,7 +55,7 @@ end
 
     # The first update_state! lands near, but not exactly on, the massless energy-balance root.
     for arch in test_architectures
-        Tp = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin())))
+        Tp = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); atmosphere_land_interface_storage=PrognosticSkin())))
         Td = scalar(skin_temperature(bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05))))
         @test Tp ≈ Td atol = 1
         @test abs(Tp - Td) < abs(298 - Td)
@@ -67,7 +68,7 @@ end
                                      z = (-1, 0), topology = (Bounded, Bounded, Bounded))
         Cfield = Field{Center, Center, Nothing}(grid)
         set!(Cfield, reshape([1e4, 1e6], 2, 1, 1))
-        models = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); surface_storage=PrognosticSkin(heat_capacity=C), grid, calm...) for C in (Cfield, 1e4, 1e6)]
+        models = [bare_soil_model(arch, SoilSkinTemperature(1.5, 0.05); atmosphere_land_interface_storage=PrognosticSkin(heat_capacity=C), grid, calm...) for C in (Cfield, 1e4, 1e6)]
         for _ in 1:12, model in models
             time_step!(model, 300.0)
         end
@@ -82,7 +83,7 @@ end
 # Λᵍʳⁿᵈ = 0, ϵ = 0 and calm air leave no conductance, so the skin must be held rather than divided by zero.
 @testset "Fully decoupled skin stays finite" begin
     for arch in test_architectures, storage in (nothing, PrognosticSkin(heat_capacity = 1e5))
-        model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05); surface_storage=storage,
+        model = bare_soil_model(arch, SoilSkinTemperature(0, 0.05); atmosphere_land_interface_storage=storage,
                                 shortwave = 0.0, longwave = 0.0, wind = 0.0, ϵ = 0)
         interface = model.interfaces.atmosphere_land_interface
         @test isfinite(scalar(interface.temperature))

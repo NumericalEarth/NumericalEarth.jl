@@ -1,10 +1,10 @@
-# Land interface diagnostics contain the completed step's average fluxes and temperatures.
+# The land interface's storage is prognostic; its diagnostics are checkpointed so they are consistent immediately after pickup.
 Oceananigans.prognostic_state(interfaces::ComponentInterfaces) =
     (; atmosphere_land_interface=prognostic_state(interfaces.atmosphere_land_interface))
 
 Oceananigans.prognostic_state(interface::AtmosphereInterface) =
     (; fluxes=prognostic_state(interface.fluxes), temperature=prognostic_state(interface.temperature),
-       specific_humidity=prognostic_state(interface.specific_humidity))
+       specific_humidity=prognostic_state(interface.specific_humidity), storage=prognostic_state(interface.storage))
 
 Oceananigans.prognostic_state(interface::TiledLandInterface) =
     (; vegetated=prognostic_state(interface.vegetated), bare=prognostic_state(interface.bare),

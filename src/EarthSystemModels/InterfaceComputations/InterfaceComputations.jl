@@ -56,6 +56,8 @@ export
     PowerLawTortuosity,
     CanopyConductanceHumidity,
     CanopyInterface,
+    PrognosticCanopyAir,
+    PrognosticSkin,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
     ExponentialSoilResistance,
@@ -212,6 +214,7 @@ include("surface_partition.jl")
 include("friction_velocity.jl")
 include("sea_ice_ocean_heat_flux_formulations.jl")
 
+include("interface_storage.jl")
 include("component_interfaces.jl")
 include("atmosphere_state_correction.jl")
 include("atmosphere_interface_kernels.jl")

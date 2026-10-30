@@ -94,20 +94,19 @@ end
             exchanger = model.interfaces.exchanger.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            # A step's land fluxes are computed from the radiation published before it.
+            # A step's land fluxes are computed from the radiation and interface state published before it.
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
+            Tⁱⁿ = Array(interior(interface.temperature))
+            𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
+                Array(interior(interface.fluxes.latent_heat))
             time_step!(model, 1.0)
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
 
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
-            Tⁱⁿ = Array(interior(interface.temperature))
             ℐꜛˡʷ = rtm_emissivity .* σ .* Tⁱⁿ .^ 4 .- (1 - rtm_emissivity) .* ℐꜜˡʷ
-
-            𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
-                Array(interior(interface.fluxes.latent_heat))
 
             # Positive upward: turbulent plus net upward radiative.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
@@ -123,13 +122,12 @@ end
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             ℐꜛˢʷ = Array(interior(rtm.upwelling_shortwave_flux))[:, :, 1]
+            Tⁱⁿ = Array(interior(interface.temperature))
+            𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
+                Array(interior(interface.fluxes.latent_heat))
             time_step!(model, 1.0)
 
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
-            Tⁱⁿ = Array(interior(interface.temperature))
-
-            𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
-                Array(interior(interface.fluxes.latent_heat))
 
             # The land absorbs the RTM's net surface shortwave.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))

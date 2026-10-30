@@ -3,11 +3,12 @@
 ##### `EarthSystemModel` (and direct atmosphere-side coupling).
 #####
 ##### A `SlabLand` is a 2D land model on an Oceananigans grid composed of
-##### bulk energy, hydrology, and optional surface storage:
+##### bulk energy and hydrology:
 #####
 #####   - `energy    :: AbstractEnergyBalance`     -- bulk temperature
 #####   - `hydrology :: AbstractHydrology`         -- water + moisture availability β ∈ [0, 1]
-#####   - `surface_storage`                        -- canopy-air or skin storage
+#####
+##### Canopy-air and skin storage belong to the atmosphere-land interface.
 #####
 ##### Aerodynamic roughness lengths are a property of the atmosphere-land flux
 ##### closure (`atmosphere_land_fluxes`), not of the land model.
@@ -118,9 +119,8 @@ roughness lengths are a property of the atmosphere-land flux closure
                             `(;)` when none.
 - `energy`                : an `AbstractEnergyBalance` (parameters).
 - `hydrology`             : an `AbstractHydrology` (parameters).
-- `surface_storage`       : `PrognosticCanopyAir`, `PrognosticSkin`, or `nothing`.
 """
-struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H, S} <: AbstractLand
+struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H} <: AbstractLand
     grid          :: G
     clock         :: Clk
     temperature   :: T
@@ -131,18 +131,17 @@ struct SlabLand{FT, G, Clk, T, W, B, F, D, P, E, H, S} <: AbstractLand
     prognostic    :: P
     energy        :: E
     hydrology     :: H
-    surface_storage :: S
 end
 
 # Inner-style typed constructor capturing FT.
 SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-             fluxes, diagnostics, prognostic, energy, hydrology, surface_storage) where FT =
+             fluxes, diagnostics, prognostic, energy, hydrology) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
              typeof(temperature), typeof(water_storage), typeof(saturation),
              typeof(fluxes), typeof(diagnostics), typeof(prognostic),
-             typeof(energy), typeof(hydrology), typeof(surface_storage)}(
+             typeof(energy), typeof(hydrology)}(
                  grid, clock, temperature, water_storage, saturation,
-                 fluxes, diagnostics, prognostic, energy, hydrology, surface_storage)
+                 fluxes, diagnostics, prognostic, energy, hydrology)
 
 """
 $(TYPEDSIGNATURES)
@@ -151,16 +150,14 @@ Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
 `saturation` field are allocated on `grid`; the flux
 accumulators the coupler writes are sized from each closure's
-`flux_variables` declaration. `surface_storage` optionally supplies canopy-air or skin prognostic storage.
-Interface temperature and humidity formulations are configured on the coupled model.
+`flux_variables` declaration. Interface temperature and humidity formulations, and
+canopy-air or skin storage, are configured on the coupled model.
 """
 function SlabLand(grid;
                   energy    = SlabEnergy(eltype(grid)),
                   hydrology = BucketHydrology(eltype(grid)),
-                  surface_storage = nothing,
                   clock     = Clock{eltype(grid)}(time = 0))
 
-    surface_storage = materialize_surface_storage(surface_storage, grid)
     temperature   = CenterField(grid)
     water_storage = CenterField(grid)
     saturation    = CenterField(grid)
@@ -169,7 +166,7 @@ function SlabLand(grid;
     prognostic    = build_closure_prognostics(grid, energy, hydrology)
     FT            = eltype(grid)
     return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-                        fluxes, diagnostics, prognostic, energy, hydrology, surface_storage)
+                        fluxes, diagnostics, prognostic, energy, hydrology)
 end
 
 Base.eltype(::SlabLand{FT}) where FT = FT
@@ -187,7 +184,6 @@ function Base.show(io::IO, land::SlabLand)
               "├── grid:                  ", summary(land.grid), '\n',
               "├── energy:                ", summary(land.energy), '\n',
               "├── hydrology:             ", summary(land.hydrology), '\n',
-              "├── surface_storage:       ", summary(land.surface_storage), '\n',
               "├── temperature:           ", summary(land.temperature), '\n',
               "├── water_storage:         ", summary(land.water_storage), '\n',
               "├── saturation:            ", summary(land.saturation), '\n',
@@ -232,7 +228,6 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
 
     time_step!(land.hydrology, land, Δt, time)
     time_step!(land.energy,    land, Δt, time)
-    step_surface_storage!(land.surface_storage)
 
     Oceananigans.TimeSteppers.update_state!(land)
 
@@ -296,12 +291,10 @@ function Oceananigans.prognostic_state(land::SlabLand)
               temperature   = prognostic_state(land.temperature),
               water_storage = prognostic_state(land.water_storage),
               prognostic    = map(prognostic_state, land.prognostic),
-              fluxes        = map(prognostic_state, land.fluxes),
-              surface_storage = prognostic_state(land.surface_storage))
+              fluxes        = map(prognostic_state, land.fluxes))
 end
 
 function Oceananigans.restore_prognostic_state!(land::SlabLand, state)
-    hasproperty(state, :surface_storage) && restore_prognostic_state!(land.surface_storage, state.surface_storage)
     restore_prognostic_state!(land.clock,         state.clock)
     restore_prognostic_state!(land.temperature,   state.temperature)
     restore_prognostic_state!(land.water_storage, state.water_storage)

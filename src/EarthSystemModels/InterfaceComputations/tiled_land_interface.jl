@@ -36,8 +36,8 @@ $(TYPEDSIGNATURES)
 
 Build a tiled atmosphere–land interface from the `vegetated` canopy formulation and the
 vegetated `cover_fraction`. `bare` defaults to a soil skin that shares the canopy's ground heat
-flux and soil humidity. The land's surface storage belongs to the vegetated tile.
-`vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for each tile.
+flux and soil humidity. `storage`, a [`PrognosticCanopyAir`](@ref), makes the vegetated tile's
+canopy air prognostic. `vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for each tile.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
@@ -46,13 +46,12 @@ function TiledLandInterface(grid, atmosphere, land;
                                                    specific_humidity = vegetated.soil_humidity),
                             vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
+                            storage             = nothing,
                             velocity_difference = RelativeVelocity())
 
     ground_conductance(temperature_formulation(bare)) == ground_conductance(vegetated) ||
         throw(ArgumentError("the bare and vegetated tiles must share the ground conductance Λᵍʳⁿᵈ"))
-    validate_surface_storage(land, vegetated)
-
-    vegetated_interface = build_atmosphere_land_interface(grid, vegetated_fluxes, vegetated, velocity_difference)
+    vegetated_interface = build_atmosphere_land_interface(grid, vegetated_fluxes, vegetated, velocity_difference, storage)
     bare_interface      = build_atmosphere_land_interface(grid, bare_fluxes, bare, velocity_difference)
 
     return TiledLandInterface(vegetated_interface, bare_interface, cover_fraction,
@@ -79,17 +78,16 @@ EarthSystemModels.surface_temperature(interface::TiledLandInterface) = interface
 EarthSystemModels.surface_temperature(interface::TiledLandInterface, ocean_interface) =
     EarthSystemModels.surface_temperature(interface)
 
-# The land's surface storage belongs to the vegetated tile; the bare tile is a diagnostic skin.
-function compute_atmosphere_land_fluxes!(coupled_model, interface::TiledLandInterface, Δt)
-    compute_atmosphere_land_fluxes!(coupled_model, interface.vegetated, Δt)
-    compute_atmosphere_land_fluxes!(coupled_model, interface.bare, Δt, land_surface_state(nothing))
+function compute_atmosphere_land_fluxes!(coupled_model, interface::TiledLandInterface, mode)
+    compute_atmosphere_land_fluxes!(coupled_model, interface.vegetated, mode)
+    compute_atmosphere_land_fluxes!(coupled_model, interface.bare, mode)
     blend_tiles!(coupled_model, interface)
     return nothing
 end
 
 function initialize_land_interface!(coupled_model, interface::TiledLandInterface)
     initialize_land_interface!(coupled_model, interface.vegetated)
-    initialize_land_interface!(coupled_model, interface.bare, land_surface_state(nothing))
+    initialize_land_interface!(coupled_model, interface.bare)
     blend_tiles!(coupled_model, interface)
     return nothing
 end
@@ -168,3 +166,8 @@ end
 land_surface_fluxes(interface::TiledLandInterface, bulk_temperature) =
     land_surface_fluxes(interface.temperature, interface, bulk_temperature)
 radiative_surface(interface::TiledLandInterface, albedo, emissivity) = radiative_surface(interface.temperature, albedo, emissivity)
+
+has_interface_storage(interface::TiledLandInterface) =
+    has_interface_storage(interface.vegetated) || has_interface_storage(interface.bare)
+steps_with_time_step(interface::TiledLandInterface) =
+    steps_with_time_step(interface.vegetated) || steps_with_time_step(interface.bare)
