@@ -3,6 +3,7 @@ include("download_utils.jl")
 
 using Oceananigans
 using Oceananigans.Architectures: CPU
+using Oceananigans.Grids: Sides, Closed
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid, fold_topology
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
@@ -85,7 +86,7 @@ end
     # The conformal mapping describes the mesh it was read from: the fold the grid is folded on, and a north
     # singularity that lies on the fold row in the northern hemisphere.
     mapping = underlying.conformal_mapping
-    @test fold_topology(mapping) === Oceananigans.Grids.topology(underlying, 2)
+    @test Sides{Closed, fold_topology(mapping)} === Oceananigans.Grids.topology(underlying, 2)
     @test 0 < mapping.north_poles_latitude < 90
 end
 

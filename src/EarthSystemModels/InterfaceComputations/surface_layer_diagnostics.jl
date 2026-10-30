@@ -11,23 +11,23 @@ using ..EarthSystemModels: DegreesKelvin
     ℂᵃᵗ = interface_state.thermodynamics_parameters
 
     @inbounds begin
-        Tₛ = convert_to_kelvin(interface_state.temperature_units, interface_state.temperature[i, j, 1])
-        qₛ = interface_state.specific_humidity[i, j, 1]
+        Tⁱⁿ = convert_to_kelvin(interface_state.temperature_units, interface_state.temperature[i, j, 1])
+        qⁱⁿ = interface_state.specific_humidity[i, j, 1]
         u★ = interface_state.fluxes.friction_velocity[i, j, 1]
         θ★ = interface_state.fluxes.temperature_scale[i, j, 1]
         q★ = interface_state.fluxes.water_vapor_scale[i, j, 1]
     end
 
-    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, interface_state.gravitational_acceleration)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, interface_state.gravitational_acceleration)
     L★ = monin_obukhov_length(u★, b★, ℱ.von_karman_constant)
 
     # The admissible roughness formulations do not read the bulk velocity.
     U = zero(u★)
-    ℓu₀ = roughness_length(ℱ.roughness_lengths.momentum, u★, U, ℂᵃᵗ, Tₛ)
-    ℓθ₀ = roughness_length(ℱ.roughness_lengths.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
-    ℓq₀ = roughness_length(ℱ.roughness_lengths.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
+    ℓu₀ = roughness_length(ℱ.roughness_lengths.momentum, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓθ₀ = roughness_length(ℱ.roughness_lengths.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓq₀ = roughness_length(ℱ.roughness_lengths.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
 
-    return (; formulation = ℱ, L★, Tₛ, qₛ, u★, θ★, q★, ℓu₀, ℓθ₀, ℓq₀)
+    return (; formulation = ℱ, L★, Tⁱⁿ, qⁱⁿ, u★, θ★, q★, ℓu₀, ℓθ₀, ℓq₀)
 end
 
 # The similarity profile `Π` at the geometric height `z`, undefined inside the
@@ -48,7 +48,7 @@ end
 
 # The velocity relative to the interface: the profile speed along `- ρτ / |ρτ|`, the unit
 # vector of the velocity difference the flux solve saw.
-@inline function surface_layer_velocity_difference(i, j, interface_state, z)
+@inline function similarity_theory_velocity_difference(i, j, grid, ::Val{true}, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πu = displaced_similarity_profile(ℱ, ℱ.stability_functions.momentum, z, scales.ℓu₀, scales.L★)
@@ -62,21 +62,42 @@ end
            ifelse(ρτ == 0, zero(U), -U * ρτʸ / ρτ)
 end
 
-@inline function surface_layer_x_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, interface_state, z)
+# The atmosphere velocity difference scaled by the profile, `Π(z - d) / Π(Δh - d)`.
+@inline function similarity_theory_velocity_difference(i, j, grid, ::Val{false}, interface_state, z)
+    scales = local_similarity_scales(i, j, interface_state)
+    ℱ = scales.formulation
+    ψu = ℱ.stability_functions.momentum
+    Δh = state2dindex(interface_state.surface_layer_height, i, j)
+    Πu = displaced_similarity_profile(ℱ, ψu, z, scales.ℓu₀, scales.L★)
+    Πh = displaced_similarity_profile(ℱ, ψu, Δh, scales.ℓu₀, scales.L★)
+
+    kᴺ = size(grid, 3)
+    uₛ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interface_state.surface_velocities.u)
+    vₛ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interface_state.surface_velocities.v)
+    @inbounds Δu = interface_state.atmosphere_velocities.u[i, j, 1] - uₛ
+    @inbounds Δv = interface_state.atmosphere_velocities.v[i, j, 1] - vₛ
+
+    return Δu * Πu / Πh * (scales.u★ != 0),
+           Δv * Πu / Πh * (scales.u★ != 0)
+end
+
+@inline function similarity_theory_x_velocity(i, j, k, grid, interface_state, z)
+    Δu, Δv = similarity_theory_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
+                                                   interface_state, z)
     return ℑxᶜᵃᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.u) + Δu
 end
 
-@inline function surface_layer_y_velocity(i, j, k, grid, interface_state, z)
-    Δu, Δv = surface_layer_velocity_difference(i, j, interface_state, z)
+@inline function similarity_theory_y_velocity(i, j, k, grid, interface_state, z)
+    Δu, Δv = similarity_theory_velocity_difference(i, j, grid, interface_state.include_subgrid_velocities,
+                                                   interface_state, z)
     return ℑyᵃᶜᵃ(i, j, size(grid, 3), grid, interface_state.surface_velocities.v) + Δv
 end
 
-@inline function surface_layer_temperature(i, j, k, grid, interface_state, z)
+@inline function similarity_theory_temperature(i, j, k, grid, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πθ = displaced_similarity_profile(ℱ, ℱ.stability_functions.temperature, z, scales.ℓθ₀, scales.L★)
-    θ = similarity_theory_state(scales.Tₛ, scales.θ★, ℱ.von_karman_constant, Πθ)
+    θ = similarity_theory_state(scales.Tⁱⁿ, scales.θ★, ℱ.von_karman_constant, Πθ)
 
     # `θ★` scales a potential temperature referenced to z = 0; the diagnostic is in situ.
     @inbounds qᵃᵗ = interface_state.atmosphere_specific_humidity[i, j, 1]
@@ -84,15 +105,15 @@ end
     return θ - interface_state.gravitational_acceleration * z / cᵖᵐ
 end
 
-@inline function surface_layer_specific_humidity(i, j, k, grid, interface_state, z)
+@inline function similarity_theory_specific_humidity(i, j, k, grid, interface_state, z)
     scales = local_similarity_scales(i, j, interface_state)
     ℱ = scales.formulation
     Πq = displaced_similarity_profile(ℱ, ℱ.stability_functions.water_vapor, z, scales.ℓq₀, scales.L★)
-    return similarity_theory_state(scales.qₛ, scales.q★, ℱ.von_karman_constant, Πq)
+    return similarity_theory_state(scales.qⁱⁿ, scales.q★, ℱ.von_karman_constant, Πq)
 end
 
 """
-$(SIGNATURES)
+$(TYPEDSIGNATURES)
 
 Return the named tuple `(; u, v, T, q)` of lazy `KernelFunctionOperation`s that evaluate the
 Monin--Obukhov profile of `interface` at the requested heights above the interface: the wind
@@ -100,6 +121,9 @@ components at `velocity_height`, the in-situ temperature at `temperature_height`
 specific humidity at `specific_humidity_height`, all in meters. The heights default to the WMO
 observation heights, `velocity_height = 10` and `temperature_height = specific_humidity_height
 = 2`, and `interface` defaults to `model.interfaces.atmosphere_land_interface`.
+
+For tiled land, each variable is the area-weighted mean of the two tile profiles.
+Pass `interface.vegetated` or `interface.bare` to obtain an individual tile's profile.
 
 Each variable is the similarity profile evaluated with the scales that `interface` stored at
 the last flux solve,
@@ -116,19 +140,28 @@ The temperature is in situ: `θ_★` scales a potential temperature referenced t
 adiabatic increment `g z / cᵖᵐ` is subtracted at the geometric height `z`.
 
 Where the flux solve enhances the bulk velocity with subgrid velocities (convective gustiness,
-a mesoscale scale), that enhancement is carried by `u_★` and is not undone here, so `u` and `v`
-exceed the resolved wind. `T` and `q` are unaffected: their scales are built from the resolved
-increments.
+a mesoscale scale), that enhancement is carried by `u_★`. By default the wind leaves it out,
+taking `u_★ = ϰ ΔU / Π(Δh - d)` from the atmosphere velocity difference `ΔU` at the surface-layer
+height `Δh`, so that
+
+```math
+(u, v)(z) = (uₛ, vₛ) + (Δu, Δv) \\frac{Π(z - d)}{Π(Δh - d)} .
+```
+
+With `include_subgrid_velocities = true` the wind is built from the stored `u_★` and exceeds the
+profile of the atmosphere wind alone. `T` and `q` are unaffected: their scales are built from the
+resolved increments.
 """
 function surface_layer_diagnostics(model, interface = model.interfaces.atmosphere_land_interface;
                                    velocity_height = 10,
                                    temperature_height = 2,
-                                   specific_humidity_height = 2)
+                                   specific_humidity_height = 2,
+                                   include_subgrid_velocities = false)
 
     isnothing(interface) &&
         throw(ArgumentError("surface_layer_diagnostics requires an atmosphere interface, found nothing"))
 
-    flux_formulation = interface.flux_formulation
+    flux_formulation = interface.formulation.turbulent_fluxes
 
     flux_formulation isa SimilarityTheoryFluxes ||
         throw(ArgumentError("surface_layer_diagnostics requires SimilarityTheoryFluxes, found $(summary(flux_formulation))"))
@@ -154,7 +187,7 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
 
     # The stress is built from the velocity difference the solve saw, so the profile is
     # relative to the same interface velocity.
-    surface_velocities = if over_ocean && interface.properties.velocity_formulation isa RelativeVelocity
+    surface_velocities = if over_ocean && interface.formulation.velocity_difference isa RelativeVelocity
         ocean_state = interfaces.exchanger.ocean.state
         (u = ocean_state.u, v = ocean_state.v)
     else
@@ -165,9 +198,13 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
     FT = eltype(grid)
 
     interface_state = (fluxes = interface.fluxes,
-                       temperature = interface.temperature,
+                       temperature = interface_node_temperature(interface.temperature),
                        specific_humidity = interface.specific_humidity,
                        atmosphere_specific_humidity = interfaces.exchanger.atmosphere.state.q,
+                       atmosphere_velocities = (u = interfaces.exchanger.atmosphere.state.u,
+                                                v = interfaces.exchanger.atmosphere.state.v),
+                       surface_layer_height = interfaces.properties.surface_layer_height,
+                       include_subgrid_velocities = Val(include_subgrid_velocities),
                        surface_velocities = surface_velocities,
                        flux_formulation = flux_formulation,
                        temperature_units = temperature_units,
@@ -176,8 +213,29 @@ function surface_layer_diagnostics(model, interface = model.interfaces.atmospher
 
     SurfaceLayerOperation = KernelFunctionOperation{Center, Center, Nothing}
 
-    return (u = SurfaceLayerOperation(surface_layer_x_velocity, grid, interface_state, convert(FT, velocity_height)),
-            v = SurfaceLayerOperation(surface_layer_y_velocity, grid, interface_state, convert(FT, velocity_height)),
-            T = SurfaceLayerOperation(surface_layer_temperature, grid, interface_state, convert(FT, temperature_height)),
-            q = SurfaceLayerOperation(surface_layer_specific_humidity, grid, interface_state, convert(FT, specific_humidity_height)))
+    return (u = SurfaceLayerOperation(similarity_theory_x_velocity, grid, interface_state, convert(FT, velocity_height)),
+            v = SurfaceLayerOperation(similarity_theory_y_velocity, grid, interface_state, convert(FT, velocity_height)),
+            T = SurfaceLayerOperation(similarity_theory_temperature, grid, interface_state, convert(FT, temperature_height)),
+            q = SurfaceLayerOperation(similarity_theory_specific_humidity, grid, interface_state, convert(FT, specific_humidity_height)))
+end
+
+function surface_layer_diagnostics(model, interface::TiledLandInterface; kw...)
+    vegetated = surface_layer_diagnostics(model, interface.vegetated; kw...)
+    bare = surface_layer_diagnostics(model, interface.bare; kw...)
+    grid = model.interfaces.exchanger.grid
+
+    return map(vegetated, bare) do vegetated_profile, bare_profile
+        KernelFunctionOperation{Center, Center, Nothing}(tiled_surface_layer_profile, grid,
+                                                         vegetated_profile, bare_profile,
+                                                         interface.cover_fraction, model.clock)
+    end
+end
+
+@inline function tiled_surface_layer_profile(i, j, k, grid, vegetated, bare, cover_fraction, clock)
+    f = clamp(state2dindex(cover_fraction, i, j, grid, Time(clock.time)), 0, 1)
+    @inbounds vegetated_value = vegetated[i, j, k]
+    @inbounds bare_value = bare[i, j, k]
+    # A zero-area tile's profile can be NaN (e.g. below its roughness length), and 0 * NaN = NaN
+    return ifelse(f == 0, bare_value, ifelse(f == 1, vegetated_value,
+                  f * vegetated_value + (1 - f) * bare_value))
 end

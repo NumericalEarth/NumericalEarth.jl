@@ -50,11 +50,23 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CanopyInterface,
+    PrognosticCanopyAir,
+    PrognosticSkin,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    ExponentialSoilResistance,
+    GroundSurfaceResistance,
+    TiledLandInterface,
+    JarvisConductance,
+    AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
@@ -65,6 +77,7 @@ export
     equivalent_chlorophyll,
     PrescribedRadiation,
     PrescribedAtmosphere,
+    BoundaryPrescribedComponent,
     PrescribedLand,
     ECCOPrescribedRadiation,
     JRA55PrescribedRadiation,
@@ -88,9 +101,13 @@ export
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
+    SurfacePartition,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
     SlabLand,
@@ -98,9 +115,10 @@ export
     BucketHydrology,
     WaterCoupledEnergy,
     VariablySaturatedHydrology,
+    InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     WaterViscosity, CosbyConductivity, saturated_conductivity,
-    NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+    NoDeepLiquidWaterFlux, FreeDrainageFlux, DarcyDeepLiquidWaterFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
     WeynantsPedotransfer, HYPRESPedotransfer,
     soil_hydraulic_parameters, soil_hydraulic_properties,
@@ -114,7 +132,9 @@ export
     surface_layer_diagnostics,
     regrid_bathymetry,
     regrid_topography,
+    regrid_ocean_fraction,
     smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
@@ -129,6 +149,7 @@ export
     ASTERGEDv3, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     ESAWorldCover, WorldCoverV100, WorldCoverV200,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     GLODAPClimatology,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
@@ -140,12 +161,14 @@ export
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m,
+    GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    land_model,
+    land_simulation,
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,
     ocean_simulation,
@@ -169,7 +192,7 @@ using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries, TimeInterpolator
 
 import Oceananigans: location
 
@@ -219,9 +242,10 @@ const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
 
 const SKOFTS = SomeKindOfFieldTimeSeries
 
-@inline stateindex(a::Number, i, j, k, args...) = a
+@inline stateindex(a::Union{Number, Nothing}, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
+@inline stateindex(a::SKOFTS, i, j, k, time_interpolator::TimeInterpolator) = @inbounds a[i, j, k, time_interpolator]
 
 @inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
     # `_node` always returns the full (λ, φ, z) triple — with placeholder
@@ -231,17 +255,8 @@ const SKOFTS = SomeKindOfFieldTimeSeries
     return a(λ, φ, z, time)
 end
 
-@inline function stateindex(a::Tuple, i, j, k, grid, time, args...)
-    N = length(a)
-    ntuple(Val(N)) do n
-        stateindex(a[n], i, j, k, grid, time, args...)
-    end
-end
-
-@inline function stateindex(a::NamedTuple, i, j, k, grid, time, args...)
-    vals = stateindex(values(a), i, j, k, grid, time, args...)
-    names = keys(a)
-    return NamedTuple{names}(vals)
+@inline function stateindex(a::Union{Tuple, NamedTuple}, i, j, k, grid, time, args...)
+    return map(value -> stateindex(value, i, j, k, grid, time, args...), a)
 end
 
 #####
@@ -291,6 +306,7 @@ using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.MODISLand
 using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
