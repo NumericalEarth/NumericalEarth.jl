@@ -24,7 +24,10 @@ include("breeze_surface_albedo.jl")
 
 function __init__()
     EXPLICIT_LID_W_SPONGE[] = lowercase(get(ENV, "NE_EXPLICIT_LID_W_SPONGE", "false")) != "false"
-    EXPLICIT_LID_W_SPONGE[] && @info "Explicit ρw lid sponge on (environment, pre-T21 double-counted path)"
+    EXPLICIT_LID_W_SPONGE[] && @info "Explicit ρw lid sponge on (environment, pre-T21 path)"
+    rate = get(ENV, "NE_LATERAL_W_RELAXATION_RATE", "")
+    LATERAL_W_RELAXATION_RATE[] = isempty(rate) ? nothing : parse(Float64, rate)
+    isempty(rate) || @info "Explicit ρw relaxation rate $rate 1/s (environment)"
 end
 
 end # module NumericalEarthBreezeExt

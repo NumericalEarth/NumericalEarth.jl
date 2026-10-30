@@ -210,6 +210,8 @@ default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Whether the explicit ρw `Relaxation` also covers the lid layer (set in `__init__` from NE_EXPLICIT_LID_W_SPONGE).
 const EXPLICIT_LID_W_SPONGE = Ref(false)
+# Rate of the explicit ρw `Relaxation` (set in `__init__` from NE_LATERAL_W_RELAXATION_RATE; `nothing` = `damping_rate`).
+const LATERAL_W_RELAXATION_RATE = Ref{Union{Nothing, Float64}}(nothing)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
 # Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
@@ -438,13 +440,18 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # where the parent's large-scale `w` is negligible, absorbs the creep at its source. One `Relaxation`
     # on `ρw` with the pointwise max of the lid and lateral boundary relaxation masks.
     #
-    # T21: the lid part duplicated the implicit `UpperSponge` at the same rate, and as an explicit
-    # slow tendency it is unstable once damping_rate·Δt exceeds the WS-RK3 real-axis limit (≈2.51;
-    # 0.2 × 15 s = 3). The lid is now left to the implicit sponge; NE_EXPLICIT_LID_W_SPONGE=true
-    # restores the old lid ∪ lateral mask.
+    # T21: Breeze's implicit `UpperSponge` now damps the full ρw itself (BREEZE_SPONGE_FULL_FIELD).
+    # Before that it damped only the acoustic perturbation, and this explicit lid term supplied the
+    # missing −r ρwᴸ part; with the full-field sponge it would count twice. The lid is therefore left
+    # to the sponge (NE_EXPLICIT_LID_W_SPONGE=true restores the old lid ∪ lateral mask; pair it with
+    # BREEZE_SPONGE_FULL_FIELD=false). The lateral zone stays explicit: an explicit Relaxation is
+    # unstable under WS-RK3 once rate·Δt > ≈2.51, so its rate is NE_LATERAL_W_RELAXATION_RATE
+    # (1/s; unset = `damping_rate`, the old behavior).
     lid_mask = lid_sponge_mask(child_grid, damping_depth)
     sponge_mask = EXPLICIT_LID_W_SPONGE[] ? ((λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))) : relax_mask
-    lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = sponge_mask))
+    w_relaxation_rate = something(LATERAL_W_RELAXATION_RATE[], damping_rate)
+    lid_sponge = iszero(w_relaxation_rate) ? NamedTuple() :
+                 (; ρw = Relaxation(rate = w_relaxation_rate, mask = sponge_mask))
 
     # initialize = false: the resting-state construction default would survive into
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
