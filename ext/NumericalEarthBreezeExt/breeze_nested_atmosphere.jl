@@ -208,6 +208,9 @@ end
 # offset) so it scales correctly regardless of where the bottom sits.
 default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
+# Whether the explicit ρw `Relaxation` also covers the lid layer (set in `__init__` from NE_EXPLICIT_LID_W_SPONGE).
+const EXPLICIT_LID_W_SPONGE = Ref(false)
+
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
 # Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
 # (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
@@ -434,8 +437,13 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # corner, where ρ collapses and the run NaNs past ~2 h. Damping `ρw` toward zero across the wall zone,
     # where the parent's large-scale `w` is negligible, absorbs the creep at its source. One `Relaxation`
     # on `ρw` with the pointwise max of the lid and lateral boundary relaxation masks.
+    #
+    # T21: the lid part duplicated the implicit `UpperSponge` at the same rate, and as an explicit
+    # slow tendency it is unstable once damping_rate·Δt exceeds the WS-RK3 real-axis limit (≈2.51;
+    # 0.2 × 15 s = 3). The lid is now left to the implicit sponge; NE_EXPLICIT_LID_W_SPONGE=true
+    # restores the old lid ∪ lateral mask.
     lid_mask = lid_sponge_mask(child_grid, damping_depth)
-    sponge_mask = (λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))
+    sponge_mask = EXPLICIT_LID_W_SPONGE[] ? ((λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))) : relax_mask
     lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = sponge_mask))
 
     # initialize = false: the resting-state construction default would survive into

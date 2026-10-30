@@ -22,4 +22,9 @@ include("breeze_nested_atmosphere.jl")
 include("breeze_air_land_radiation.jl")
 include("breeze_surface_albedo.jl")
 
+function __init__()
+    EXPLICIT_LID_W_SPONGE[] = lowercase(get(ENV, "NE_EXPLICIT_LID_W_SPONGE", "false")) != "false"
+    EXPLICIT_LID_W_SPONGE[] && @info "Explicit ρw lid sponge on (environment, pre-T21 double-counted path)"
+end
+
 end # module NumericalEarthBreezeExt
