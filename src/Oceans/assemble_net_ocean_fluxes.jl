@@ -29,8 +29,13 @@ snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.sta
 
 atmos_ocean_flux(coupled_model) = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
 
+# Lands without runoff (e.g. `SlabLand`, whose exchanger state is `(; T, saturation)`) send no freshwater.
 land_freshwater_flux(::Nothing, name) = ZeroField()
-land_freshwater_flux(land_exchanger, name) = getproperty(land_exchanger.state, name).data
+
+@inline function land_freshwater_flux(land_exchanger, name)
+    state = land_exchanger.state
+    return hasproperty(state, name) ? getproperty(state, name).data : ZeroField()
+end
 
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice = coupled_model.sea_ice
@@ -160,18 +165,32 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         λˣⁱᵒ = ρλˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
         λʸⁱᵒ = ρλʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
 
-        τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
-        τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
-        set_implicit_coefficient!(λˣ, i, j, ifelse(inactive, zero(grid), λˣⁱᵒ))
-        set_implicit_coefficient!(λʸ, i, j, ifelse(inactive, zero(grid), λʸⁱᵒ))
+        # A branch rather than one `ifelse` per store: with CUDA.jl's external NVPTX back-end
+        # (NVPTX_LLVM_Backend_jll 23.1.1 and 23.1.2), the eight `ifelse`-guarded stores
+        # segfault the PTX instruction selector (`NVPTXDAGToDAGISel::tryLDG`).
+        if inactive
+            τˣ[i, j, 1] = zero(grid)
+            τʸ[i, j, 1] = zero(grid)
+            set_implicit_coefficient!(λˣ, i, j, zero(grid))
+            set_implicit_coefficient!(λʸ, i, j, zero(grid))
+            Jᵀ[i, j, 1] = zero(grid)
+            Jˢ[i, j, 1] = zero(grid)
+            Jʷ[i, j, 1] = zero(grid)
+            Jᴴ[i, j, 1] = zero(grid)
+        else
+            τˣ[i, j, 1] = τˣᵃᵒ + τˣⁱᵒ
+            τʸ[i, j, 1] = τʸᵃᵒ + τʸⁱᵒ
+            set_implicit_coefficient!(λˣ, i, j, λˣⁱᵒ)
+            set_implicit_coefficient!(λʸ, i, j, λʸⁱᵒ)
 
-        # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!.
-        # The atmosphere-ocean virtual salt flux (Sᴺ Jʷ) and the surface-value heat exchange
-        # (Tᴺ Jʷ) are applied live in the salinity/temperature top BCs, so Jˢ holds only the
-        # sea-ice contribution and Jᴴ the freshwater enthalpy (rain − evaporation at SST).
-        Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
-        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢio)
-        Jʷ[i, j, 1] = ifelse(inactive, zero(grid), Jʷao + Jʷio)
-        Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao + Jᴴio)
+            # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!.
+            # The atmosphere-ocean virtual salt flux (Sᴺ Jʷ) and the surface-value heat exchange
+            # (Tᴺ Jʷ) are applied live in the salinity/temperature top BCs, so Jˢ holds only the
+            # sea-ice contribution and Jᴴ the freshwater enthalpy (rain − evaporation at SST).
+            Jᵀ[i, j, 1] = Jᵀao + Jᵀio
+            Jˢ[i, j, 1] = Jˢio
+            Jʷ[i, j, 1] = Jʷao + Jʷio
+            Jᴴ[i, j, 1] = Tᵒᶜ * Jʷao + Jᴴio
+        end
     end
 end
