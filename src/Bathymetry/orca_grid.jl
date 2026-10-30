@@ -4,7 +4,7 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
-using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window
+using Oceananigans.Grids: Sides, Closed, CenterFolded, FaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
@@ -456,7 +456,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     first_pole_longitude = Float64(λFF[pole_idx, end])
 
     pivot = north_fold_pivot(dataset)
-    fold_topology = pivot === FPivot ? RightFaceFolded : RightCenterFolded
+    fold = pivot === FPivot ? FaceFolded : CenterFolded
+    fold_topology = Sides{Closed, fold}
 
     # The first kept column `ic + 1` aligns NEMO's fold mirror (i ↔ jpi + 1 - i for an F pivot,
     # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one.
@@ -511,7 +512,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         to_host(Δyᶜᶜᵃ), to_host(Δyᶠᶜᵃ), to_host(Δyᶜᶠᵃ), to_host(Δyᶠᶠᵃ),
         to_host(Azᶜᶜᵃ), to_host(Azᶠᶜᵃ), to_host(Azᶜᶠᵃ), to_host(Azᶠᶠᵃ),
         convert(FT, radius),
-        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold_topology, pivot)
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold, pivot)
     )
 
     underlying_grid = distribute_tripolar_grid(arch, global_grid)

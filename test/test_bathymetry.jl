@@ -4,6 +4,7 @@ include("download_utils.jl")
 using JLD2
 using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key, meridional_barrier,
                                  label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
+using NumericalEarth.Bathymetry.ImageMorphology: label_components
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
@@ -21,6 +22,28 @@ using Statistics
 
         @test all(==(1000), Array(interior(elevation)))
     end
+end
+
+@testset "Connecting basins" begin
+    grid = LatitudeLongitudeGrid(size = (8, 6), longitude = (0, 8), latitude = (0, 6), topology = (Bounded, Bounded, Flat))
+    bottom_height = Field{Center, Center, Nothing}(grid)
+    west, east = (1.5, 2.5), (6.5, 2.5)
+
+    # Two basins separated by a meridional wall one cell wide
+    set!(bottom_height, (λ, φ) -> 3 < λ < 4 ? 10 : -500)
+    original = Array(interior(bottom_height, :, :, 1))
+    deepened = connect_basins!(bottom_height, west, east; depth = 300)
+    connected = Array(interior(bottom_height, :, :, 1))
+    @test deepened == count(connected .!= original)
+    @test all(==(-300), connected[connected .!= original])
+    @test maximum(label_components(connected .< 0)) == 1
+
+    @test connect_basins!(bottom_height, west, east; depth = 300) == 0
+    @test Array(interior(bottom_height, :, :, 1)) == connected
+
+    # Basins that touch only at a corner share no face
+    set!(bottom_height, (λ, φ) -> (λ < 3 && φ < 3) || (3 < λ < 6 && 3 < φ < 6) ? -500 : 10)
+    @test connect_basins!(bottom_height, (1.5, 1.5), (4.5, 4.5); depth = 300) == 1
 end
 
 @testset "Bathymetry construction and smoothing" begin
@@ -99,9 +122,9 @@ end
 
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
-    key(; height_above_water = nothing, minimum_depth = 0, interpolation_passes = 1, major_basins = 1) =
+    key(; height_above_water = nothing, minimum_depth = 0, interpolation_passes = 1, major_basins = 1, connections = ()) =
         bathymetry_regridding_key(grid, metadata; height_above_water, minimum_depth,
-                                  interpolation_passes, major_basins)
+                                  interpolation_passes, major_basins, connections)
 
     # Test construction and equality
     config1 = key()
@@ -116,6 +139,9 @@ end
 
     config4 = key(minimum_depth = 10)
     @test config1 != config4
+
+    gibraltar = (; from = (-6.8, 35.9), to = (-4.6, 36.0), depth = 280)
+    @test config1 != key(connections = (gibraltar,))
 
     # Integer and float parameter values key identically
     @test key(minimum_depth = 10) == key(minimum_depth = 10.0)

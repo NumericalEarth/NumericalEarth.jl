@@ -13,8 +13,11 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
                                                               iterate_interface_fluxes,
+                                                              land_surface_fluxes,
                                                               RelativeVelocity,
-                                                              celsius_to_kelvin
+                                                              celsius_to_kelvin,
+                                                              land_temperature,
+                                                              land_saturation
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics
 
@@ -79,12 +82,10 @@ using Thermodynamics
         NumericalEarth.Lands.time_step!(land.energy, land, 1)
         @test only(Array(interior(land.temperature))) > 10
 
-        # The atmosphere-facing land state exposes skin temperature and saturation;
-        # roughness lengths belong to the flux closure, not the land.
-        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
-        @test hasproperty(ex.state, :T)
-        @test hasproperty(ex.state, :saturation)
-        @test !hasproperty(ex.state, :momentum_roughness_length)
+        # The land publishes the state the interface requests.
+        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid; state_accessors = (T = land_temperature, 𝒮 = land_saturation))
+        @test keys(ex.state) == (:T, :𝒮)
+        @test ex.state.T === land.temperature
     end
 end
 
@@ -228,9 +229,10 @@ end
         P = CenterField(grid)
         E = CenterField(grid)
         Jʳⁿ = CenterField(grid)  # atmospheric rainfall flux on exchange grid
-        interface_fluxes = (sensible_heat = CenterField(grid),
-                           latent_heat   = CenterField(grid),
-                           water_vapor  = CenterField(grid))
+        model = coupled_land_model(arch; grid)
+        interface = model.interfaces.atmosphere_land_interface
+        interface_fluxes = interface.fluxes
+        land_fluxes = land_surface_fluxes(interface, model.land.temperature)
 
         # Evaporation in model convention is positive upward => water-vapor flux > 0
         fill!(parent(interface_fluxes.sensible_heat), 0)
@@ -243,7 +245,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0.5; atol=1e-12)
@@ -255,7 +257,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0.5; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -269,7 +271,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 1.7; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -284,7 +286,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, Es, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(only(Array(interior(Es))), -3; atol=1e-12)
     end
@@ -575,14 +577,14 @@ end
 
     approximate_state     = (; fluxes = (; u★ = 0.1, θ★ = 0.0, q★ = 0.0), u = 0.0, v = 0.0)
     atmosphere_state      = (; u = U, v = 0.0, p = 101325.0, h_bℓ = 512.0)
-    interface_properties  = (; velocity_formulation = RelativeVelocity())
+    interface_formulation = (; velocity_difference = RelativeVelocity())
     atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(Float64),
                                gravitational_acceleration = 9.81)
 
     solved_friction_velocity(fluxes) =
         iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh,
                                  approximate_state, atmosphere_state,
-                                 interface_properties, atmosphere_properties)[1]
+                                 interface_formulation, atmosphere_properties)[1]
 
     @test solved_friction_velocity(similarity_fluxes(4.0)) ≈ 0.4 / log((Δh - 4) / ℓ) * U
 end

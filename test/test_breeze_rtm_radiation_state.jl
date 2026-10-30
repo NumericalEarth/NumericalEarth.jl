@@ -4,6 +4,7 @@ using Breeze
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: time_step!
 using RRTMGP   # activates Breeze's radiative-transfer extension (RadiativeTransferModel)
 using Dates: DateTime
@@ -18,7 +19,7 @@ const rtm_emissivity = 0.95
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
 function build_rtm_land_model(arch; hour = 12, optics = GrayOptics(),
-                              albedos = (; surface_albedo = rtm_albedo))
+                              albedos = (; surface_albedo = rtm_albedo), surface_temperature = nothing)
     FT = Float64
 
     grid = RectilinearGrid(arch, FT; size = (rtm_Nx, rtm_Nx), halo = (rtm_Hx, rtm_Hx),
@@ -44,6 +45,7 @@ function build_rtm_land_model(arch; hour = 12, optics = GrayOptics(),
                                                                              epoch = DateTime(2024, 3, 20, hour)),
                                        albedos...,
                                        surface_emissivity = rtm_emissivity,
+                                       surface_temperature,
                                        schedule = IterationInterval(1))
 
     return AtmosphereLandModel(atmosphere, land; radiation)
@@ -54,7 +56,8 @@ end
         A = typeof(arch)
 
         @testset "Initial radiation and first land step via $advance on $A" for advance in (:time_step!, :run!)
-            model = build_rtm_land_model(arch)
+            # The RTM radiates at the land's 298 K, not the configured 310 K.
+            model = build_rtm_land_model(arch; surface_temperature = 310)
             radiation = model.interfaces.exchanger.radiation.state
             land = model.land
             initial_temperature = Array(interior(land.temperature))
@@ -91,16 +94,17 @@ end
             exchanger = model.interfaces.exchanger.radiation
             interface = model.interfaces.atmosphere_land_interface
 
+            # A step's land fluxes are computed from the radiation published before it.
+            ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
+            ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             time_step!(model, 1.0)
 
             @test Array(interior(exchanger.state.ℐꜜˢʷ)) ≈ Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             @test Array(interior(exchanger.state.ℐꜜˡʷ)) ≈ Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
 
             σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
-            Tₛ = Array(interior(interface.temperature))
-            ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
-            ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
-            ℐꜛˡʷ = rtm_emissivity .* σ .* Tₛ .^ 4 .- (1 - rtm_emissivity) .* ℐꜜˡʷ
+            Tⁱⁿ = Array(interior(interface.temperature))
+            ℐꜛˡʷ = rtm_emissivity .* σ .* Tⁱⁿ .^ 4 .- (1 - rtm_emissivity) .* ℐꜜˡʷ
 
             𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
                 Array(interior(interface.fluxes.latent_heat))
@@ -116,20 +120,20 @@ end
             rtm = model.radiation
             interface = model.interfaces.atmosphere_land_interface
 
-            time_step!(model, 1.0)
-
-            σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
-            Tₛ = Array(interior(interface.temperature))
             ℐꜜˡʷ = Array(interior(rtm.downwelling_longwave_flux))[:, :, 1]
             ℐꜜˢʷ = Array(interior(rtm.downwelling_shortwave_flux))[:, :, 1]
             ℐꜛˢʷ = Array(interior(rtm.upwelling_shortwave_flux))[:, :, 1]
+            time_step!(model, 1.0)
+
+            σ = NumericalEarth.Radiations.default_stefan_boltzmann_constant
+            Tⁱⁿ = Array(interior(interface.temperature))
 
             𝒬 = Array(interior(interface.fluxes.sensible_heat)) .+
                 Array(interior(interface.fluxes.latent_heat))
 
             # The land absorbs the RTM's net surface shortwave.
             Jᴱs = Array(interior(model.land.fluxes.surface_energy_flux))
-            @test Jᴱs ≈ 𝒬 .+ rtm_emissivity .* σ .* Tₛ .^ 4 .+ rtm_emissivity .* ℐꜜˡʷ .+ ℐꜜˢʷ .+ ℐꜛˢʷ
+            @test Jᴱs ≈ 𝒬 .+ rtm_emissivity .* σ .* Tⁱⁿ .^ 4 .+ rtm_emissivity .* ℐꜜˡʷ .+ ℐꜜˢʷ .+ ℐꜛˢʷ
         end
 
         @testset "No shortwave at night on $A" begin
@@ -138,6 +142,26 @@ end
 
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˢʷ)) .== 0)
             @test all(Array(interior(night.interfaces.exchanger.radiation.state.ℐꜜˡʷ)) .< 0)
+        end
+
+        @testset "Checkpoint restores the coupled atmosphere and land on $A" begin
+            mktempdir() do dir
+                model = build_rtm_land_model(arch)
+                simulation = Simulation(model; Δt = 1.0, stop_iteration = 2, verbose = false)
+                simulation.output_writers[:checkpointer] = Checkpointer(model; schedule = IterationInterval(2), dir)
+                run!(simulation)
+
+                restored = build_rtm_land_model(arch)
+                simulation = Simulation(restored; Δt = 1.0, verbose = false)
+                set!(simulation; checkpoint = joinpath(dir, "checkpoint_iteration2.jld2"))
+
+                @test restored.clock.iteration == 2
+                restored_fields = Oceananigans.prognostic_fields(restored.atmosphere.model)
+                for (name, field) in pairs(Oceananigans.prognostic_fields(model.atmosphere.model))
+                    @test Array(interior(restored_fields[name])) == Array(interior(field))
+                end
+                @test Array(interior(restored.land.temperature)) == Array(interior(model.land.temperature))
+            end
         end
     end
 end
