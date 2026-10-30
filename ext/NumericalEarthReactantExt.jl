@@ -5,7 +5,7 @@ using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
 using Oceananigans.TimeSteppers: Clock, update_state!, time_step!
 
-using NumericalEarth: EarthSystemModel
+using NumericalEarth: NumericalEarth, EarthSystemModel
 using NumericalEarth.EarthSystemModels: EarthSystemModels, compute_land_fluxes!, initialize_land_surface!
 using NumericalEarth.NestedModels: NestedModels
 
@@ -70,5 +70,9 @@ function NestedModels.copy_clock!(clock::TracedClock, source)
 end
 
 assign!(number::Reactant.TracedRNumber, value) = (number.mlir_data = Reactant.promote_to(typeof(number), value).mlir_data)
+
+# The zonal loading operator's batched matrix product as one dot_general
+NumericalEarth.Oceans.batched_contract(K::Reactant.TracedRArray, X::Reactant.TracedRArray) =
+    Reactant.Ops.dot_general(K, X; contracting_dimensions = ([2], [1]), batching_dimensions = ([3], [3]))
 
 end # module NumericalEarthReactantExt
