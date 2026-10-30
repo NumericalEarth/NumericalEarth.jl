@@ -35,7 +35,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     Tᵒᶜ = ocean_temperature(ocean)
     Sᵒᶜ = ocean_salinity(ocean)
     Sⁱ = sea_ice.model.tracers.S
-    ℵ = sea_ice.model.ice_concentration
+    ℵˢⁱ = sea_ice.model.ice_concentration
     hˢⁱ = sea_ice.model.ice_thickness
     hc = sea_ice.model.ice_consolidation_thickness
 
@@ -63,14 +63,14 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
         kernel_parameters = interface_kernel_parameters(grid)
         τₛ = dynamics.external_momentum_stresses.bottom
         launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
-                fluxes, grid, clock, hˢⁱ, ℵ, uˢⁱ, vˢⁱ, τₛ)
+                fluxes, grid, clock, hˢⁱ, ℵˢⁱ, uˢⁱ, vˢⁱ, τₛ)
     else
         τₛ = nothing
     end
 
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
-            hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
+            hˢⁱ, hc, ℵˢⁱ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
 
     return nothing
@@ -95,8 +95,8 @@ end
     uˢⁱ = sea_ice_u_velocity
     vˢⁱ = sea_ice_v_velocity
     hˢⁱ = ice_thickness
-    ℵ = ice_concentration
-    sea_ice_fields = (; u = uˢⁱ, v = vˢⁱ, h = hˢⁱ, ℵ = ℵ)
+    ℵˢⁱ = ice_concentration
+    sea_ice_fields = (; u = uˢⁱ, v = vˢⁱ, h = hˢⁱ, ℵ = ℵˢⁱ)
     τₛ = sea_ice_ocean_stress
 
     # The drag ρₑ Cᴰ |Δu| (uᵒ - uⁱ) split into the implicit coefficient λ = ρₑ Cᴰ |Δu| and the explicit remainder Fₑ = -λ uⁱ.
@@ -191,7 +191,7 @@ end
         Sᴺ  = Sᵒᶜ[i, j, Nz]
         Sˢⁱ = ice_salinity[i, j, 1]
         hˢⁱ = ice_thickness[i, j, 1]
-        ℵᵢ  = ice_concentration[i, j, 1]
+        ℵˢⁱᵢ = ice_concentration[i, j, 1]
         hc  = ice_consolidation_thickness[i, j, 1]
     end
 
@@ -200,7 +200,7 @@ end
 
     # Package states
     ocean_surface_state = (; T = Tᴺ, S = Sᴺ)
-    ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = hc, ℵ = ℵᵢ, T = Tˢⁱ)
+    ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = hc, ℵ = ℵˢⁱᵢ, T = Tˢⁱ)
 
     # Compute friction velocity
     u★ = get_friction_velocity(flux_formulation.friction_velocity, i, j, grid, τˣ, τʸ, ρᵒᶜ)

@@ -44,6 +44,7 @@ In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `�
 | ``\tau`` | `τ` | `\tau` | Kinematic momentum flux (m² s⁻²) |
 | ``\mathcal{L}`` | `ℒ` | `\scrL` | Latent heat (J kg⁻¹) |
 | ``M`` | `M` | | Layer-integrated mass per area (kg m⁻²) |
+| ``\aleph`` | `ℵ` | `\aleph` | Area fraction: the fraction of an enclosing surface covered by the labeled component (–) |
 | ``P`` | `P` | | Precipitation (liquid water) mass flux reaching a surface (kg m⁻² s⁻¹) |
 
 Note: ``\tau^x`` (`τˣ`) is the _kinematic_ momentum flux (stress divided
@@ -276,6 +277,21 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyInterface`](@
 | ``\Delta U`` | – | surface wind speed | Wind speed relative to the surface at the surface-layer reference height (m s⁻¹) |
 | ``R^v`` | – | vapor gas constant | Specific gas constant of water vapor (J kg⁻¹ K⁻¹) |
 
+## Area fractions
+
+An area fraction ``\aleph`` carries the superscript of the component that covers the area,
+and is always a fraction of the *enclosing* surface, not of the whole cell. The ocean
+fraction partitions a cell into ocean and land, and the sea ice concentration further
+partitions the ocean, so the cell is split into open ocean ``\aleph^{\mathrm{oc}} (1 - \aleph^{\mathrm{si}})``,
+sea ice ``\aleph^{\mathrm{oc}} \aleph^{\mathrm{si}}``, and land ``1 - \aleph^{\mathrm{oc}}``.
+Following the component-superscript rule, a component's own code uses the bare ``\aleph``:
+ClimaSeaIce's `ice_concentration` is set with `set!(sea_ice.model, ℵ = ...)`.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``\aleph^{\mathrm{oc}}`` | `ℵᵒᶜ` | ocean fraction | Fraction of a cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \aleph^{\mathrm{oc}}`` (–) |
+| ``\aleph^{\mathrm{si}}`` | `ℵˢⁱ` | sea ice concentration | Fraction of the ocean covered by sea ice (–) |
+
 ## Ocean state variables
 
 | Math | Code | Property | Description |
@@ -293,7 +309,6 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyInterface`](@
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``h^{\mathrm{si}}`` | `hˢⁱ` | ice thickness | Sea ice thickness (m) |
-| ``\aleph`` | `ℵ` | ice concentration | Areal fraction of ice cover (–) |
 | ``S^{\mathrm{si}}`` | `Sˢⁱ` | ice salinity | Sea ice bulk salinity (g kg⁻¹) |
 
 ## Radiation properties
@@ -397,7 +412,6 @@ superscript band.
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
 | ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
-| ``\th`` | `þ` | ocean fraction | Areal fraction of a surface cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \th`` (–) |
 
 ## Net ocean fluxes
 
@@ -450,7 +464,7 @@ where applicable.
 | `ρτˣ` | `surface_downward_eastward_stress` |
 | `ρτʸ` | `surface_downward_northward_stress` |
 | `hˢⁱ` | `sea_ice_thickness` |
-| `ℵ` | `sea_ice_area_fraction` |
+| `ℵˢⁱ` | `sea_ice_area_fraction` |
 
 ## Typing Unicode symbols in Julia
 
@@ -468,8 +482,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
 | `α` | `\alpha` | Alpha (albedo) |
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
-| `ℵ` | `\aleph` | Aleph (ice concentration) |
-| `þ` | `\th` | Thorn (ocean fraction) |
+| `ℵ` | `\aleph` | Aleph (area fraction) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
 | `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |
