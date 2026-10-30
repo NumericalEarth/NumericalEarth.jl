@@ -22,11 +22,13 @@
 # and on exactly the lattice the MCD15A2H leaf-area reads land on, so the two pair cell for cell
 # with no aggregation in between.
 #
-# The region is the Missouri Ozarks: deciduous broadleaf forest, savanna, cropland and open
-# water in one box, with a leaf-area cycle that swings by a factor of several between
-# leaf-off and full canopy. That range is the point — a class-keyed temporal tolerance and a
-# shape-preserving fill can only be falsified where the classes have *different* seasonal
-# behavior, which a single-class evergreen box cannot show.
+# The region is Cyprus. Its classes have *different* seasonal behavior: the crops of the
+# Mesaoria plain and the grassland around them green up with the winter rain and dry out by
+# early summer, while the pine forest of the Troodos mountains holds its leaf area through the
+# year. That contrast is the point — a class-keyed temporal tolerance and a shape-preserving
+# fill can only be falsified where the classes behave differently, which a single-class box
+# cannot show. The weather does the rest: winters are cloudy and summers almost cloudless, so
+# the gaps arrive exactly when the crops are green.
 #
 # ## Install dependencies
 #
@@ -61,30 +63,41 @@ using CairoMakie
 # repository, mosaicked, and reprojected onto a regional latitude-longitude window at download
 # time — a global read is never attempted.
 
-latitude = (36.5, 37.5)
-longitude = (-92.5, -91.5)
+latitude = (34.5, 35.75)
+longitude = (32.2, 34.65)
 
 region = BoundingBox(; longitude, latitude)
 
+# The MCD12Q1 land cover, on the same 500 m lattice as the leaf-area composites, also says which
+# cells are land. Most of this box is sea, so every gap fraction below is a fraction of the island.
+
+land_cover = Metadatum(:landcover_class; dataset = MCD12Q1(), region, date = DateTime(2019))
+
+classes = Field(land_cover)
+class_codes = Array(interior(classes, :, :, 1))
+land = [!isnan(code) && code != igbp_class_names.water for code in class_codes]
+
 nanmean(field) = mean(filter(!isnan, vec(Array(interior(field)))))
-gap_fraction(field) = mean(isnan.(Array(interior(field))))
+gap_fraction(field) = mean(isnan, Array(interior(field, :, :, 1))[land])
+land_fraction(mask) = mean(mask[land])
 
 # ## Why a single composite looks so sparse
 #
 # One 8-day composite first, because the problem the rest of the example solves is visible in
-# it. Much of the box is missing, and the contributions are different in kind. The product
+# it. A fifth of the island is missing in this February composite, and the contributions are
+# different in kind. The product
 # writes a land-cover code in place of LAI where the surface is outside the retrieval's scope,
 # available as `:landcover_code`; urban and barren labels do not establish zero leaf area, and
 # water is unretrievable by design. The rest is cloud and quality screening.
 
-date = DateTime(2019, 7, 4)
+date = DateTime(2019, 2, 18)
 
 single_composite = Metadatum(:leaf_area_index; dataset = MCD15A2H(), region, date)
 in_band_codes = Metadatum(:landcover_code; dataset = MCD15A2H(), region, date)
 
 single_composite_leaf_area_index = Field(single_composite)
 
-in_band_fraction = mean(isfinite, Array(interior(Field(in_band_codes))))
+in_band_fraction = land_fraction(isfinite.(Array(interior(Field(in_band_codes), :, :, 1))))
 
 @printf("Single 8-day composite, %s\n", Dates.format(date, "yyyy-mm-dd"))
 @printf("  land-cover codes, without a retrieval       : %.2f%%\n", 100 * in_band_fraction)
@@ -126,19 +139,13 @@ deep_composite_leaf_area_index = Field(deep_composite)
 # into permanent snow (15) — so `Field(metadatum)` lands them on the product's own grid and
 # the check below is that nothing fractional came back.
 
-land_cover = Metadatum(:landcover_class; dataset = MCD12Q1(), region, date = DateTime(2019))
-
-classes = Field(land_cover)
-class_codes = Array(interior(classes, :, :, 1))
-
 present = sort(Int.(unique(filter(!isnan, vec(class_codes)))))
 class_names = landcover_class_names(MCD12Q1())
 class_name(code) = only(key for (key, value) in pairs(class_names) if value == code)
 
-@printf("\nMCD12Q1 IGBP classes over the box, on the product's own 500 m grid\n")
-for code in present
-    @printf("  %-28s (%2d) : %5.2f%%\n", class_name(code), code,
-            100 * count(==(code), class_codes) / count(!isnan, class_codes))
+@printf("\nMCD12Q1 IGBP classes over the island, on the product's own 500 m grid\n")
+for code in filter(!=(igbp_class_names.water), present)
+    @printf("  %-28s (%2d) : %5.2f%%\n", class_name(code), code, 100 * land_fraction(class_codes .== code))
 end
 @printf("  no fractional codes : %s\n",
         all(code -> isnan(code) || code == round(code), class_codes))
@@ -177,14 +184,6 @@ fraction_sum = sum(Array(interior(fraction)) for fraction in fractions)
         mean(filter(!isnan, vec(fraction_sum))),
         maximum(abs, filter(!isnan, vec(fraction_sum)) .- 1))
 
-# The regrid onto the model grid adds no gap of its own. Each model cell takes the area mean of
-# the retrievals under it, normalized by the area they cover, so a model cell is missing only
-# where no native cell under it holds a retrieval.
-
-@printf("\nWhat the regrid onto the model grid costs\n")
-@printf("  native 500 m grid  : %.2f%% missing\n", 100 * gap_fraction(deep_composite_leaf_area_index))
-@printf("  on the model grid  : %.2f%% missing\n", 100 * gap_fraction(Field(deep_composite, grid)))
-
 # The two products name the non-vegetated surfaces independently: MCD12Q1 as classes 13, 15,
 # 16 and 17, and MCD15A2H as the in-band codes it writes in place of a retrieval. They come
 # from related land-cover inputs, so they should largely agree, and where they do not the
@@ -197,12 +196,12 @@ in_band = .!isnan.(Array(interior(Field(in_band_codes), :, :, 1)))
 @printf("  MCD12Q1 says non-vegetated : %d cells\n", count(non_vegetated))
 @printf("  MCD15A2H wrote a class code: %d cells\n", count(in_band))
 @printf("  they disagree on           : %d cells (%.2f%%)\n",
-        count(non_vegetated .⊻ in_band), 100 * mean(non_vegetated .⊻ in_band))
+        count(non_vegetated .⊻ in_band), 100 * land_fraction(non_vegetated .⊻ in_band))
 
 axis_kw = (xlabel = "Longitude (ᵒ)", ylabel = "Latitude (ᵒ)")
-leaf_area_index_range = (0, 6)
+leaf_area_index_range = (0, 4)
 
-## Only nine of the seventeen IGBP classes occur in this box, so the map is drawn over a
+## Only twelve of the seventeen IGBP classes occur in this box, so the map is drawn over a
 ## compact index of the ones present and the colorbar spells them out. A 1-17 numeric scale
 ## would be unreadable and would spend most of its range on classes that are not here.
 class_position = Dict(code => n for (n, code) in enumerate(present))
@@ -226,13 +225,13 @@ plot = heatmap!(ax, native_field(class_index),
                 colorrange = (0.5, length(present) + 0.5), nan_color = :gray80)
 Colorbar(fig[2, 2], plot, ticks = (1:length(present), class_labels))
 
-ax = Axis(fig[3, 1]; title = "Deciduous broadleaf fraction (model grid)", axis_kw...)
-plot = heatmap!(ax, fractions.deciduous_broadleaf_forest,
+ax = Axis(fig[3, 1]; title = "Cropland fraction (model grid)", axis_kw...)
+plot = heatmap!(ax, fractions.cropland,
                 colormap = :magma, colorrange = (0, 1))
 Colorbar(fig[3, 2], plot, label = "area fraction")
 
-ax = Axis(fig[3, 3]; title = "Woody savanna fraction (model grid)", axis_kw...)
-plot = heatmap!(ax, fractions.woody_savanna,
+ax = Axis(fig[3, 3]; title = "Evergreen needleleaf forest fraction (model grid)", axis_kw...)
+plot = heatmap!(ax, fractions.evergreen_needleleaf_forest,
                 colormap = :magma, colorrange = (0, 1))
 Colorbar(fig[3, 4], plot, label = "area fraction")
 
@@ -271,17 +270,18 @@ retained = Field(retained_retrieval_metadatum(
 @printf("  gap fraction  : mean %.2f%%, worst %.2f%% (%s)\n",
         100 * mean(raw_gaps), 100 * raw_gaps[worst],
         Dates.format(metadata.dates[worst], "u dd"))
+retained_on_land = Array(interior(retained, :, :, 1))[land]
+
 @printf("  retained count at the worst period : mean %.2f of %d, minimum %d\n",
-        nanmean(retained), length(climatology.years),
-        Int(minimum(Array(interior(retained)))))
+        mean(retained_on_land), length(climatology.years), Int(minimum(retained_on_land)))
 
 # The chain runs on the assembled series. Each stage only writes where the previous one left
 # a gap, and none of them rewrites an observation.
 #
-# The tolerance of the first stage is the class table. Over this box that is three periods
-# for the savanna covering half of it, one for the deciduous forest covering a third — where
-# more than one period across green-up puts the ramp in the wrong place — and zero for urban
-# and water, which are never filled at all.
+# The tolerance of the first stage is the class table. Over Cyprus that is one period for the
+# grassland and cropland covering four fifths of the island — where more than one period across
+# the winter green-up puts the ramp in the wrong place — three for the savanna, six for the
+# Troodos pine, and zero for urban and water, which are never filled at all.
 
 max_gap = class_maximum_gap(classes)
 
@@ -297,13 +297,13 @@ fill_record = fill_seasonal_gaps!(filled_leaf_area_index, classes; cyclic = true
 # the gap each stage leaves behind. That is what makes the gap-fraction panel below readable:
 # each line is one more stage than the line above it, and each has to sit at or below it.
 
-gaps_after(stage) = [mean(fill_record.provenance[:, :, n] .> stage) for n in periods]
+gaps_after(stage) = [land_fraction(fill_record.provenance[:, :, n] .> stage) for n in periods]
 
 temporal_gaps = gaps_after(gap_fill_provenance.temporal)
 scaled_gaps = gaps_after(gap_fill_provenance.scaled)
 filled_gaps = gaps_after(gap_fill_provenance.class_mean)
 
-non_vegetated_fraction = mean(non_vegetated)
+non_vegetated_fraction = land_fraction(non_vegetated)
 
 @printf("\nGap fraction, cumulative by stage (mean over the %d periods)\n", length(periods))
 @printf("  composited only          : %.2f%%\n", 100 * mean(raw_gaps))
@@ -340,19 +340,19 @@ low, peak = argmin(seasonal_mean), argmax(seasonal_mean)
         Dates.format(metadata.dates[low], "u dd"))
 @printf("  seasonal peak: LAI = %.2f  (%s)\n", seasonal_mean[peak],
         Dates.format(metadata.dates[peak], "u dd"))
-@printf("  peak / low  : %.2f×  — a deciduous box, not an evergreen one\n",
+@printf("  peak / low  : %.2f×  — a winter-green island, not an evergreen one\n",
         seasonal_mean[peak] / seasonal_mean[low])
 
 # The provenance and reach fields are what make the result defensible rather than opaque. A
 # fill that reached four hundred kilometers is not the same datum as one that reached fifteen.
 #
-# Read the shares below before drawing conclusions about the donor stages from this box:
-# five years of compositing over a mid-latitude continental interior already brings the
-# residual to within a fraction of a percent of the non-vegetated floor, so almost everything
-# is observed and the donor stages barely fire. That is the favorable case, not the case
-# they exist for. The single year below is where they carry the result.
+# Read the shares below before drawing conclusions about the donor stages from this
+# climatology: five years of compositing bring the residual down to the non-vegetated floor
+# from spring to autumn, when the sky is clear, and only the winter periods leave cloud to fill,
+# so the stages supply about one cell-period in a hundred. That is the favorable case, not the
+# case they exist for. The single year below is where they carry the result.
 
-provenance_share = Dict(name => mean(fill_record.provenance .== code)
+provenance_share = Dict(name => mean(land_fraction(fill_record.provenance[:, :, n] .== code) for n in periods)
                         for (name, code) in pairs(gap_fill_provenance))
 
 @printf("\nHow every cell-period got its value\n")
@@ -419,14 +419,17 @@ nothing #hide
 # ![](modis_leaf_area_index_climatology.png)
 #
 # The peak and the low share one color scale, which is the point of putting them side by
-# side: this canopy swings by more than a factor of eight, and the gray cells are the water
-# and built-up surfaces that are never filled.
+# side: the island's leaf area more than triples between the November low and the
+# late-February peak, almost all of it on the Mesaoria plain, while the Troodos barely changes.
+# The gray cells are the sea and the built-up surfaces that are never filled; Nicosia is the
+# hole in the middle.
 #
-# The gap panel is the honest result rather than a flattering one. Five years of compositing
-# over a mid-latitude continental interior lands within a tenth of a percent of the
-# non-vegetated floor before any filling, so the three filled lines sit on top of each other
-# just above it and only the gray unfilled line has any structure. This box does not need the
-# donor stages. The single year below does, and that is where they can be seen working.
+# The gap panel follows the weather. From spring to autumn the composited line sits on the
+# non-vegetated floor, because five clear summers leave nothing to fill. The winter periods are
+# where the stages work, with up to 8.5% of the island missing in early December and the
+# temporal stage taking most of the excess. The filled line ends a few tenths of a percent
+# below the floor because the floor counts every urban and barren cell, and the product
+# retrieves leaf area over some of them.
 
 # ## The time axis
 #
@@ -436,10 +439,10 @@ nothing #hide
 # read path applies that offset, and a series that did not would hand every interpolation a
 # four-day phase lead.
 
-## A representative cell for every curve below: deciduous broadleaf, nearest the box center.
+## A representative cell for every curve below: cropland, nearest the box center.
 center = size(class_codes) .÷ 2
-deciduous = findall(==(Float32(igbp_class_names.deciduous_broadleaf_forest)), class_codes)
-i, j = Tuple(argmin(cell -> (cell[1] - center[1])^2 + (cell[2] - center[2])^2, deciduous))
+cropland = findall(==(Float32(igbp_class_names.cropland)), class_codes)
+i, j = Tuple(argmin(cell -> (cell[1] - center[1])^2 + (cell[2] - center[2])^2, cropland))
 
 times = filled_leaf_area_index.times
 
@@ -461,11 +464,11 @@ sample(t) = filled_leaf_area_index[i, j, 1, Time(t)]
 @printf("  across the turn of the year : %.6f then %.6f\n",
         sample(365 * 86400 - 1), sample(1))
 
-green_up = 60:0.5:160
+green_up = 290:0.5:365
 
 fig = Figure(size = (1200, 450))
 ax = Axis(fig[1, 1]; xlabel = "Day of year", ylabel = "LAI (m² m⁻²)",
-          title = "Interpolating the series through green-up")
+          title = "Interpolating the series through the autumn green-up")
 lines!(ax, collect(green_up), [sample((day - 1) * 86400) for day in green_up],
        color = :seagreen, label = "interpolated")
 scatter!(ax, times ./ 86400 .+ 1, after[i, j, :], color = :firebrick, markersize = 9,
@@ -520,7 +523,8 @@ climatology_2019 = after[:, :, anchor_periods]
 
 departure = filter(!isnan, vec(filled_2019 .- climatology_2019))
 
-@printf("  gap fraction after filling  : %.2f%%\n", 100 * mean(isnan.(filled_2019)))
+@printf("  gap fraction after filling  : %.2f%%\n",
+        100 * mean(land_fraction(isnan.(filled_2019[:, :, n])) for n in eachindex(target.dates)))
 @printf("  2019 minus the climatology  : mean %+.3f, RMS %.3f m² m⁻²\n",
         mean(departure), sqrt(mean(abs2, departure)))
 @printf("  → the anchor is scaled, not copied : %s\n", sqrt(mean(abs2, departure)) > 0.05)
@@ -541,9 +545,9 @@ unweighted = [mean(filter(!isnan, vec(filled_2019[:, :, n])))
 
 bimonthly_mean = [nanmean(bimonthly_leaf_area_index[w]) for w in windows]
 
-green_up_window = findfirst(w -> Dates.month(edges[w]) == 3, windows)
-green_up_samples = [n for n in eachindex(target.dates)
-                    if edges[green_up_window] ≤ target.dates[n] < edges[green_up_window + 1]]
+dry_down_window = findfirst(w -> Dates.month(edges[w]) == 3, windows)
+dry_down_samples = [n for n in eachindex(target.dates)
+                    if edges[dry_down_window] ≤ target.dates[n] < edges[dry_down_window + 1]]
 
 # The bracketing composite runs a few days past 31 December, so the tiling ends in a short
 # stub window rather than being truncated mid-composite. That is the honest thing to do with
@@ -554,10 +558,10 @@ for w in windows
     @printf("  %s – %s : LAI = %.3f\n", Dates.format(edges[w], "u dd"),
             Dates.format(edges[w + 1], "u dd"), bimonthly_mean[w])
 end
-@printf("  green-up window, overlap-weighted %.4f vs unweighted %.4f (%.1f%% apart)\n",
-        bimonthly_mean[green_up_window], mean(unweighted[green_up_samples]),
-        100 * abs(bimonthly_mean[green_up_window] - mean(unweighted[green_up_samples])) /
-        bimonthly_mean[green_up_window])
+@printf("  spring dry-down window, overlap-weighted %.4f vs unweighted %.4f (%.1f%% apart)\n",
+        bimonthly_mean[dry_down_window], mean(unweighted[dry_down_samples]),
+        100 * abs(bimonthly_mean[dry_down_window] - mean(unweighted[dry_down_samples])) /
+        bimonthly_mean[dry_down_window])
 
 ## The bracketing composite lands in the next January, so measure days from the window's own
 ## start rather than wrapping its day-of-year back to 1.
@@ -588,7 +592,7 @@ plot = heatmap!(ax, provenance_map(anchored.provenance[:, :, worst_2019]),
 Colorbar(fig[1, 5], plot, ticks = provenance_ticks)
 
 ax = Axis(fig[2, 1:3]; xlabel = "Days from 1 January 2019", ylabel = "LAI (m² m⁻²)",
-          title = "One deciduous cell: 2019 against the $(climatology.years) climatology")
+          title = "One cropland cell: 2019 against the $(climatology.years) climatology")
 lines!(ax, elapsed.(target.dates), climatology_2019[i, j, :], color = :gray40,
        linestyle = :dash, label = "climatology (the anchor)")
 lines!(ax, elapsed.(target.dates), filled_2019[i, j, :], color = :seagreen, linewidth = 2,
@@ -611,15 +615,15 @@ nothing #hide
 
 # ![](modis_leaf_area_index_single_year.png)
 #
-# Three quarters of that period is missing before the fill and none of it after, and the
-# result is spatially coherent rather than patched — the provenance map shows the temporal
-# stage carrying most of it with the scaled donor taking coherent blocks where the overcast
-# was too wide to bridge.
+# Nearly half of the island is missing in that January period before the fill, and none of its
+# vegetated land after. The result is spatially coherent rather than patched — the provenance
+# map shows the temporal stage carrying most of it, with the scaled donor taking coherent
+# blocks where the overcast was too wide to bridge.
 #
-# The single-cell panel also shows what a single year costs. The sharp mid-August excursion is
-# an *observed* composite, not a fill: the recommended screen keeps cloud shadow and aerosol,
-# which a multi-year composite averages away and one year does not. Filling cannot repair
-# that, and a simulation reading a single year should expect it.
+# The lower panels show why a single year is worth having. This cropland cell runs well above
+# its climatology through the 2019 winter peak, and the difference map at the peak shows the
+# same across the Mesaoria plain. The anchor is scaled to the year rather than copied, so the
+# periods the chain supplied follow 2019's level, not the five-year mean.
 
 # ## Scoring the fill
 #
@@ -635,7 +639,7 @@ scores = gap_fill_denial(raw_leaf_area_index, classes; samples_per_class = 100, 
 
 @printf("\nData denial over the %s climatology\n", climatology.years)
 @printf("  %-28s %8s %10s %8s %10s\n", "class", "withheld", "estimated", "R²", "CV(RMSE)")
-for row in scores
+for row in filter(row -> row.estimated > 0, scores)
     @printf("  %-28s %8d %10d %8.2f %10.2f\n", class_name(row.class), row.withheld,
             row.estimated, row.R², row.relative_root_mean_square_error)
 end
@@ -645,6 +649,9 @@ end
 # donors and the truth are multi-year means, in which the part of the retrieval error that
 # varies from year to year has averaged down, though the systematic part has not. Comparisons
 # with single-date studies also depend on their validation data and gap patterns.
+#
+# Cropland scores lowest by CV(RMSE): its winter peak varies most from year to year, as the
+# 2019 panel above shows.
 #
 # Withheld entries can adjoin existing gaps or other withheld entries. Short, isolated gaps
 # may still dominate these scores, making them optimistic for long, clustered cloud gaps;
@@ -668,7 +675,7 @@ for (name, series) in ("climatology" => filled_leaf_area_index,
     left = isnan.(horizontal(series))
     vegetated_left = count(t -> left[t] && !non_vegetated[t[1], t[2]], CartesianIndices(left))
     @printf("\n%s: %.3f%% left unfilled, of which %d cell-periods are vegetated\n",
-            name, 100 * mean(left), vegetated_left)
+            name, 100 * mean(land_fraction(left[:, :, n]) for n in axes(left, 3)), vegetated_left)
 
     zero_non_vegetated!(series, classes)
     remaining = isnan.(horizontal(series))
@@ -677,10 +684,10 @@ for (name, series) in ("climatology" => filled_leaf_area_index,
 end
 
 # The regrid is conservative and normalized by the land area that holds a value, so each model
-# cell takes the area mean of the 500 m land cells under it: a model cell half lake and half
-# forest carries the forest's leaf area per unit of its land. Urban, snow and barren count
-# toward that land at zero; the lake does not count at all, and a cell that is all water has
-# no value.
+# cell takes the area mean of the 500 m land cells under it: a coastal model cell half sea and
+# half cropland carries the cropland's leaf area per unit of its land. Urban, snow and barren
+# count toward that land at zero; the sea does not count at all, and a cell that is all water
+# has no value.
 
 model_grid_leaf_area_index = valid_area_mean!(Field{Center, Center, Nothing}(grid),
                                               filled_leaf_area_index[peak])
