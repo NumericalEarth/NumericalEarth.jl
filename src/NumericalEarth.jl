@@ -64,6 +64,7 @@ export
     SphericalHarmonicSelfAttractionAndLoading,
     AsymptoticLoadLoveNumbers,
     ConvolutionLoadingOperator,
+    ConvolutionSelfAttractionAndLoading,
     loading_gradient!,
     loading_gradient_transpose!,
     TwoColorRadiation,

@@ -380,7 +380,8 @@ override the defaults on a per-field basis.
   Default: `TimeInterpolatedPotential(grid, clock)`.
 - `self_attraction_and_loading`: `nothing`, [`ScalarSelfAttractionAndLoading`](@ref), which reduces the
   gravitational acceleration of the free surface by `1 - β`, or [`SphericalHarmonicSelfAttractionAndLoading`](@ref),
-  whose potential is added to `barotropic_potential` and updated from the bottom pressure every time the state is updated.
+  whose potential is added to `barotropic_potential` and updated from the bottom pressure every time the state is updated,
+  or [`ConvolutionSelfAttractionAndLoading`](@ref), whose gradient forces `u` and `v` directly.
   Default: `nothing`.
 - `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, or any tracer).
 - `freshwater_tracer_content`: Named tuple giving, per tracer, the concentration carried into that
@@ -501,6 +502,8 @@ function hydrostatic_ocean_simulation(grid;
             :v ∈ keys(forcing) && (v_forcing = (v_forcing, forcing[:v]))
             forcing = merge(forcing, (u=u_forcing, v=v_forcing))
         end
+
+        forcing = add_self_attraction_and_loading_forcing(forcing, self_attraction_and_loading)
     end
 
     if !isnothing(radiative_forcing)

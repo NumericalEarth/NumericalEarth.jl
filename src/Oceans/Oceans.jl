@@ -2,7 +2,7 @@ module Oceans
 
 export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean, TimeInterpolatedPotential,
        ScalarSelfAttractionAndLoading, SphericalHarmonicSelfAttractionAndLoading,
-       AsymptoticLoadLoveNumbers, ConvolutionLoadingOperator, loading_gradient!, loading_gradient_transpose!,
+       AsymptoticLoadLoveNumbers, ConvolutionLoadingOperator, ConvolutionSelfAttractionAndLoading, loading_gradient!, loading_gradient_transpose!,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
