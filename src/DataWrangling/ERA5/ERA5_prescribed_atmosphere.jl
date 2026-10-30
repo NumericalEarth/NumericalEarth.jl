@@ -92,9 +92,8 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    # Download every variable up front in one bundle: backends batch a `MetadataSet`
-    # across variables (one CDS request, or one era5cli invocation with concurrent
-    # per-variable requests), so the `FieldTimeSeries` below find their files cached.
+    # Download every variable up front in one bundle (one CDS request per batch of datetimes),
+    # so the `FieldTimeSeries` below find their files cached.
     mset = MetadataSet(:eastward_velocity, :northward_velocity, :temperature,
                        :dewpoint_temperature, pressure, :total_precipitation;
                        dataset, start_date, end_date, dir, region)

@@ -1,7 +1,7 @@
 #####
 ##### Shared machinery for batched ERA5 downloads
 #####
-##### Both backends (CDSAPI.jl, era5cli via CopernicusClimateDataStore.jl) fetch many datetimes
+##### Every CDS client (CDSAPI.jl, CopernicusClimateDataStore.jl) fetches many datetimes
 ##### per CDS request — batched by calendar month, capped by the CDS per-request cost limit —
 ##### then split the returned multi-step NetCDF into the per-variable, per-datetime files the
 ##### readers expect. The batching and splitting utilities live here.

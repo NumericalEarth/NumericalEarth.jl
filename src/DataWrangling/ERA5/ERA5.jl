@@ -17,7 +17,7 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: Distributed, child_architecture
+using Oceananigans.DistributedComputations: Distributed, child_architecture, @root
 using Oceananigans.Fields: Field, Center, set!
 using Oceananigans.OutputReaders: Cyclical, Linear, Clamp, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
 using Oceananigans.TimeSteppers: Clock
@@ -29,7 +29,9 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, Bounding
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
-                       instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip
+                       instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip,
+                       Column, Nearest, default_download_directory, metadata_filename,
+                       default_cds_client, cds_retrieve, retrieve_with_retries
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
 
 download_ERA5_cache::String = ""
@@ -151,6 +153,7 @@ include("ERA5_land.jl")
 include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
 include("ERA5_batched_downloads.jl")
+include("ERA5_downloads.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")
 
