@@ -153,12 +153,44 @@ end
     return K * ((1 - L.b₀) / sqrt(2s) - (L.a₁ - L.b₁) * log(sqrt(s / 2) + s / 2))
 end
 
+"""
+    green_function_correction(love_numbers, asymptotic = AsymptoticLoadLoveNumbers();
+                              reference_density = 1035, earth_density = 5517, points = 20000)
+
+Tabulate `ΔG(u) = 3ρ₀ / 4πρₑ Σₙ [(1 + k′ₙ − h′ₙ) − (1 + k′ₙ − h′ₙ)ᵃˢʸᵐᵖᵗᵒᵗⁱᶜ] Pₙ(1 − 2u²)` at `points + 1` equally
+spaced `u = sin(γ / 2)` in [0, 1], over the degrees of `love_numbers = (; h, k)` (indexed by degree + 1). Added to the
+closed-form Green's function it gives the Green's function with the tabulated load Love numbers.
+"""
+function green_function_correction(love_numbers, asymptotic = AsymptoticLoadLoveNumbers();
+                                   reference_density = 1035, earth_density = 5517, points = 20000)
+    (; h, k) = love_numbers
+    N = length(h) - 1
+    d = [(1 + k[n+1] - h[n+1]) - one_plus_k_minus_h(asymptotic, n) for n in 0:N]
+    K = 3reference_density / (4π * earth_density)
+    table = zeros(points + 1)
+    Threads.@threads for q in 0:points
+        c = 1 - 2 * (q / points)^2
+        P², P¹ = 1.0, c
+        S = d[1] + d[2] * c
+        for n in 2:N
+            P = ((2n - 1) * c * P¹ - (n - 1) * P²) / n
+            S += d[n+1] * P
+            P², P¹ = P¹, P
+        end
+        table[q+1] = K * S
+    end
+    return table
+end
+
+loading_green_function(c, K, L, ::Nothing) = closed_form_green_function(c, K, L)
+loading_green_function(c, K, L, correction) = closed_form_green_function(c, K, L) + interpolate_correction(correction, sqrt(max(1 - c, 0) / 2))
+
 @inline unit_sphere_point(λ, φ) = (cos(φ) * cos(λ), cos(φ) * sin(λ), sin(φ))
 @inline dot3(a, b) = a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 
 # ∫ G over source cell (js, offset d) for the target at the center of cell (0, jt): midpoint rule far away,
 # subcell rule within `near` cell sizes, and the 1/r singularity of the self cell integrated analytically.
-function cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, L; subcells = 8, near = 3)
+function cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, L, correction; subcells = 8, near = 3)
     Δλ = 2π / Nx
     φ₋, φ₊ = deg2rad(φᶠ[js]), deg2rad(φᶠ[js+1])
     φt = deg2rad((φᶠ[jt] + φᶠ[jt+1]) / 2)
@@ -167,7 +199,7 @@ function cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, L; subcells = 8
     c = dot3(xt, unit_sphere_point(d * Δλ, φs))
     Δφ = φ₊ - φ₋
     h = max(Δφ, cos(φs) * Δλ, cos(φt) * Δλ)
-    sqrt(max(2 - 2c, 0.0)) > near * h && return closed_form_green_function(c, K, L) * Δλ * (sin(φ₊) - sin(φ₋))
+    sqrt(max(2 - 2c, 0.0)) > near * h && return loading_green_function(c, K, L, correction) * Δλ * (sin(φ₊) - sin(φ₋))
     self = d == 0 && js == jt
     A = K * (1 - L.b₀)
     n = subcells
@@ -176,7 +208,7 @@ function cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, L; subcells = 8
         λ = (d + (p - 0.5) / n - 0.5) * Δλ
         φa, φb = φ₋ + (q - 1) / n * Δφ, φ₋ + q / n * Δφ
         φ = (φa + φb) / 2
-        Gv = closed_form_green_function(dot3(xt, unit_sphere_point(λ, φ)), K, L)
+        Gv = loading_green_function(dot3(xt, unit_sphere_point(λ, φ)), K, L, correction)
         self && (Gv -= A / sqrt((cos(φt) * λ)^2 + (φ - φt)^2))
         S += Gv * Δλ / n * (sin(φb) - sin(φa))
     end
@@ -188,14 +220,15 @@ function cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, L; subcells = 8
 end
 
 """
-    convolution_zonal_kernel(Nx, φᶠ; love_numbers = AsymptoticLoadLoveNumbers(), reference_density = 1035,
-                             earth_density = 5517)
+    convolution_zonal_kernel(Nx, φᶠ; love_numbers = AsymptoticLoadLoveNumbers(), correction = nothing,
+                             reference_density = 1035, earth_density = 5517)
 
-Kernel of the convolution of η with the closed-form Green's function of Chen et al. (2026), integrated over each
-source cell, giving the potential at cell centers. Evaluates the full sum over all cells.
+Kernel of the convolution of η with the closed-form Green's function of Chen et al. (2026), plus `correction`
+from [`green_function_correction`](@ref) if given, integrated over each source cell, giving the potential at cell
+centers. Evaluates the full sum over all cells.
 """
-function convolution_zonal_kernel(Nx, φᶠ; love_numbers = AsymptoticLoadLoveNumbers(), reference_density = 1035,
-                                  earth_density = 5517, subcells = 8)
+function convolution_zonal_kernel(Nx, φᶠ; love_numbers = AsymptoticLoadLoveNumbers(), correction = nothing,
+                                  reference_density = 1035, earth_density = 5517, subcells = 8)
     Ny = length(φᶠ) - 1
     Nm = Nx ÷ 2 + 1
     K = 3reference_density / (4π * earth_density)
@@ -205,7 +238,7 @@ function convolution_zonal_kernel(Nx, φᶠ; love_numbers = AsymptoticLoadLoveNu
         k = zeros(Nx)
         for js in 1:Ny
             for d in 0:Nx÷2
-                k[d+1] = cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, love_numbers; subcells)
+                k[d+1] = cell_integrated_green_function(Nx, φᶠ, jt, js, d, K, love_numbers, correction; subcells)
             end
             for d in Nx÷2+1:Nx-1
                 k[d+1] = k[Nx-d+1]
