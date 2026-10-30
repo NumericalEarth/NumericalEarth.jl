@@ -12,15 +12,15 @@ Download the NASA Earthdata granule at `url` to `path`, authenticating with the
 https://urs.earthdata.nasa.gov).
 """
 function earthdata_download(url, path; attempts = 3)
-    # An unset GitHub Actions secret reaches the environment as an empty string
+    # An empty credential counts as unset
     username = get(ENV, "EARTHDATA_USERNAME", "")
     password = get(ENV, "EARTHDATA_PASSWORD", "")
 
     if isempty(username)
-        error("NASA Earthdata credentials not found: EARTHDATA_USERNAME is not set. " *
+        error("NASA Earthdata credentials not found: EARTHDATA_USERNAME is not set or empty. " *
               "Register free at https://urs.earthdata.nasa.gov.")
     elseif isempty(password)
-        error("NASA Earthdata credentials not found: EARTHDATA_PASSWORD is not set. " *
+        error("NASA Earthdata credentials not found: EARTHDATA_PASSWORD is not set or empty. " *
               "Register free at https://urs.earthdata.nasa.gov.")
     end
 
