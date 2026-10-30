@@ -20,7 +20,7 @@ using NumericalEarth:
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
+using NumericalEarth.NestedModels: NestedModel, copy_overlap!, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
                                    VectorComponent
 
 using Oceananigans:
@@ -38,10 +38,11 @@ using Oceananigans:
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
-using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
-using Oceananigans.Grids: OrthogonalSphericalShellGrid
+using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain, constructor_arguments
+using Oceananigans.Grids: LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, Bounded
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
 using Oceananigans.TurbulenceClosures: closure_required_tracers
@@ -52,9 +53,14 @@ using Oceananigans.Simulations: Callback
 
 using GPUArraysCore: @allowscalar
 
+using Statistics: mean
+
 using Breeze:
     BulkDrag,
     CompressibleDynamics,
+    TerrainFollowingVerticalDiscretization,
+    LinearDecay,
+    TwoLevelDecay,
     SplitExplicitTimeDiscretization,
     UpperSponge,
     NoDivergenceDamping,
@@ -335,9 +341,66 @@ frame of physical width `terrain_blend_length` (meters; converted to a resolutio
 or overridden directly with `terrain_blend_width`), so the terrain at the open boundaries matches the
 orography the parent state was produced with — and the blend slope stays fixed across resolutions
 rather than steepening. `parent_surface_elevation` replaces the parent's own surface elevation in that blend.
+
+A `mover` (a [`NestMover`](@ref)) makes the nest follow a feature: it is attached to the returned
+`NestedModel` together with a builder that rebuilds the child on a translated grid from the same
+`parent_atmosphere`, state exchanger and keyword arguments (see [`translate_domain!`](@ref)). The
+`terrain` of a moving nest is regridded once over the whole parent domain, from which every
+child grid takes its window; an elevation `Field` given as `terrain` must then cover that domain
+at the child's resolution, and any `relaxation_mask` or `drag_surface_temperature` given
+explicitly must not be bound to the initial grid.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedComponent},
-                                                              child_grid;
+                                                              child_grid; mover = nothing, terrain = nothing, kw...)
+    isnothing(mover) && return build_nested_atmosphere_model(parent_atmosphere, child_grid; terrain, kw...)
+
+    corridor = corridor_elevation(terrain, parent_atmosphere, child_grid)
+    build(grid; exchanger = nothing) =
+        build_nested_atmosphere_model(parent_atmosphere, grid; exchanger, terrain = terrain_window(corridor, grid), kw...)
+    nested_model = build(child_grid)
+    exchanger = nested_model.exchanger
+    return NestedModel(parent_atmosphere, nested_model.child, exchanger, nested_model.child_callbacks,
+                       mover, grid -> build(grid; exchanger))
+end
+
+# The elevation over every grid a moving child can visit: a topography dataset is regridded once
+# onto the child's cells extended to the parent's domain, and each child grid takes its window.
+corridor_elevation(::Nothing, parent_atmosphere, child_grid) = nothing
+corridor_elevation(elevation::AbstractField, parent_atmosphere, child_grid) = elevation
+
+function corridor_elevation(dataset, parent_atmosphere, child_grid)
+    λ₁, λ₂ = x_domain(child_grid)
+    φ₁, φ₂ = y_domain(child_grid)
+    λ₃, λ₄ = x_domain(parent_atmosphere.grid)
+    φ₃, φ₄ = y_domain(parent_atmosphere.grid)
+    Δλ, Δφ = child_grid.Δλᶠᵃᵃ, child_grid.Δφᵃᶠᵃ
+    west  = ceil(Int, (λ₁ - λ₃) / Δλ)
+    east  = ceil(Int, (λ₄ - λ₂) / Δλ)
+    south = ceil(Int, (φ₁ - φ₃) / Δφ)
+    north = ceil(Int, (φ₄ - φ₂) / Δφ)
+    Nx, Ny, _ = size(child_grid)
+    corridor_grid = LatitudeLongitudeGrid(architecture(child_grid), eltype(child_grid);
+                                          size = (Nx + west + east, Ny + south + north, 1),
+                                          longitude = (λ₁ - west * Δλ, λ₂ + east * Δλ),
+                                          latitude  = (φ₁ - south * Δφ, φ₂ + north * Δφ),
+                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    return regrid_topography(corridor_grid; dataset)
+end
+
+terrain_window(::Nothing, grid) = nothing
+
+function terrain_window(elevation, grid)
+    i₀ = round(Int, (x_domain(grid)[1] - x_domain(elevation.grid)[1]) / grid.Δλᶠᵃᵃ)
+    j₀ = round(Int, (y_domain(grid)[1] - y_domain(elevation.grid)[1]) / grid.Δφᵃᶠᵃ)
+    Nx, Ny, _ = size(grid)
+    window = Field{Center, Center, Nothing}(grid)
+    interior(window) .= interior(elevation, i₀+1:i₀+Nx, j₀+1:j₀+Ny, :)
+    fill_halo_regions!(window)
+    return window
+end
+
+function build_nested_atmosphere_model(parent_atmosphere, child_grid;
+    exchanger = nothing,
     relaxation_rate = nothing,
     relaxation_width = default_relaxation_width,
     relaxation_mask = boundary_relaxation_mask(child_grid, relaxation_width),
@@ -379,8 +442,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); `exchange_state!`
     # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
-                                 moisture_name, time_indices_in_memory)
+    if isnothing(exchanger)
+        exchanger = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
+                                    moisture_name, time_indices_in_memory)
+    end
     prognostic = parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
@@ -513,8 +578,10 @@ the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_atm
 strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the parent in full, at the
 cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
-`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
-`nested_atmosphere_model(parent, child_grid; kw...)`.
+`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. A `mover` (a [`NestMover`](@ref))
+makes the nest follow a feature; it needs a whole-domain `parent_atmosphere` covering the track, and
+the default `drag_surface_temperature` is then the domain mean of the skin temperature, since the child's
+grid changes under it. Remaining keyword arguments flow to `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
     dir = default_download_directory(parent_dataset),
@@ -528,7 +595,12 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
+    mover = nothing,
     kw...)
+
+    if !isnothing(mover) && !(parent_atmosphere isa PrescribedAtmosphere)
+        throw(ArgumentError("a moving nest needs a whole-domain `parent_atmosphere`, not boundary strips"))
+    end
 
     snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
                                     architecture = architecture(child_grid), dir)
@@ -538,14 +610,17 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     end
 
     if !isnothing(bottom_drag_coefficient) && isnothing(drag_surface_temperature)
-        drag_surface_temperature = dataset_skin_temperature(parent_dataset, child_grid, first(dates), dir)
+        skin_temperature = dataset_skin_temperature(parent_dataset, child_grid, first(dates), dir)
+        drag_surface_temperature = isnothing(mover) ? skin_temperature : mean(skin_temperature)
     end
 
+    # A whole-domain parent carries the surface elevation over every grid a moving child visits.
+    parent_surface_elevation = parent_atmosphere isa PrescribedAtmosphere ? nothing : surface_elevation(snapshot)
+
     nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
-                                                                       relaxation_width, base_pressure,
+                                                                       mover, relaxation_width, base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature,
-                                                                       parent_surface_elevation = surface_elevation(snapshot),
-                                                                       kw...)
+                                                                       parent_surface_elevation, kw...)
 
     initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
@@ -576,6 +651,62 @@ function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t�
     ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
     ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
     return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
+end
+
+#####
+##### Moving nest: translate the child by whole cells
+#####
+
+# `grid` shifted by `shift = (iₛ, jₛ)` whole cells. A terrain-following coordinate comes back as a
+# skeleton, for `materialize_nested_terrain!` to fill at the new location.
+function translated_grid(grid::LatitudeLongitudeGrid, shift)
+    iₛ, jₛ = shift
+    args, kwargs = constructor_arguments(grid)
+    kwargs[:longitude] = kwargs[:longitude] .+ iₛ * grid.Δλᶠᵃᵃ
+    kwargs[:latitude]  = kwargs[:latitude]  .+ jₛ * grid.Δφᵃᶠᵃ
+    kwargs[:z] = terrain_skeleton(kwargs[:z])
+    return LatitudeLongitudeGrid(args[:architecture], args[:number_type]; kwargs...)
+end
+
+terrain_skeleton(z) = z
+terrain_skeleton(z::TerrainFollowingVerticalDiscretization) =
+    TerrainFollowingVerticalDiscretization(z.cᵃᵃᶠ; formulation = terrain_skeleton(z.formulation))
+terrain_skeleton(::LinearDecay) = LinearDecay()
+terrain_skeleton(f::TwoLevelDecay) = TwoLevelDecay(; f.large_scale_height, f.small_scale_height)
+
+# Rebuild the child on the shifted grid with the nest's builder (same parent, exchanger and
+# settings), fill it from the parent-derived prognostics at the current time with the flow following
+# the terrain, overwrite the overlap with the old child's state, and recompute the reference state
+# from the new domain mean. The old child's clock carries over, so the simulation's time is untouched.
+function NumericalEarth.NestedModels.translated_nest(nested_model::NestedModel, shift)
+    old = nested_model.child
+    rebuilt = nested_model.rebuild(translated_grid(old.grid, shift))
+    new = rebuilt.child
+    new.clock = nested_model.clock
+
+    prognostic = parent_prognostic(nested_model.exchanger)
+    moisture = NamedTuple{(moisture_prognostic_name(new.microphysics),)}((prognostic.ρqᵛᵉ,))
+    parent_state = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv, ρθ = prognostic.ρθ), moisture)
+
+    new_fields = Oceananigans.prognostic_fields(new)
+    old_fields = Oceananigans.prognostic_fields(old)
+    t = nested_model.clock.time
+    for (name, fts) in pairs(parent_state)
+        interpolate!(new_fields[name], fts[Time(t)])
+    end
+
+    update_state!(new)
+    ρw̃ = new.dynamics.contravariant_vertical_momentum
+    isnothing(ρw̃) || (interior(new.momentum.ρw) .-= interior(ρw̃))
+
+    for name in keys(new_fields)
+        copy_overlap!(new_fields[name], old_fields[name], shift)
+    end
+
+    set!(new; compute_reference_state = true)
+
+    return NestedModel(nested_model.parent, new, nested_model.exchanger, rebuilt.child_callbacks,
+                       nested_model.mover, nested_model.rebuild)
 end
 
 function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
