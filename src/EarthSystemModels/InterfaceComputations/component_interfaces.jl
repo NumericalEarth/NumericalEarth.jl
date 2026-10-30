@@ -19,12 +19,16 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, ST, SQ, F}
+mutable struct AtmosphereInterface{J, ST, SQ, F, S}
     fluxes :: J
     temperature :: ST
     specific_humidity :: SQ
     formulation :: F
+    storage :: S
 end
+
+AtmosphereInterface(fluxes, temperature, specific_humidity, formulation) =
+    AtmosphereInterface(fluxes, temperature, specific_humidity, formulation, nothing)
 
 """
     SeaIceOceanInterface{J, F, T, S, P}
@@ -386,6 +390,8 @@ Keyword Arguments
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
 - `atmosphere_land_interface_state`: a coupled canopy formulation or a named tuple of temperature and humidity formulations.
+- `atmosphere_land_interface_storage`: prognostic interface storage, [`PrognosticCanopyAir`](@ref) for a
+   [`CanopyInterface`](@ref) or [`PrognosticSkin`](@ref) for an [`EnergyBalanceTemperature`](@ref). Default: `nothing`.
 - `ocean_fraction`: fraction of each exchange-grid cell covered by ocean (anything `set!` accepts:
    a `Field`, function, or number), forming the [`SurfacePartition`](@ref) that weights the
    atmosphere's net surface fluxes. Required when the model has both land and ocean interfaces;
@@ -415,9 +421,11 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
                              atmosphere_land_interface_state = default_al_interface_state(land),
+                             atmosphere_land_interface_storage = nothing,
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
                                                                                    fluxes              = atmosphere_land_fluxes,
                                                                                    state               = atmosphere_land_interface_state,
+                                                                                   storage             = atmosphere_land_interface_storage,
                                                                                    velocity_difference = atmosphere_land_velocity_difference),
                              ocean_fraction = nothing,
                              ocean_reference_density = reference_density(ocean),

@@ -24,16 +24,17 @@ a named tuple. A `CanopyInterface` occupies `formulation.state` directly and sol
 the coupled canopy and ground balances. The computed temperatures, humidity, and fluxes
 are stored on the interface.
 
-`SlabLand` stores prognostic canopy-air state or ground temperature through `surface_storage`.
-Use `PrognosticCanopyAir` for canopy-air temperature and humidity, `PrognosticSkin` for
-ground temperature, or `nothing` (the default) for diagnostic interface balances.
+The atmosphere–land interface can carry prognostic canopy-air state or ground temperature,
+passed as `atmosphere_land_interface_storage`. Use `PrognosticCanopyAir` for canopy-air
+temperature and humidity, `PrognosticSkin` for ground temperature, or `nothing` (the default)
+for diagnostic interface balances.
 
 ```@example interface_fluxes
 using NumericalEarth
 using Oceananigans
 
 land_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
-land = SlabLand(land_grid; surface_storage=PrognosticCanopyAir())
+land = SlabLand(land_grid)
 set!(land; T=298, M=45)
 soil_humidity = DryLayerHumidity(
     dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.015,
@@ -43,15 +44,16 @@ soil_humidity = DryLayerHumidity(
 canopy = CanopyInterface(; soil_humidity)
 atmosphere = PrescribedAtmosphere(land_grid)
 land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_state=canopy,
+                                atmosphere_land_interface_storage=PrognosticCanopyAir(),
                                 radiation=PrescribedRadiation(land_grid))
 ```
 
-The interface solve computes step-mean canopy fluxes and an analytical canopy-air update
-using fixed effective conductances and source states over each time step. Prognostic ground
-temperature uses backward Euler with Newton refinement in the interface solve. The land
-step applies each candidate update once. Canopy-air and ground heat storage
-are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
-partitions from the completed step so diagnostics remain consistent immediately after pickup.
+Each coupled time step first advances the interface storage with `step_interface!`, which computes
+step-mean canopy fluxes and an analytical canopy-air update using fixed effective conductances and
+source states over the step. Prognostic ground temperature uses backward Euler with Newton
+refinement. The components then step with those step-mean fluxes, and `update_state!` diagnoses the
+interface from the new state, holding the storage fixed. Canopy-air and ground heat storage are
+checkpointed with the interface.
 
 For vegetated and bare tiles, pass
 `atmosphere_land_interface = TiledLandInterface(grid, atmosphere, land; vegetated = canopy, cover_fraction = 0.6)`.

@@ -22,6 +22,8 @@ export
     PowerLawTortuosity,
     CanopyConductanceHumidity,
     CanopyInterface,
+    PrognosticCanopyAir,
+    PrognosticSkin,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
     ExponentialSoilResistance,
@@ -116,7 +118,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel)   
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, Δt) = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, mode) = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing

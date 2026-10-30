@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: time_step!
+using NumericalEarth.EarthSystemModels: step_interface!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity, EnergyBalanceTemperature,
@@ -303,6 +304,7 @@ end
         for state in (skin_state, canopy_surface)
             model = coupled_land_model(arch; atmosphere_land_interface_state = state)
             time_step!(model, 60.0)
+            step_interface!(model.interfaces, model, 60.0)   # the land fluxes of the current interface state
             σ  = model.radiation.stefan_boltzmann_constant
             radiation = model.radiation.interface_fluxes.land
             Ts = model.interfaces.atmosphere_land_interface.temperature
