@@ -28,9 +28,7 @@ grid = TripolarGrid(arch, Float64; size=(Nx, Ny, Nz), z)
 sea_ice_grid = TripolarGrid(arch, Float64; size=(Nx, Ny, 1), z = (-10, 0))
 
 # ## Adding a bathymetry to the grid
-url = "https://www.dropbox.com/scl/fi/zy1cu64ybn93l67rjgiq0/Downsampled_ETOPO_2022.nc?rlkey=5upqvoxrnljj205amqf663vcw&st=ou8b32tt&dl=0"
-filename = isfile("Downsampled_ETOPO_2022.nc") ? "Downsampled_ETOPO_2022.nc" : download(url, "Downsampled_ETOPO_2022.nc")
-bottom_height = regrid_bathymetry(grid; minimum_depth=15, major_basins=1, filename, dir="./")
+bottom_height = regrid_bathymetry(grid; minimum_depth=15, major_basins=1)
 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 sea_ice_grid = ImmersedBoundaryGrid(sea_ice_grid, GridFittedBottom(bottom_height))
@@ -73,20 +71,18 @@ sea_ice = sea_ice_simulation(sea_ice_grid; dynamics=nothing, advection=nothing)
 ##### Initialize Ocean and Sea ice models
 #####
 
-temperature = ECCOMetadata(:temperature; dir="./")
-salinity    = ECCOMetadata(:salinity;    dir="./")
-
-ice_thickness     = ECCOMetadata(:sea_ice_thickness; dir="./")
-ice_concentration = ECCOMetadata(:sea_ice_concentration; dir="./")
+ecco_state = MetadataSet(:temperature, :salinity,
+                         :sea_ice_thickness, :sea_ice_concentration;
+                         dataset=ECCO4Monthly(), date=DateTime(1992, 1, 1), dir="./")
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
 radiation  = JRA55PrescribedRadiation(arch;
                                       ocean_surface = SurfaceRadiationProperties(LatitudeDependentAlbedo(), 0.97),
                                       sea_ice_surface = SurfaceRadiationProperties(0.6, 1.0))
 
-set!(ocean.model, T=temperature, S=salinity)
-set!(sea_ice.model.ice_thickness,     ice_thickness,     inpainting=NearestNeighborInpainting(1))
-set!(sea_ice.model.ice_concentration, ice_concentration, inpainting=NearestNeighborInpainting(1))
+set!(ocean.model, ecco_state)
+set!(sea_ice.model.ice_thickness,     ecco_state[:sea_ice_thickness],     inpainting=NearestNeighborInpainting(1))
+set!(sea_ice.model.ice_concentration, ecco_state[:sea_ice_concentration], inpainting=NearestNeighborInpainting(1))
 
 earth_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 earth = Simulation(earth_model; Δt=30minutes, stop_iteration=10, stop_time=30days)
