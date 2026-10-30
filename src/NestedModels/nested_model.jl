@@ -55,6 +55,16 @@ NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callba
 exchange_state!(exchanger, time) = nothing
 exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_state!(exchanger, time), exchangers)
 
+# Fill an exchanger's derived state before the first step; a strip parent carries one exchanger per side.
+initialize_exchanger!(exchanger) = nothing
+initialize_exchanger!(exchangers::NamedTuple) = foreach(initialize_exchanger!, exchangers)
+
+function Oceananigans.initialize!(nm::NestedModel)
+    initialize_exchanger!(nm.exchanger)
+    Oceananigans.initialize!(nm.child)
+    return nothing
+end
+
 # Model-protocol dispatches, forwarded explicitly to the child.
 fields(nm::NestedModel)            = fields(nm.child)
 prognostic_fields(nm::NestedModel) = prognostic_fields(nm.child)

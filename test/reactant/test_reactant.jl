@@ -147,3 +147,5 @@ end
         @test all(Array(interior(pressure))[i, j, :] == levels for i in 1:4, j in 1:4)
     end
 end
+
+include("test_reactant_nested.jl")

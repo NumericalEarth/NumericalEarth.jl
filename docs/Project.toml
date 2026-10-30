@@ -34,6 +34,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "eb66ca6548130af370418b95a0b568539086cb05"}
 NumericalEarth = {path = ".."}
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Terrarium 0.1.10 is registered (NumericalEarth/Terrarium.jl#225)
 

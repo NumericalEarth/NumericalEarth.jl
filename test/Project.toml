@@ -38,6 +38,7 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "eb66ca6548130af370418b95a0b568539086cb05"}
 NumericalEarth = {path = ".."}
 OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "main"} # TODO: remove once OceanBioME 0.21 is registered
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Terrarium 0.1.10 is registered (NumericalEarth/Terrarium.jl#225)
