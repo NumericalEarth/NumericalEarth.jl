@@ -82,7 +82,7 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
 To nest this child in a coarser parent atmosphere, use [`nested_atmosphere_model`](@ref) (Breeze
-extension), which derives the lateral BCs and Davies relaxation from the parent and wraps the result
+extension), which derives the lateral BCs and lateral boundary relaxation from the parent and wraps the result
 in a `NestedModel`.
 """
 function NumericalEarth.Atmospheres.atmosphere_model(grid;
