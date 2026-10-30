@@ -267,8 +267,8 @@ Adapt.@adapt_structure LoadingGradientForcing
 @inline (f::LoadingGradientForcing{<:YDirection})(i, j, k, grid, clock, fields) = @inbounds - (f.gradient[i, j-1, 1] + f.gradient[i, j, 1]) / 2
 
 function add_self_attraction_and_loading_forcing(forcing, sal::ConvolutionSelfAttractionAndLoading)
-    Fu = DiscreteForcing(LoadingGradientForcing(XDirection(), sal.gradient[1]))
-    Fv = DiscreteForcing(LoadingGradientForcing(YDirection(), sal.gradient[2]))
+    Fu = LoadingGradientForcing(XDirection(), sal.gradient[1])
+    Fv = LoadingGradientForcing(YDirection(), sal.gradient[2])
     u_forcing = :u ∈ keys(forcing) ? (forcing.u, Fu) : Fu
     v_forcing = :v ∈ keys(forcing) ? (forcing.v, Fv) : Fv
     return merge(forcing, (u = u_forcing, v = v_forcing))
