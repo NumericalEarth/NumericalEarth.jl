@@ -691,7 +691,7 @@ Adapt.@adapt_structure EnergyBalanceTemperature
 $(TYPEDSIGNATURES)
 
 Ground energy balance with conductance `conductivity/thickness` (W m⁻² K⁻¹)
-to the bulk land. Configure `PrognosticSkin` on the land to include ground heat storage.
+to the bulk land. Pass `atmosphere_land_interface_storage = PrognosticSkin()` to include ground heat storage.
 """
 SoilSkinTemperature(conductivity, thickness) = EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness))
 

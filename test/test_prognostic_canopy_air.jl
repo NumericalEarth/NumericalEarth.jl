@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
+using NumericalEarth.EarthSystemModels: step_interface!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
     AtmosphericThermodynamics
@@ -14,9 +15,9 @@ canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
 
 @testset "Prognostic canopy air space" begin
     for arch in test_architectures
-        mp = canopy_model(arch; surface_storage=PrognosticCanopyAir())
+        mp = canopy_model(arch; atmosphere_land_interface_storage=PrognosticCanopyAir())
         Ts = mp.interfaces.atmosphere_land_interface.temperature
-        prognostic = mp.land.surface_storage.prognostic
+        prognostic = mp.interfaces.atmosphere_land_interface.storage.prognostic
         T₀, q₀ = scalar(prognostic.temperature), scalar(prognostic.specific_humidity)
         @test 285 < T₀ < 320
         @test 0 < q₀ < 0.05
@@ -24,7 +25,7 @@ canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
 
         # The default diagnostic node carries no state, and at windy daytime it matches the prognostic node.
         md = canopy_model(arch)
-        @test isnothing(md.land.surface_storage)
+        @test isnothing(md.interfaces.atmosphere_land_interface.storage)
         for _ in 1:24
             time_step!(md, 300.0)
             time_step!(mp, 300.0)
@@ -34,10 +35,11 @@ canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
         @test scalar(fp.latent_heat) ≈ scalar(fd.latent_heat) atol = 2
         @test scalar(fp.sensible_heat) ≈ scalar(fd.sensible_heat) atol = 2
 
-        # Flux to the atmosphere = supply − storage tendency, with Cᵀ = ρ cᵖᵐ hᵃᶜᵃⁿ and Cᵛ = ρ hᵃᶜᵃⁿ (hᵃᶜᵃⁿ = 10 m).
+        # Over an interface step, flux to the atmosphere = supply − storage tendency,
+        # with Cᵀ = ρ cᵖᵐ hᵃᶜᵃⁿ and Cᵛ = ρ hᵃᶜᵃⁿ (hᵃᶜᵃⁿ = 10 m).
         T⁻, q⁻ = scalar(prognostic.temperature), scalar(prognostic.specific_humidity)
         Δt = 300.0
-        time_step!(mp, Δt)
+        step_interface!(mp.interfaces, mp, Δt)
         ℂ = AtmosphereThermodynamicsParameters(Float64)
         ρhᵃᶜᵃⁿ = AtmosphericThermodynamics.air_density(ℂ, 300.0, 101325.0, 0.008) * 10.0
         Sᵀ = ρhᵃᶜᵃⁿ * AtmosphericThermodynamics.cp_m(ℂ, 0.008) * (scalar(prognostic.temperature) - T⁻) / Δt
@@ -59,10 +61,10 @@ canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
 
     # Hot wet soil under cooler dry air at near-calm dusk.
     for arch in test_architectures, layer_depth in (0.1, 10.0), Δt in (300.0, 3600.0)
-        mp = canopy_model(arch; surface_storage=PrognosticCanopyAir(; layer_depth), shortwave = 50.0, wind = 0.2,
+        mp = canopy_model(arch; atmosphere_land_interface_storage=PrognosticCanopyAir(; layer_depth), shortwave = 50.0, wind = 0.2,
                           air_temperature = 304.0, land_temperature = 310.0, water = 135.0)
         time_step!(mp, 1.0)
-        state = mp.land.surface_storage.prognostic
+        state = mp.interfaces.atmosphere_land_interface.storage.prognostic
         set!(state.temperature, 300)
         set!(state.specific_humidity, 0.008)
         interface = mp.interfaces.atmosphere_land_interface
@@ -73,7 +75,7 @@ canopy_model(arch; kw...) = coupled_land_model(arch; kw...,
         ℒCᵛ = ρh * AtmosphericThermodynamics.latent_heat_vapor(ℂ, 304.0)
         for _ in 1:12
             T⁻, q⁻ = scalar(state.temperature), scalar(state.specific_humidity)
-            time_step!(mp, Δt)
+            step_interface!(mp.interfaces, mp, Δt)
             T, q = scalar(state.temperature), scalar(state.specific_humidity)
             @test 280 < T < 330
             @test 0 < q < 0.06
@@ -89,14 +91,14 @@ end
                                      z = (-1, 0), topology = (Bounded, Bounded, Bounded))
         depth = Field{Center, Center, Nothing}(grid)
         set!(depth, reshape([1.0, 100.0], 2, 1, 1))
-        models = [canopy_model(arch; grid, surface_storage=PrognosticCanopyAir(; layer_depth))
+        models = [canopy_model(arch; grid, atmosphere_land_interface_storage=PrognosticCanopyAir(; layer_depth))
                   for layer_depth in (depth, 1.0, 100.0)]
         for model in models
             fill!(parent(model.atmosphere.temperature), 305)
             time_step!(model, 30.0)
         end
         for name in (:temperature, :specific_humidity)
-            values = map(model -> Array(interior(model.land.surface_storage.prognostic[name])), models)
+            values = map(model -> Array(interior(model.interfaces.atmosphere_land_interface.storage.prognostic[name])), models)
             @test values[1][1, 1, 1] ≈ values[2][1, 1, 1]
             @test values[1][2, 1, 1] ≈ values[3][2, 1, 1]
             @test values[1][1, 1, 1] != values[1][2, 1, 1]
@@ -108,9 +110,9 @@ end
     for arch in test_architectures
         canopy = CanopyInterface(Float32; soil_humidity=bare_soil_humidity(Float32))
         model = coupled_land_model(arch, Float32; atmosphere_land_interface_state=canopy,
-                                    surface_storage=PrognosticCanopyAir())
+                                    atmosphere_land_interface_storage=PrognosticCanopyAir())
         time_step!(model, 300.0)
-        @test 280 < scalar(model.land.surface_storage.prognostic.temperature) < 330
-        @test 0 < scalar(model.land.surface_storage.prognostic.specific_humidity) < 0.05
+        @test 280 < scalar(model.interfaces.atmosphere_land_interface.storage.prognostic.temperature) < 330
+        @test 0 < scalar(model.interfaces.atmosphere_land_interface.storage.prognostic.specific_humidity) < 0.05
     end
 end

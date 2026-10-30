@@ -6,7 +6,7 @@ using Oceananigans.DistributedComputations: Distributed
 using Oceananigans.TimeSteppers: update_state!, time_step!
 
 using NumericalEarth: EarthSystemModel
-using NumericalEarth.EarthSystemModels: EarthSystemModels, compute_land_fluxes!, initialize_land_surface!
+using NumericalEarth.EarthSystemModels: EarthSystemModels, initialize_interface_storage!, assemble_land_fluxes!
 
 using Reactant: Reactant, @jit, @trace
 
@@ -36,10 +36,16 @@ function Oceananigans.TimeSteppers.first_time_step!(model::ReactantESM, Δt)
     return nothing
 end
 
-function EarthSystemModels.maybe_initialize_land_surface!(model::ReactantESM)
+function EarthSystemModels.maybe_initialize_interface_storage!(model::ReactantESM)
     @trace track_numbers=false if model.clock.iteration == 0
-        compute_land_fluxes!(model, 0)
-        initialize_land_surface!(model.land)
+        initialize_interface_storage!(model)
+    end
+    return nothing
+end
+
+function EarthSystemModels.maybe_initialize_land_fluxes!(model::ReactantESM)
+    @trace track_numbers=false if model.clock.iteration == 0
+        assemble_land_fluxes!(model)
     end
     return nothing
 end
