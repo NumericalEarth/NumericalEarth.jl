@@ -72,6 +72,9 @@ Breeze.AtmosphereModels.update_radiation!(::CoupledRadiation{Nothing, Nothing}, 
 Breeze.AtmosphereModels.update_radiation!(r::CoupledRadiation, model) =
     Breeze.AtmosphereModels.update_radiation!(r.radiative_transfer_model, model)
 
+# The proxy carries no state of its own: what it aliases is checkpointed with the radiative transfer model.
+Oceananigans.prognostic_state(::CoupledRadiation) = nothing
+
 # Time step at the EarthSystemModel level is a no-op for the RTM: the
 # atmosphere's own `update_state!` (which runs each step) drives the radiation
 # update via the proxy. The ESM time stepper's existing
