@@ -9,7 +9,10 @@ using Oceananigans.Architectures: ReactantState
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.NestedModels: NestedModel, exchange_state!
 
-const ReactantNestedModel = NestedModel{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:ReactantState}
+# Guarded so the file can be included by more than one test of a session
+if !(@isdefined ReactantNestedModel)
+    const ReactantNestedModel = NestedModel{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:ReactantState}
+end
 
 # PATCH 1. The nested step computes `Δt_parent = child.clock.time - parent.clock.time` and branches on it to
 # tick the parent's clock: a host branch on a traced value once the child's clock is a device clock, or

@@ -307,6 +307,50 @@ jobs:
   ##### The final test (a final check)
   #####
 
+  # The gradient of a nested Breeze model through one compiled hour (test/reactant/test_reactant_nested_gradient.jl),
+  # which needs a GPU. Not among `ci`'s requirements while it is new.
+  reactant_gpu:
+    name: Reactant extension (GPU) - nested gradient
+    runs-on: aws-linux-nvidia-gpu-l4
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
+      options: --gpus=all
+      volumes:
+        - /opt:/host-opt
+        - /usr/local:/host-usr-local
+    timeout-minutes: 180
+    env:
+      GPU_TEST: "true"
+      TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Copy LocalPreferences
+        # The image's CUDA builds of Reactant_jll and CUDA_Runtime_jll, which test/reactant lists in [extras]
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/reactant/.
+      - name: Clean up space on host device
+        run: |
+          rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
+      - name: Run the nested gradient test
+        timeout-minutes: 150
+        run: |
+          julia --project=test/reactant --color=yes --check-bounds=auto -e '
+              using Pkg
+              Pkg.instantiate()
+              include("test/reactant/test_reactant_nested_gradient.jl")
+          '
+
   ci:
     name: CI
     needs:
