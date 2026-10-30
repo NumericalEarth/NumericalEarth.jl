@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: BoundingBox, cmr_granules_url, earthdata_download_cached
+using NumericalEarth.DataWrangling: BoundingBox, cmr_granules_url, earthdata_download, earthdata_download_cached
 using Dates: DateTime
 
 # The granule query itself needs network access; the URL it is built from does not.
@@ -40,4 +40,18 @@ end
     # needs neither the network nor credentials.
     @test earthdata_download_cached(url, cache) == path
     @test read(path, String) == "granule"
+end
+
+@testset "Empty Earthdata credentials" begin
+    # An unset GitHub Actions secret is an empty string, which must not reach the server.
+    url = "https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/" *
+          "MCD15A2H.061/MCD15A2H.A2020185.h10v05.061.2020340132006.hdf"
+    path = joinpath(mktempdir(), basename(url))
+
+    withenv("EARTHDATA_USERNAME" => "", "EARTHDATA_PASSWORD" => "") do
+        @test_throws "EARTHDATA_USERNAME is not set" earthdata_download(url, path)
+    end
+    withenv("EARTHDATA_USERNAME" => "user", "EARTHDATA_PASSWORD" => "") do
+        @test_throws "EARTHDATA_PASSWORD is not set" earthdata_download(url, path)
+    end
 end
