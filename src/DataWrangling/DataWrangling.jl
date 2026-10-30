@@ -440,6 +440,7 @@ include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
+include("GLODAP/GLODAP.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("ASTERGED/ASTERGED.jl")
 include("GloBFP3D/GloBFP3D.jl")
@@ -463,6 +464,7 @@ using .OpenLandMap
 using .IBCSO
 using .GEBCO
 using .IBCAO
+using .GLODAP
 using .CopernicusDEM
 using .ASTERGED
 using .GloBFP3D
