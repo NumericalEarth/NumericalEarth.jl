@@ -35,6 +35,7 @@ Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "eb66ca6548130af370418b95a0b568539086cb05"}
 NumericalEarth = {path = ".."}
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
