@@ -37,7 +37,7 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     atmosphere_properties = atmosphere_sea_ice_properties(coupled_model)
 
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation)
+    radiation_kernel_props = kernel_radiation_properties(radiation, exchanger.radiation)
     radiation_state = atmosphere_sea_ice_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)
@@ -93,7 +93,7 @@ end
         hˢⁿ = interior_state.hs[i, j, 1]
         hc  = interior_state.hc[i, j, 1]
         ℵᵢ  = interior_state.ℵ[i, j, 1]
-        Tₛ  = convert_to_kelvin(sea_ice_properties.temperature_units, interface_temperature[i, j, 1])
+        Tⁱⁿ  = convert_to_kelvin(sea_ice_properties.temperature_units, interface_temperature[i, j, 1])
     end
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
@@ -108,11 +108,11 @@ end
     # Estimate initial interface state (FP32 compatible)
     u★ = convert(FT, 1f-4)
 
-    q_formulation = interface_formulation.specific_humidity
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tₛ, Sᵒᶜ)
+    q_formulation = specific_humidity_formulation(interface_formulation.state)
+    qⁱⁿ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tⁱⁿ, Sᵒᶜ)
 
     # Air–ice sublimation is over fresh ice — no interface salinity.
-    initial_interface_state = AirIceInterfaceState(u★, u★, u★, uˢⁱ, vˢⁱ, Tₛ, convert(FT, qₛ))
+    initial_interface_state = AirIceInterfaceState(u★, u★, u★, uˢⁱ, vˢⁱ, Tⁱⁿ, convert(FT, qⁱⁿ))
     not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
     ice_free = ℵᵢ == 0
 
@@ -120,9 +120,9 @@ end
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
 
     if (needs_to_converge && not_water) || ice_free
-        Ψₛ = AirIceInterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, zero(FT))
+        Ψⁱⁿ = AirIceInterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, zero(FT))
     else
-        Ψₛ = compute_interface_state(interface_formulation,
+        Ψⁱⁿ = compute_interface_state(interface_formulation,
                                      initial_interface_state,
                                      Ψₐ,
                                      local_interior_state,
@@ -132,8 +132,8 @@ end
     end
 
     ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Ψₐ.T)
-    Tᵢ = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.temperature)
+    Tᵢ = convert_from_kelvin(sea_ice_properties.temperature_units, Ψⁱⁿ.temperature)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
-                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_formulation)
+                            Ψⁱⁿ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_formulation)
 end
