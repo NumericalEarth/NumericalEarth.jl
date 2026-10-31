@@ -76,13 +76,16 @@ end
 Three-equation formulation for sea ice-ocean heat flux.
 
 This formulation solves a coupled system for the interface temperature and salinity:
-1. Heat balance: ``\\rho c_p \\gamma_T (T - T_b) = ℰ q``
+1. Heat balance: ``\\rho c_p \\gamma_T (T - T_b) + F_c = ℰ q``
 2. Salt balance: ``\\gamma_S (S - S_b) = q (S_b - S_i)``
 3. Freezing point: ``T_b = T_m(S_b)``
 
 where ``T_b`` and ``S_b`` are the interface temperature and salinity,
 ``\\gamma_T = \\alpha_h u_*`` and ``\\gamma_S = \\alpha_s u_*`` are turbulent exchange velocities,
-``L`` is the latent heat of fusion, and ``q`` is the melt rate (computed, not input).
+``ℰ`` is the latent heat of fusion, ``q`` is the melt rate (computed, not input), and
+``F_c`` is the optional conductive flux through the ice (zero without a `ConductiveFlux`).
+The heat flux passed to the ocean and to the base of the sea ice is the turbulent ocean
+flux ``\\rho c_p \\gamma_T (T - T_b)`` only, since the sea-ice model accounts for ``F_c``.
 
 Fields
 ======
@@ -169,9 +172,10 @@ ThreeEquationHeatFlux(::Nothing, FT::DataType = Oceananigans.defaults.FloatType;
     compute_interface_heat_flux(flux::IceBathHeatFlux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
 
 Compute the heat flux at the sea ice-ocean interface using bulk formulation.
-Returns `(Q, Tb, Sb)` where:
+Returns `(Q, Tb, Sb, q)` where:
 - `Q > 0` means heat flux from ocean to ice (ocean cooling)
 - `Tb, Sb` are the interface temperature and salinity
+- `q = Q / ℰ` is the implied ocean-driven melt rate (positive for melting)
 """
 @inline function compute_interface_heat_flux(flux::IceBathHeatFlux,
                                              ocean_state, ice_state,
@@ -190,8 +194,11 @@ Returns `(Q, Tb, Sb)` where:
     # Heat flux: Q > 0 means heat flux from ocean to ice (ocean cooling)
     Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵ
 
+    # Implied ocean-driven melt rate (positive for melting), consistent with Qᵢₒ
+    q = Qᵢₒ / ℰ
+
     # For IceBathHeatFlux, interface is at ocean surface values
-    return Qᵢₒ, Tₘ, Sᵒᶜ
+    return Qᵢₒ, Tₘ, Sᵒᶜ, q
 end
 
 const NoInternalFluxTEF{FT} = ThreeEquationHeatFlux{<:Nothing, <:Nothing, FT} where FT
@@ -217,9 +224,22 @@ Compute the heat flux at the sea ice-ocean interface using three-equation formul
 Dispatches to the appropriate `solve_interface_conditions` based on whether the flux has internal
 conductive flux or not.
 
-Returns `(Q, Tb, Sb)` where:
-- `Q > 0` means heat flux from ocean to ice (ocean cooling)
+Returns `(Q, Tb, Sb, q)` where:
+- `Q = ρᵒᶜ cᵒᶜ αₕ u★ (Tᵒᶜ - Tb) ℵ` is the turbulent ocean heat flux at the interface;
+  `Q > 0` means heat flux from ocean to ice (ocean cooling)
 - `Tb, Sb` are the interface temperature and salinity
+- `q` is the three-equation balance's own ocean-driven melt rate (positive for melting),
+  self-consistent with `Tb`/`Sb`
+
+`Q` excludes the conductive flux through the ice. The conductive flux enters the interface
+balance that determines `Tb` and `Sb`, but the sea-ice model accounts for it separately, so
+including it in `Q` would count it twice in the sea-ice heat budget and remove it from the ocean.
+
+`q` is purely a function of ocean-interface conditions (`Tᵒᶜ`, `Sᵒᶜ`, `Tb`, `Sb`, the conductive
+term via `ice_state.T`), unlike the sea-ice model's own `ice_ocean_mass_flux`, which also bundles
+in the atmosphere-driven top-surface melt/freeze tendency. Callers that attribute ocean-side
+heat/salt content (`Jᴴ`, `Jˢ`) to ice melting should use `q`, not `ice_ocean_mass_flux`, to avoid
+leaking top-surface melt into the ocean's heat/salt budget.
 """
 @inline function compute_interface_heat_flux(flux::ThreeEquationHeatFlux,
                                              ocean_state, ice_state,
@@ -239,10 +259,10 @@ Returns `(Q, Tb, Sb)` where:
     # Solve interface conditions - dispatch on flux type via ice_state
     T★, S★, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
-    # Scale by ice concentration
-    Qᵢₒ = ℰ * q * ℵ
+    # Turbulent ocean flux only: the sea-ice model accounts for conduction through the ice
+    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - T★) * ℵ
 
-    return Qᵢₒ, T★, S★
+    return Qᵢₒ, T★, S★, q
 end
 
 # Helper to get conductive flux parameters (κ, Tˢⁱ) - dispatches on flux type
