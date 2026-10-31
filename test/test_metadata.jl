@@ -318,7 +318,7 @@ end
 @testset "ERA5 accumulation windows" begin
     # ERA5 accumulations and mean rates cover the hour ending at the stamp, so their windows
     # run backwards from it and their nodes sit half an hour before it.
-    for name in (:total_precipitation, :convective_precipitation, :evaporation, :mean_evaporation_rate,
+    for name in (:total_precipitation, :convective_precipitation, :snowfall, :evaporation, :mean_evaporation_rate,
                  :downwelling_shortwave_radiation, :downwelling_longwave_radiation,
                  :mean_surface_momentum_flux_x, :mean_surface_momentum_flux_y,
                  :mean_surface_sensible_heat_flux, :mean_surface_latent_heat_flux)

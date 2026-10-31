@@ -126,21 +126,19 @@ atmosphere's tendency machinery reads from the same field the coupled
 Called from inside the [`EarthSystemModel`](@ref) constructor, after
 `ComponentInterfaces` is built (so the radiation has already been bound to the
 interfaces' surface temperature — see
-[`materialize_earth_system_surface_temperature`](@ref)).
+[`materialize_earth_system_surface_properties`](@ref)).
 """
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
 
 """
 $(TYPEDSIGNATURES)
 
-Return `radiation` with its surface temperature bound to the coupled interfaces'
-diagnostic surface (skin) temperature — the interface-formulation field the atmosphere
-actually sees, which coincides with a land's prognostic temperature only for bulk
-formulations — when `radiation` supports late binding and carries none of its own.
-Radiation components that read a surface temperature (e.g. Breeze's
+Return `radiation` with the surface properties it reads bound to the coupled interfaces:
+the radiating temperature, and any optics the surface computes for itself rather than
+takes as configuration. Radiation components that read surface properties (e.g. Breeze's
 `RadiativeTransferModel`) overload this. Default: no-op, returning `radiation` unchanged.
 """
-materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
+materialize_earth_system_surface_properties(radiation, interfaces) = radiation
 
 """
 $(TYPEDSIGNATURES)
@@ -215,7 +213,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
-                          interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+                          interface_kw...) # e.g. `atmosphere_land_interface_state`
 
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
@@ -270,7 +268,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     # Bind the interfaces' skin temperature into the radiation, then materialize the
     # atmosphere's radiation skeletons against it — in that order, so the atmosphere's
     # proxy aliases the bound radiation. Both are no-ops by default.
-    radiation  = materialize_earth_system_surface_temperature(radiation, interfaces)
+    radiation  = materialize_earth_system_surface_properties(radiation, interfaces)
     atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     arch = architecture(interfaces.exchanger.grid)
@@ -378,7 +376,7 @@ grid = LatitudeLongitudeGrid(GPU();
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -420,7 +418,7 @@ grid = LatitudeLongitudeGrid(size = (20, 20, 4),
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -471,7 +469,7 @@ land but no ocean or sea ice. All keyword arguments are forwarded to
 
 The atmosphere--land turbulent fluxes are computed via
 `SimilarityTheoryFluxes` using land-side roughness and a β-reduced surface
-specific humidity (`qᵃᵗ + β·[qₛ - qᵃᵗ]`).
+specific humidity (`qᵃᵗ + β·[qⁱⁿ - qᵃᵗ]`).
 """
 AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, nothing, nothing; kw...)
@@ -540,11 +538,12 @@ function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
     if hasproperty(state, :radiation)
         restore_prognostic_state!(esm.radiation, state.radiation)
     end
+    restore_prognostic_state!(esm.interfaces, state.interfaces)
     restore_prognostic_state!(esm.ocean, state.ocean)
     restore_prognostic_state!(esm.atmosphere, state.atmosphere)
     restore_prognostic_state!(esm.land, state.land)
     restore_prognostic_state!(esm.sea_ice, state.sea_ice)
-    restore_prognostic_state!(esm.interfaces, state.interfaces)
+    update_state!(esm)
     return esm
 end
 

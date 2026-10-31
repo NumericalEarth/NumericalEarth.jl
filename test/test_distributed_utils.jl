@@ -9,6 +9,7 @@ using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
+using Oceananigans.Grids: Sides, Closed
 using Oceananigans.Operators: Azᶜᶜᶜ
 using NumericalEarth.Lands: build_flux_routing
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
@@ -148,7 +149,7 @@ end
         for partition in (Partition(4, 1), Partition(2, 2))
             grid = LatitudeLongitudeGrid(Distributed(CPU(); partition); size = (20, 20, 4), longitude = (-100, -90),
                                          latitude = (30, 40), z = (0, 1), topology = (Bounded, Bounded, Bounded))
-            west_rank = topology(grid, 1) ∈ (Bounded, RightConnected)
+            west_rank = topology(grid, 1) <: Sides{Closed}
 
             if valid || !west_rank
                 @test regularize_boundary_condition(source, grid, loc, 1, LeftBoundary) isa NumericalEarth.NestedModels.Interpolated
