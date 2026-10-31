@@ -189,9 +189,7 @@ export
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
-using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries, TimeInterpolator
 
 import Oceananigans: location
 
@@ -236,45 +234,22 @@ Requires a Makie backend (e.g. `CairoMakie`) to be loaded — the method lives i
 """
 function visualize_nested_domain end
 
-const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
-                                        GPUAdaptedFieldTimeSeries}
-
-const SKOFTS = SomeKindOfFieldTimeSeries
-
-@inline stateindex(a::Union{Number, Nothing}, i, j, k, args...) = a
-@inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
-@inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
-@inline stateindex(a::SKOFTS, i, j, k, time_interpolator::TimeInterpolator) = @inbounds a[i, j, k, time_interpolator]
-
-@inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
-    # `_node` always returns the full (λ, φ, z) triple — with placeholder
-    # values for Flat dimensions — whereas `node` drops Flat-dim entries
-    # and produces a shorter tuple that breaks the destructuring below.
-    λ, φ, z = _node(i, j, k, grid, LX(), LY(), LZ())
-    return a(λ, φ, z, time)
-end
-
-@inline function stateindex(a::Union{Tuple, NamedTuple}, i, j, k, grid, time, args...)
-    return map(value -> stateindex(value, i, j, k, grid, time, args...), a)
-end
-
 #####
 ##### Source code
 #####
 
-include("Grids/Grids.jl")
+# DataWrangling comes first: it depends on nothing else in NumericalEarth.
+include("DataWrangling/DataWrangling.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
 include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
-include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any component) model
 
-using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry

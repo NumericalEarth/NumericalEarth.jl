@@ -1,7 +1,8 @@
 module Atmospheres
 
 export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, bulk_drag,
-       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
+       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux,
+       ERA5PrescribedAtmosphere, JRA55PrescribedAtmosphere, ECCOPrescribedAtmosphere
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -18,7 +19,7 @@ using Oceananigans.Units: Time, meters, second
 using Oceananigans.Utils: Utils, prettysummary, launch!
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
-using ...NumericalEarth: NumericalEarth
+using ..DataWrangling: DataWrangling
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!, molmass_dryair
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger, _compute_fractional_indices!
 
@@ -52,6 +53,7 @@ estimate_maximum_Δt(grid; jet_speed = 100meters/second, safety = 0.5) =
 include("hydrostatic_pressure.jl")
 include("thermodynamic_parameters.jl")
 include("prescribed_atmosphere.jl")
+include("dataset_atmospheres.jl")
 include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
 

@@ -1,12 +1,29 @@
-using ...Atmospheres: Atmospheres, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
-using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
-using Adapt: Adapt
+#####
+##### Prescribed atmospheres built from the ERA5, JRA55, and ECCO datasets
+#####
+
+using Downloads: Downloads
 using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Fields: CenterField
-using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory
+using Oceananigans.Architectures: CPU
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.DistributedComputations: Distributed, child_architecture
+using Oceananigans.Fields: CenterField, set!
+using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory, Cyclical, FlavorOfFTS, time_indices
 using Thermodynamics: Liquid
 
-const ERA5PrescribedAtmosphere = Atmospheres.PrescribedAtmosphere{<:ERA5Dataset}
+using ..DataWrangling: Metadata, MetadataSet, BoundingBox, first_date, last_date,
+                       native_grid, default_download_directory
+using ..DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset, ERA5HourlySingleLevel, ERA5HourlyPressureLevels,
+                            download_ERA5_cache, per_column_geopotential_discretization, _with_z, era5_native_pressure_fts
+using ..DataWrangling.JRA55: JRA55Dataset, RepeatYearJRA55, download_JRA55_cache
+using ..DataWrangling.ECCO: ECCO4Monthly
+using ..EarthSystemModels.InterfaceComputations: saturation_specific_humidity
+
+#####
+##### ERA5
+#####
+
+const ERA5PrescribedAtmosphere = PrescribedAtmosphere{<:ERA5Dataset}
 
 ERA5PrescribedAtmosphere(arch::Distributed; kw...) = ERA5PrescribedAtmosphere(child_architecture(arch); kw...)
 
@@ -156,7 +173,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
 
     precipitation_flux = PrescribedPrecipitationFlux(rain=Jʳⁿ, snow=Jˢⁿ)
 
-    return Atmospheres.PrescribedAtmosphere(grid, times;
+    return PrescribedAtmosphere(grid, times;
                                             source = dataset,
                                             velocities = (; u, v),
                                             temperature = T,
@@ -247,7 +264,7 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
 
     times = T.times
 
-    return Atmospheres.PrescribedAtmosphere(grid, times;
+    return PrescribedAtmosphere(grid, times;
                                             clock,
                                             source = dataset,
                                             velocities = (; u, v),
@@ -264,5 +281,154 @@ end
 Dataset-dispatched constructor: build an [`ERA5PrescribedAtmosphere`](@ref) over `bounding_box`
 at `dates` on `dataset`'s native grid. Keyword arguments flow to `ERA5PrescribedAtmosphere`.
 """
-Atmospheres.PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
+PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
     ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)
+
+#####
+##### JRA55
+#####
+
+# `JRA55PrescribedAtmosphere` is a type alias for a `PrescribedAtmosphere` whose `source` is any JRA55
+# dataset; the constructor methods below build one (the alias is both the dispatch type and the builder).
+const JRA55PrescribedAtmosphere = PrescribedAtmosphere{<:JRA55Dataset}
+
+JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
+    JRA55PrescribedAtmosphere(child_architecture(arch); kw...)
+
+"""
+    JRA55PrescribedAtmosphere([architecture = CPU()];
+                              dataset = RepeatYearJRA55(),
+                              start_date = first_date(dataset, :temperature),
+                              end_date = last_date(dataset, :temperature),
+                              dir = download_JRA55_cache,
+                              time_indices_in_memory = 10,
+                              time_indexing = Cyclical(),
+                              surface_layer_height = 10,  # meters
+                              region = nothing,
+                              other_kw...)
+
+Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
+`FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterized by JRA55 metadata so that the JRA55-specific
+`set!` (chunked-yearly NetCDF) is dispatched.
+The `region` keyword restricts the atmosphere to a sub-domain of the global JRA55 grid.
+
+Note: downwelling shortwave / longwave radiation is now part of the
+top-level `radiation` component. Use [`JRA55PrescribedRadiation`](@ref) to
+load JRA55 SW/LW into a `PrescribedRadiation`.
+"""
+function JRA55PrescribedAtmosphere(architecture = CPU();
+                                   dataset = RepeatYearJRA55(),
+                                   start_date = first_date(dataset, :temperature),
+                                   end_date = last_date(dataset, :temperature),
+                                   dir = download_JRA55_cache,
+                                   time_indices_in_memory = 10,
+                                   time_indexing = Cyclical(),
+                                   surface_layer_height = 10,  # meters
+                                   region = nothing,
+                                   tracers = NamedTuple(),
+                                   other_kw...)
+
+    kw = (; time_indexing, time_indices_in_memory)
+    kw = merge(kw, other_kw)
+
+    jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
+
+    u    = jra55_fts(:eastward_velocity)
+    v    = jra55_fts(:northward_velocity)
+    T    = jra55_fts(:temperature)
+    qᵛ   = jra55_fts(:specific_humidity)
+    p    = jra55_fts(:sea_level_pressure)
+    rain = jra55_fts(:rain_freshwater_flux)
+    snow = jra55_fts(:snow_freshwater_flux)
+
+    precipitation_flux = PrescribedPrecipitationFlux(; rain, snow)
+
+    grid  = u.grid
+    times = u.times
+    FT    = eltype(u)
+
+    return PrescribedAtmosphere(grid, times;
+                                source = dataset,
+                                velocities = (; u, v),
+                                temperature = T,
+                                specific_humidity = qᵛ,
+                                pressure = p,
+                                precipitation_flux,
+                                surface_layer_height = convert(FT, surface_layer_height),
+                                tracers)
+end
+
+#####
+##### ECCO
+#####
+
+"""
+    ECCOPrescribedAtmosphere([architecture = CPU()];
+                              dataset = ECCO4Monthly(),
+                              start_date = first_date(dataset, :air_temperature),
+                              end_date = last_date(dataset, :air_temperature),
+                              dir = default_download_directory(dataset),
+                              time_indices_in_memory = 10,
+                              time_indexing = Cyclical(),
+                              surface_layer_height = 2,  # meters
+                              other_kw...)
+
+Return a [`PrescribedAtmosphere`](@ref) representing ECCO state estimate data.
+The atmospheric data will be held in `FieldTimeSeries` objects containing
+- velocities: u, v
+- air temperature and humidity: T, q
+- surface pressure: p
+- freshwater flux: rain
+
+Note: downwelling shortwave / longwave radiation is now part of the
+top-level `radiation` component. Use [`ECCOPrescribedRadiation`](@ref) to
+load ECCO SW/LW into a `PrescribedRadiation`.
+"""
+function ECCOPrescribedAtmosphere(architecture = CPU();
+                                  dataset = ECCO4Monthly(),
+                                  start_date = first_date(dataset, :air_temperature),
+                                  end_date = last_date(dataset, :air_temperature),
+                                  dir = default_download_directory(dataset),
+                                  time_indexing = Cyclical(),
+                                  time_indices_in_memory = 10,
+                                  surface_layer_height = 2,  # meters
+                                  other_kw...)
+
+    kw = (; time_indexing, time_indices_in_memory)
+    kw = merge(kw, other_kw)
+
+    ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date, dir)
+    va_meta = Metadata(:northward_wind;        dataset, start_date, end_date, dir)
+    Ta_meta = Metadata(:air_temperature;       dataset, start_date, end_date, dir)
+    qa_meta = Metadata(:air_specific_humidity; dataset, start_date, end_date, dir)
+    pa_meta = Metadata(:sea_level_pressure;    dataset, start_date, end_date, dir)
+    Fr_meta = Metadata(:rain_freshwater_flux;  dataset, start_date, end_date, dir)
+
+    ua = FieldTimeSeries(ua_meta, architecture; kw...)
+    va = FieldTimeSeries(va_meta, architecture; kw...)
+    Ta = FieldTimeSeries(Ta_meta, architecture; kw...)
+    qa = FieldTimeSeries(qa_meta, architecture; kw...)
+    pa = FieldTimeSeries(pa_meta, architecture; kw...)
+    Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
+
+    precipitation_flux = PrescribedPrecipitationFlux(rain = Fr)
+
+    times = ua.times
+    grid  = ua.grid
+
+    velocities = (u = ua, v = va)
+    pressure = pa
+
+    FT = eltype(ua)
+    surface_layer_height = convert(FT, surface_layer_height)
+
+    atmosphere = PrescribedAtmosphere(grid, times;
+                                      velocities,
+                                      precipitation_flux,
+                                      temperature = Ta,
+                                      specific_humidity = qa,
+                                      surface_layer_height,
+                                      pressure)
+
+    return atmosphere
+end

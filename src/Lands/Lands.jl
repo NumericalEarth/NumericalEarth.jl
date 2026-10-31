@@ -2,6 +2,8 @@ module Lands
 
 export AbstractLand,
        PrescribedLand,
+       JRA55PrescribedLand,
+       GloFASPrescribedLand,
        RiverRouting,
        build_river_routing,
        coastal_outlet_indices,
@@ -65,7 +67,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using Base: ForwardOrdering
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..DataWrangling: DataWrangling, stateindex, building_morphometry
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
                                                  CanopyInterface, EnergyBalanceTemperature,
@@ -124,5 +126,6 @@ include("prescribed_land.jl")
 include("prescribed_land_regridder.jl")
 include("interpolate_land_state.jl")
 include("river_routing.jl")
+include("dataset_lands.jl")
 
 end # module Lands

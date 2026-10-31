@@ -8,7 +8,7 @@ using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, regrid!
 
-using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
+using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                                    metadata_path, BoundingBox, Dataset, majority_class!, class_fractions
 
 import Oceananigans

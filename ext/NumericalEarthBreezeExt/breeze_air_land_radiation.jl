@@ -6,7 +6,7 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: ConstantField, Field
 using Oceananigans.Grids: Center
 using NumericalEarth.EarthSystemModels.InterfaceComputations: radiative_surface
-using NumericalEarth: stateindex
+using NumericalEarth.DataWrangling: stateindex
 using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 const BreezeRTM = Breeze.RadiativeTransferModel

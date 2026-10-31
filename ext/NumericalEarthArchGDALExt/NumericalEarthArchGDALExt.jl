@@ -5,7 +5,8 @@ using GDAL: OGREnvelope, ogr_l_getextent, vsireaddirrecursive
 using NCDatasets: NCDataset, defDim, defVar
 using Downloads: Downloads
 using NetworkOptions: NetworkOptions
-using NumericalEarth: NumericalEarth, stateindex
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling: stateindex
 
 using Oceananigans: Bounded, Center, CPU, Field, Flat, LatitudeLongitudeGrid, interior
 using Oceananigans.Architectures: architecture, on_architecture
