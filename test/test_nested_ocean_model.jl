@@ -422,6 +422,43 @@ end
     @test_throws ArgumentError nested_ocean_model(parent_ocean, underlying_grid; clock = Clock(time = 60.0))
 end
 
+@testset "The blended seafloor is level across the open boundary cells on $(arch)" for arch in test_architectures
+    parent_ocean = nesting_test_parent(arch)
+    underlying_grid = nesting_test_child_grid(arch)
+    Nx, Ny, _ = size(underlying_grid)
+
+    # A flat 1000 m seafloor with land in the southwest corner, under a parent seafloor that deepens outward;
+    # partial cells, because a grid-fitted bottom would round the parent's seafloor to a cell face
+    coastal_bottom(λ, φ) = (λ < -0.8) & (φ < 29.5) ? 0 : -1000
+    grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(coastal_bottom; minimum_fractional_cell_height = 0.2))
+    parent_bottom_height = Field{Center, Center, Nothing}(parent_ocean.grid)
+    set!(parent_bottom_height, (λ, φ) -> -500 - 100 * (abs(λ) + abs(φ - 30)))
+
+    model = nested_ocean_model(parent_ocean, grid; parent_bottom_height, open_sides = (:west, :east, :north))
+    h = Array(interior(bottom_height_field(model.child.grid)))[:, :, 1]
+    parent_on_child = Field{Center, Center, Nothing}(underlying_grid)
+    interpolate!(parent_on_child, parent_bottom_height)
+    hᵖ = Array(interior(parent_on_child))[:, :, 1]
+
+    # No open boundary cell is deeper or shallower than the first cell inward, corners included
+    @test h[Nx, 2:Ny] ≈ h[Nx-1, 2:Ny]
+    @test h[1, Ny÷2:Ny] ≈ h[2, Ny÷2:Ny]
+    @test h[2:Nx-1, Ny] ≈ h[2:Nx-1, Ny-1]
+    @test h[Nx, Ny] ≈ h[Nx-1, Ny-1]
+
+    # The first cell inward holds the parent's seafloor, the closed south side stays the child's, land stays land
+    @test h[Nx÷2, Ny-1] ≈ hᵖ[Nx÷2, Ny-1]
+    @test h[Nx-1, Ny÷2] ≈ hᵖ[Nx-1, Ny÷2]
+    @test h[Nx÷2, 1] ≈ -1000
+    @test h[1, 1] == 0
+
+    # A one-cell blend still levels the boundary with the parent's seafloor one cell inward
+    model = nested_ocean_model(parent_ocean, grid; parent_bottom_height, open_sides = (:north,), bathymetry_blend_width = 1)
+    h = Array(interior(bottom_height_field(model.child.grid)))[:, :, 1]
+    @test h[Nx÷2, Ny] ≈ h[Nx÷2, Ny-1] ≈ hᵖ[Nx÷2, Ny-1]
+    @test h[Nx÷2, Ny-2] ≈ -1000
+end
+
 @testset "Boundary relaxation: cos² masks, and velocities relax only their baroclinic part" begin
     grid = nesting_test_child_grid(CPU())
     width = 4
