@@ -142,7 +142,7 @@ end
 """
     sample_parent!(field, loc, source, time)
 
-Interpolate the parent `source`, a `FieldTimeSeries`, at `time` onto every point of `field`
+Interpolate the parent `source`, a `FieldTimeSeries` or a number, at `time` onto every point of `field`
 at location `loc`, halos included. Halo points beyond a wall of the domain, which can lie outside the parent's
 region, take the value at the nearest interior point; halo points across a rank seam are sampled where they are.
 """
@@ -156,6 +156,9 @@ function sample_parent!(field, loc, source, time)
             field, grid, loc, bounds, source, source.grid, source_loc, Time(time))
     return field
 end
+
+# A constant parent
+sample_parent!(field, loc, source::Number, time) = (fill!(Base.parent(field), source); field)
 
 @kernel function _sample_parent!(field, grid, loc, bounds, source, source_grid, source_loc, time)
     i, j, k = @index(Global, NTuple)

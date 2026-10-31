@@ -30,10 +30,11 @@ function parent_ocean_sources(parent::BoundaryPrescribedComponent, sides)
 end
 
 """
-    OceanBoundaryExchanger(parent, grid, sides; width, time, parent_bottom_height = nothing)
+    OceanBoundaryExchanger(parent, grid, sides; width, time, parent_bottom_height = nothing, tracers = NamedTuple())
 
 Mediates the `parent` ocean state to a nested ocean on `grid`: holds, for each open side in `sides`, the
-parent's [`parent_ocean_sources`](@ref) and the [`BoundaryBand`](@ref)s they are sampled onto — `width`
+parent's [`parent_ocean_sources`](@ref), merged with the sources of further `tracers` (a `NamedTuple` of
+`FieldTimeSeries` or numbers, the same on every side), and the [`BoundaryBand`](@ref)s they are sampled onto — `width`
 cells wide for the velocities and tracers (the boundary relaxation zone), one cell for the free surface —
 and the [`ParentTimes`](@ref) of the two states the bands hold, both initially the parent at `time`.
 
@@ -78,8 +79,9 @@ sample_depth_mean!(::Nothing, source, floor, side, time) = nothing
 sample_depth_mean!(band, source, floor, side, time) =
     sample_parent_depth_mean!(band.current, depth_mean_location(side), source, floor, time)
 
-function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing)
-    sources = parent_ocean_sources(parent, sides)
+function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing,
+                                tracers = NamedTuple())
+    sources = map(side_sources -> merge(side_sources, tracers), parent_ocean_sources(parent, sides))
     times = ParentTimes(time, time)
 
     function side_bands(side)

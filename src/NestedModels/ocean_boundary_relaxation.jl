@@ -83,12 +83,10 @@ end
     return μ * total_band_relaxation(i, j, k, grid, p.location, ψ, fields, p.relaxations, Time(clock.time), p.baroclinic)
 end
 
-@inline relax_u(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.u, fields, p)
-@inline relax_v(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.v, fields, p)
-@inline relax_T(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.T, fields, p)
-@inline relax_S(i, j, k, grid, clock, fields, p) = relaxation_tendency(i, j, k, grid, clock, fields.S, fields, p)
+@inline field_named(fields, ::Val{name}) where name = getproperty(fields, name)
 
-const relaxation_functions = (u = relax_u, v = relax_v, T = relax_T, S = relax_S)
+@inline relax_field(i, j, k, grid, clock, fields, p) =
+    relaxation_tendency(i, j, k, grid, clock, field_named(fields, p.name), fields, p)
 
 # The velocities relax only their baroclinic part.
 baroclinic_relaxation(name) = Val(name ∈ (:u, :v))
@@ -181,18 +179,18 @@ end
 """
     ocean_boundary_relaxation(grid, bands; rate, width)
 
-Return a `NamedTuple` of discrete `Forcing`s that relax `T` and `S`, and the baroclinic parts of `u` and `v`, toward
+Return a `NamedTuple` of discrete `Forcing`s that relax the tracers, and the baroclinic parts of `u` and `v`, toward
 the parent state in `bands` (see [`ocean_open_boundary_conditions`](@ref)) at `rate` (s⁻¹) times the
 [`relaxation_masks`](@ref) over the outermost `width` cells of each open side. The baroclinic part of a velocity is
 its departure from its mean over the child's wet column, for the child and the parent alike.
 
 `rate` is a number, or `(inflow = ..., outflow = ...)` for a flow-dependent relaxation of the tracers: in each side's
-band, `T` and `S` relax at `inflow` where the velocity at the cell flows in through that side and at `outflow` where
+band, the tracers relax at `inflow` where the velocity at the cell flows in through that side and at `outflow` where
 it flows out (Oceananigans' `InflowOutflowRate`). The velocities relax at `inflow` everywhere.
 """
 function ocean_boundary_relaxation(grid, bands; rate, width)
     sides = keys(bands)
-    names = filter(name -> name ∈ keys(relaxation_functions), keys(first(bands)))
+    names = filter(name -> name !== :η, keys(first(bands)))
     masks = relaxation_masks(grid, sides, width)
 
     function relaxation_forcing(name)
@@ -204,8 +202,8 @@ function ocean_boundary_relaxation(grid, bands; rate, width)
                                                      side_rate(rate, side, baroclinic, eltype(grid)))
         end
         mask = name === :u ? masks.u : name === :v ? masks.v : masks.c
-        parameters = (; mask, location = loc, relaxations, baroclinic)
-        return Forcing(relaxation_functions[name]; discrete_form = true, parameters)
+        parameters = (; name = Val(name), mask, location = loc, relaxations, baroclinic)
+        return Forcing(relax_field; discrete_form = true, parameters)
     end
 
     return NamedTuple(name => relaxation_forcing(name) for name in names)
