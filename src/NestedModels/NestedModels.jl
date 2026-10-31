@@ -1,6 +1,6 @@
 module NestedModels
 
-export NestedModel, NestedSimulation, nested_atmosphere_model,
+export NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
        exchange_state!, total_density, reconstruct_parent_state, VectorComponent
 
@@ -29,6 +29,10 @@ using Oceananigans.Grids: AbstractGrid
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
+using DocStringExtensions: TYPEDSIGNATURES
+
+using Oceananigans.Architectures: CPU, architecture, on_architecture
+using Oceananigans.Fields: location
 
 using ..EarthSystemModels: EarthSystemModels, component_model
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
@@ -40,5 +44,11 @@ include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
 include("parent_terrain.jl")
+include("ocean_boundary_bands.jl")
+include("ocean_open_boundaries.jl")
+include("ocean_boundary_relaxation.jl")
+include("ocean_boundary_bathymetry.jl")
+include("ocean_boundary_exchanger.jl")
+include("nested_ocean_model.jl")
 
 end # module NestedModels
