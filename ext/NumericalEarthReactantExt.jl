@@ -75,4 +75,9 @@ assign!(number::Reactant.TracedRNumber, value) = (number.mlir_data = Reactant.pr
 NumericalEarth.Oceans.batched_contract(K::Reactant.TracedRArray, X::Reactant.TracedRArray) =
     Reactant.Ops.dot_general(K, X; contracting_dimensions = ([2], [1]), batching_dimensions = ([3], [3]))
 
+# Constants of the loading operators: no derivative, even when the operator is inside `Duplicated` arguments
+NumericalEarth.Oceans.no_derivative(x::Reactant.TracedRArray) = Reactant.Ops.ignore_derivatives(x)
+NumericalEarth.Oceans.convert_eltype(FT, X::Reactant.TracedRArray) =
+    Reactant.unwrapped_eltype(X) == FT ? X : Reactant.Ops.convert(Reactant.TracedRArray{FT, ndims(X)}, X)
+
 end # module NumericalEarthReactantExt

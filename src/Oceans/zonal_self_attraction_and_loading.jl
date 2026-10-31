@@ -264,3 +264,125 @@ function hybrid_zonal_kernel(Nx, φᶠ, γ; N₀ = length(γ) - 1, love_numbers 
     kernel[:, :, 1:size(correction, 3)] .+= correction
     return kernel
 end
+
+#####
+##### Self-attraction and loading on a curvilinear grid through a coarser auxiliary latitude-longitude grid
+#####
+
+# Operator constants carry no derivative, even inside `Duplicated` arguments (Reactant method in the extension)
+no_derivative(x) = x
+
+convert_eltype(FT, X) = eltype(X) == FT ? X : FT.(X)
+
+"""
+    RemappedZonalLoadingOperator(λᶠᶠ, φᶠᶠ, λᶜᶜ, φᶜᶜ, area, mask; degrees, kernel, subsamples = 2, FT = Float64)
+
+Self-attraction and loading on a curvilinear grid: a conservative remap onto an auxiliary latitude-longitude grid with
+spacing `degrees`, a [`ZonalLoadingOperator`](@ref) there, and a bilinear interpolation back to the cell centers.
+SAL is smooth, so the auxiliary grid can be much coarser than the model grid.
+
+`λᶠᶠ, φᶠᶠ` are the cell corners in degrees (`(Nx + 1) × (Ny + 1)`), `λᶜᶜ, φᶜᶜ` the centers, `area` the cell areas in
+m², and `mask` the ocean cells. `kernel(Nx, φᶠ)` returns the kernel on the auxiliary grid (for example
+`(Nx, φᶠ) -> convolution_zonal_kernel(Nx, φᶠ; correction)`).
+
+Both remaps are fixed-width gathers. The reverse of a gather is a scatter-add, which is very slow when one index is
+repeated many times, so the padding of the forward table uses distinct indices (with zero weight).
+"""
+struct RemappedZonalLoadingOperator{Z, IF, WF, IB, WB}
+    zonal :: Z
+    forward_index :: IF
+    forward_weight :: WF
+    backward_index :: IB
+    backward_weight :: WB
+    auxiliary_size :: Tuple{Int, Int}
+    model_size :: Tuple{Int, Int}
+end
+
+function RemappedZonalLoadingOperator(λᶠᶠ, φᶠᶠ, λᶜᶜ, φᶜᶜ, area, mask; degrees, kernel, subsamples = 2, FT = Float64,
+                                      radius = 6.371e6)
+    φ₀ = floor(minimum(φᶠᶠ) / degrees) * degrees
+    Ny′ = round(Int, (90 - φ₀) / degrees)
+    Nx′ = round(Int, 360 / degrees)
+    φᶠ = collect(range(φ₀, 90, length = Ny′ + 1))
+    μᶠ = sind.(φᶠ)
+    Δλ = 360 / Nx′
+    Nx, Ny = size(area)
+    N′ = Nx′ * Ny′
+    s = subsamples
+
+    rows = [Dict{Int32, Float64}() for _ in 1:N′]
+    corner(i, j) = collect(unit_sphere_point(deg2rad(λᶠᶠ[i, j]), deg2rad(φᶠᶠ[i, j])))
+    for j in 1:Ny, i in 1:Nx
+        mask[i, j] || continue
+        t = Int32(i + (j - 1) * Nx)
+        c₀₀, c₁₀, c₀₁, c₁₁ = corner(i, j), corner(i + 1, j), corner(i, j + 1), corner(i + 1, j + 1)
+        for q in 1:s, p in 1:s
+            ξ, ζ = (p - 1/2) / s, (q - 1/2) / s
+            v = @. (1 - ξ) * (1 - ζ) * c₀₀ + ξ * (1 - ζ) * c₁₀ + (1 - ξ) * ζ * c₀₁ + ξ * ζ * c₁₁
+            λ, φ = atand(v[2], v[1]), asind(clamp(v[3] / sqrt(sum(abs2, v)), -1, 1))
+            i′ = mod(floor(Int, mod(λ, 360) / Δλ), Nx′) + 1
+            j′ = clamp(searchsortedlast(φᶠ, φ), 1, Ny′)
+            ℓ = i′ + (j′ - 1) * Nx′
+            w = area[i, j] / s^2 / (radius^2 * deg2rad(Δλ) * (μᶠ[j′+1] - μᶠ[j′]))
+            rows[ℓ][t] = get(rows[ℓ], t, 0.0) + w
+        end
+    end
+
+    Kf = max(1, maximum(length, rows))
+    forward_index = Matrix{Int32}(undef, N′, Kf)
+    forward_weight = zeros(N′, Kf)
+    for ℓ in eachindex(rows)
+        entries = sort!(collect(rows[ℓ]); by = first)
+        for k in 1:Kf
+            if k ≤ length(entries)
+                forward_index[ℓ, k], forward_weight[ℓ, k] = entries[k]
+            else
+                forward_index[ℓ, k] = Int32(mod(ℓ * Kf + k, Nx * Ny) + 1)
+            end
+        end
+    end
+
+    φᶜ = (φᶠ[1:end-1] .+ φᶠ[2:end]) ./ 2
+    backward_index = Matrix{Int32}(undef, Nx * Ny, 4)
+    backward_weight = zeros(Nx * Ny, 4)
+    for t in 1:Nx*Ny
+        x = mod(λᶜᶜ[t], 360) / Δλ - 1/2
+        i₀ = floor(Int, x)
+        ξ = x - i₀
+        ia, ib = mod(i₀, Nx′) + 1, mod(i₀ + 1, Nx′) + 1
+        φ = φᶜᶜ[t]
+        ja = clamp(searchsortedlast(φᶜ, φ), 1, Ny′)
+        jb = min(ja + 1, Ny′)
+        ζ = jb == ja ? 0.0 : clamp((φ - φᶜ[ja]) / (φᶜ[jb] - φᶜ[ja]), 0, 1)
+        cell(i, j) = Int32(i + (j - 1) * Nx′)
+        backward_index[t, :] .= (cell(ia, ja), cell(ib, ja), cell(ia, jb), cell(ib, jb))
+        backward_weight[t, :] .= ((1 - ξ) * (1 - ζ), ξ * (1 - ζ), (1 - ξ) * ζ, ξ * ζ)
+    end
+
+    zonal = ZonalLoadingOperator(FT.(kernel(Nx′, φᶠ)), nothing, ones(Nx′, Ny′))
+    return RemappedZonalLoadingOperator(zonal, forward_index, forward_weight, backward_index, backward_weight,
+                                        (Nx′, Ny′), (Nx, Ny))
+end
+
+Base.summary(op::RemappedZonalLoadingOperator) = string("RemappedZonalLoadingOperator from ", op.model_size[1], " × ", op.model_size[2],
+                                                        " cells through a ", op.auxiliary_size[1], " × ", op.auxiliary_size[2], " grid")
+
+"""
+    zonal_self_attraction_and_loading(op::RemappedZonalLoadingOperator, η)
+
+Return the SAL elevation at the cell centers of the model grid from the elevation `η` (`Nx × Ny`).
+"""
+function zonal_self_attraction_and_loading(op::RemappedZonalLoadingOperator, η)
+    η′ = reshape(sum(no_derivative(op.forward_weight) .* reshape(η, :)[op.forward_index]; dims = 2), op.auxiliary_size)
+    z = op.zonal
+    Nm = size(z.Kr, 3)
+    Ny′ = size(η′, 2)
+    q̂ = FFTW.rfft(η′, 1)[1:Nm, :]
+    FT = eltype(z.Kr)
+    X = convert_eltype(FT, permutedims(cat(reshape(real.(q̂), Nm, Ny′, 1), reshape(imag.(q̂), Nm, Ny′, 1); dims = 3), (2, 3, 1)))
+    Y = batched_contract(no_derivative(z.Kr), X)
+    ψ̂ = complex.(convert_eltype(Float64, Y[:, :, 1]), convert_eltype(Float64, Y[:, :, 2]))
+    isnothing(z.pad) || (ψ̂ = vcat(ψ̂, z.pad))
+    ψ = reshape(FFTW.irfft(ψ̂, z.Nx, 1), :)
+    return reshape(sum(no_derivative(op.backward_weight) .* ψ[op.backward_index]; dims = 2), op.model_size)
+end
