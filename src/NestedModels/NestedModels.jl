@@ -2,7 +2,7 @@ module NestedModels
 
 export NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-       exchange_state!, total_density, reconstruct_parent_state
+       exchange_state!, total_density, reconstruct_parent_state, VectorComponent
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
