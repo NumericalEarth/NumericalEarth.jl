@@ -20,11 +20,14 @@ using NumericalEarth:
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
+                                   VectorComponent
 
 using Oceananigans:
     Oceananigans,
     WENO,
+    KernelFunctionOperation,
+    @at,
     ValueBoundaryCondition,
     NormalFlowBoundaryCondition,
     Field,
@@ -39,7 +42,8 @@ using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
+using Oceananigans.Operators: intrinsic_vector
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
 using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
@@ -149,7 +153,10 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     ρᵈ = dynamics_density(child.dynamics)
     θ = Oceananigans.fields(child.formulation).θ
 
-    relaxation(field, target) = Relaxation(rate, field, mask, FieldTimeSeriesTarget(target, target.grid),
+    fts_target(target) = FieldTimeSeriesTarget(target, target.grid)
+    fts_target(target::VectorComponent) = target
+
+    relaxation(field, target) = Relaxation(rate, field, mask, fts_target(target),
                                            Oceananigans.instantiated_location(field), nothing)
     specific(name, field, target) = SpecificForcing(relaxation(field, target), ρᵈ,
                                                     Oceananigans.instantiated_location(child_fields[name]))
@@ -159,8 +166,8 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     names = (:ρθ, :ρu, :ρv, moisture_name)
     strips = NamedTuple{sides}(
         (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
-                                       specific(:ρu, child.velocities.u, prognostic.u[side]),
-                                       specific(:ρv, child.velocities.v, prognostic.v[side]),
+                                       specific(:ρu, child.velocities.u, VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
+                                       specific(:ρv, child.velocities.v, VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
                                        relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
          region = regions[side])
         for side in sides)
@@ -170,7 +177,7 @@ end
 
 # On a Lambert-conformal child the walls are lines of constant projected x or y, so the distance to the
 # nearest wall is measured in the projection.
-function boundary_relaxation_mask(grid::LambertConformalConicGrid, width; ramp = SmoothStepRamp())
+function boundary_relaxation_mask(grid::ConformalConicGrid, width; ramp = SmoothStepRamp())
     map = grid.conformal_mapping
     Nx, Ny, _ = size(grid)
     x₁, y₁ = map.x₁, map.y₁
@@ -178,7 +185,7 @@ function boundary_relaxation_mask(grid::LambertConformalConicGrid, width; ramp =
     y₂ = y₁ + Ny * map.Δy
     w = width * max(map.Δx, map.Δy)
     return (λ, φ, z) -> begin
-        x, y = lcc_forward(map, λ, φ)
+        x, y = geographic_to_conformal_conic(map, λ, φ)
         d = min(x - x₁, x₂ - x, y - y₁, y₂ - y)
         s = clamp(d / w, zero(d), one(d))
         return oftype(d, ramp(s))
@@ -187,7 +194,7 @@ end
 
 # Only the Lambert-conformal mapping carries a projected plane to measure the wall distance in.
 boundary_relaxation_mask(grid::OrthogonalSphericalShellGrid, width; ramp = SmoothStepRamp()) =
-    throw(ArgumentError("boundary_relaxation_mask requires a LambertConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
+    throw(ArgumentError("boundary_relaxation_mask requires a ConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
@@ -210,12 +217,15 @@ default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
 # Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
-# (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
+# (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). Entries of
+# `time_discretization_kwargs` override both and set any other split-explicit option. When given,
 # `base_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
-function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth)
-    time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
-                                                          damping = NoDivergenceDamping())
+function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
+                                 time_discretization_kwargs)
+    time_discretization = SplitExplicitTimeDiscretization(; sponge = UpperSponge(; damping_rate, depth = damping_depth),
+                                                          damping = NoDivergenceDamping(),
+                                                          time_discretization_kwargs...)
     kw = (;)
     isnothing(base_pressure)                   || (kw = merge(kw, (; base_pressure)))
     isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
@@ -281,7 +291,9 @@ Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`,
 raw state on the parent grid as `FieldTimeSeries` (see `child_prognostic_field_time_series`); the child's
 lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its lateral boundary relaxation
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
-those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
+those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`). The precomputed
+prognostics hold `time_indices_in_memory` time levels, by default as many as the parent holds, so a parent
+with every snapshot in memory gives a window that never moves; fewer (at least 3) stream a moving window.
 
 When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
 interpolate that side's strip, and the lateral boundary relaxation acts only on the cells of each strip's
@@ -299,7 +311,9 @@ Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
 `dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate`; a matching ρw Rayleigh
 lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
-`base_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
+`base_pressure`/`reference_potential_temperature` to anchor the default dynamics, and
+`time_discretization_kwargs` to set options of its `SplitExplicitTimeDiscretization`, e.g.
+`(; damping = ThermalDivergenceDamping())` (default: no divergence damping). Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
 When `bottom_drag_coefficient` is given — a constant drag coefficient or a `Breeze.PolynomialCoefficient`
@@ -346,9 +360,12 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     coriolis = SphericalCoriolis(),
     damping_rate = 1/5,
     damping_depth = default_lid_depth(child_grid),
-    dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth),
+    time_discretization_kwargs = NamedTuple(),
+    dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
+                                       time_discretization_kwargs),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
+    time_indices_in_memory = resident_time_indices(parent_atmosphere),
     kw...)
 
     if !isnothing(terrain)
@@ -360,9 +377,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     moisture_name = moisture_prognostic_name(microphysics)
     pˢᵗ = dynamics.standard_pressure
 
-    # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
-    # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates, moisture_name)
+    # Precompute the child prognostics on the parent grid (combine-then-interpolate); `exchange_state!`
+    # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
+                                 moisture_name, time_indices_in_memory)
     prognostic = parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
@@ -376,7 +394,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
     # asymmetrically for Center fields).
     energy_key = energy_bc_key()
-    dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv),
+    dry_bc_variables = merge((ρᵈ = prognostic.ρᵈ,
+                              ρu = vector_component(Val(:u), prognostic.ρu, prognostic.ρv),
+                              ρv = vector_component(Val(:v), prognostic.ρu, prognostic.ρv)),
                              NamedTuple{(energy_key,)}((prognostic.ρθ,)))
     bc_variables = merge(dry_bc_variables, moist_variables)
 
@@ -417,7 +437,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     relax = if isnothing(relaxation_rate) || boundary_parent
         NamedTuple()
     else
-        specific_targets = (ρθ = prognostic.θ, ρu = prognostic.u, ρv = prognostic.v)
+        specific_targets = (ρθ = prognostic.θ,
+                            ρu = vector_component(Val(:u), prognostic.u, prognostic.v),
+                            ρv = vector_component(Val(:v), prognostic.u, prognostic.v))
         specific = parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask)
         moist = parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask)
         merge(map(SpecificForcing, specific), moist)
@@ -461,7 +483,7 @@ function mean_sea_level_pressure(dataset, child_grid, date, dir)
     # TODO: this belongs in Oceananigans — `sum`/`mean` on a distributed `Field` should
     # perform the global reduction themselves (Oceananigans.jl's reductions are rank-local).
     arch = architecture(child_grid)
-    return all_reduce(+, sum(interior(p₀)), arch) / all_reduce(+, length(interior(p₀)), arch)
+    return all_reduce(+, sum(p₀), arch) / all_reduce(+, length(interior(p₀)), arch)
 end
 
 # Dataset skin temperature at `date`, regridded onto the child grid — the surface temperature
@@ -487,7 +509,9 @@ margin for the interpolation stencils). A full-domain snapshot of `parent_datase
 toward. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
-the child grid (a static snapshot, not the dataset's diurnal cycle). `balancer` controls the
+the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_atmosphere` overrides the
+strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the parent in full, at the
+cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
 `AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
@@ -497,15 +521,14 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     parent_padding = default_horizontal_padding(parent_dataset),
     parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
     relaxation_width = default_relaxation_width,
+    parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
+                                                    width = relaxation_width, padding = parent_padding, dir,
+                                                    time_indices_in_memory = parent_time_indices_in_memory),
     base_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
     kw...)
-
-    parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
-                                                    width = relaxation_width, padding = parent_padding, dir,
-                                                    time_indices_in_memory = parent_time_indices_in_memory)
 
     snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
                                     architecture = architecture(child_grid), dir)
@@ -524,13 +547,36 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        parent_surface_elevation = surface_elevation(snapshot),
                                                                        kw...)
 
-    initial_state = child_prognostic_state(snapshot, first(nested_model.exchanger))
+    initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
     return nested_model
 end
 
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
+
+# A parent prognostic is one source per variable, or a per-side `NamedTuple` of them for a
+# `BoundaryPrescribedComponent`.
+vector_component(::Val{C}, eastward, northward) where C = VectorComponent{C}(eastward, northward)
+
+vector_component(::Val{C}, eastward::NamedTuple, northward::NamedTuple) where C =
+    map((uᵉ, vᵉ) -> VectorComponent{C}(uᵉ, vᵉ), eastward, northward)
+
+@inline rotated_x_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[1]
+@inline rotated_y_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[2]
+
+child_momentum(prognostic, child_grid, t₀) =
+    (interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center)),
+     interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center)))
+
+# Rotate at cell centers with `intrinsic_vector`, then interpolate to the staggered locations.
+function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
+    ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid, t₀)
+    ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid, t₀)
+    ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
+    ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
+    return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
+end
 
 function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
     field = Field{loc...}(child_grid)
@@ -553,8 +599,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
     ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
     ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
-    ρu   = interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center))
-    ρv   = interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center))
+    ρu, ρv = child_momentum(prognostic, child_grid, t₀)
 
     ρ   = Field(ρᵈ + ρqᵛᵉ)
     qᵛᵉ = Field(ρqᵛᵉ / ρ)

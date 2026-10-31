@@ -3,9 +3,10 @@ using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans: instantiated_location
-using Oceananigans.Fields: Field, compute!, interior
+using Oceananigans.Fields: Field, compute!, interior, set!
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, conformal_conic_fractional_indices
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 
 import Oceananigans.Architectures: on_architecture
@@ -219,7 +220,7 @@ function surface_elevation(grid::PressureLevelGrid)
     Φˢᶠᶜ = grid.z.surface_geopotential
     isnothing(Φˢᶠᶜ) && return nothing
     elevation = Field{Center, Center, Nothing}(Φˢᶠᶜ.grid)
-    interior(elevation) .= interior(Φˢᶠᶜ) ./ grid.z.gravitational_acceleration
+    set!(elevation, Φˢᶠᶜ / grid.z.gravitational_acceleration)
     fill_halo_regions!(elevation)
     return elevation
 end
@@ -287,6 +288,19 @@ end
     return FractionalIndices(ii, jj, kk)
 end
 
+# More specific than both the `PressureLevelGrid` method above and Oceananigans' own
+# `ConformalConicGrid` method: the conic horizontal with the per-column vertical.
+const ConformalConicPressureLevelGrid = ConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
+
+@inline function _fractional_indices(
+        (λ, φ, z)::NTuple{3, Any}, grid::ConformalConicPressureLevelGrid,
+        ℓx::Union{Center, Face}, ℓy::Union{Center, Face}, ℓz::Union{Center, Face}
+    )
+    ii, jj = conformal_conic_fractional_indices(λ, φ, grid, ℓx, ℓy)
+    kk = column_fractional_z_index(z, ii, jj, grid)
+    return FractionalIndices(ii, jj, kk)
+end
+
 # Column-region source (Flat-Flat-Bounded): there's only one (i,j)=(1,1), so
 # bisect that single column directly. Mirrors the 3-D form's column logic.
 @inline function _fractional_indices((z,)::NTuple{1, Any},
@@ -295,9 +309,15 @@ end
     return FractionalIndices(nothing, nothing, kk)
 end
 
+# `ii`/`jj` are 1-based node indices, and a query on a node lands a few ulp either side of the
+# integer, so truncation drops a whole column. `unsafe_trunc(x + 1/2)` rounds half-up; `unsafe_trunc`
+# rather than `round` for GPU safety, and the `clamp` below bounds a non-positive or non-finite `x`.
+@inline nearest_column_index(ii) = Base.unsafe_trunc(Int, ii + oftype(ii, 0.5))
+@inline nearest_column_index(ii::Integer) = Int(ii)   # the column-region path passes literal 1, 1
+
 @inline function column_fractional_z_index(z, ii, jj, grid)
-    i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
-    j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
+    i = clamp(nearest_column_index(ii), 1, grid.Nx)
+    j = clamp(nearest_column_index(jj), 1, grid.Ny)
     kk = fractional_index(z, ColumnView(grid, i, j), grid.Nz)
     FT = eltype(grid)
     # An index outside [1, Nz] reads the interpolator out of bounds.
