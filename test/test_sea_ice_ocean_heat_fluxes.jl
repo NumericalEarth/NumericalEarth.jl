@@ -200,7 +200,7 @@ using Oceananigans.Fields: ConstantField
         conducting = ThreeEquationHeatFlux(ConductiveFlux(conductivity=k), ConstantField(Tˢⁱ), αₕ, αₛ, u★)
 
         for (flux, kᵢ) in ((bare, 0.0), (conducting, k))
-            Q, T★, S★ = compute_interface_heat_flux(flux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+            Q, T★, S★, q★ = compute_interface_heat_flux(flux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
             T★′, S★′, q = solve_interface_conditions(flux, ocean_state.T, ocean_state.S, ice_state,
                                                      αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
@@ -215,6 +215,7 @@ using Oceananigans.Fields: ConstantField
 
         Q_bare, T★_bare, = compute_interface_heat_flux(bare, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
         Q_cond, T★_cond, = compute_interface_heat_flux(conducting, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+        # (trailing comma intentionally discards the remaining Sb, q return values)
 
         # Cold ice draws the interface colder, so the ocean loses more heat, not less
         @test T★_cond < T★_bare
