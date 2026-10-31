@@ -73,8 +73,8 @@ end
 
         @test rad.surface_properties.land.albedo isa Number
         @test rad.surface_properties.land.emissivity isa Number
-        @test NumericalEarth.stateindex(rad.surface_properties.land.albedo, 1, 1, 1, grid, 0, nothing) == 0.15
-        @test NumericalEarth.stateindex(rad.surface_properties.land.emissivity, 1, 1, 1, grid, 0, nothing) == 0.93
+        @test NumericalEarth.DataWrangling.stateindex(rad.surface_properties.land.albedo, 1, 1, 1, grid, 0, nothing) == 0.15
+        @test NumericalEarth.DataWrangling.stateindex(rad.surface_properties.land.emissivity, 1, 1, 1, grid, 0, nothing) == 0.93
     end
 end
 

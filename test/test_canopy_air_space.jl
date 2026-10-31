@@ -14,7 +14,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     AreaIndexUndercanopyVelocity, FrictionVelocityUndercanopyVelocity, undercanopy_transfer_velocity,
     ExponentialSoilResistance, GroundSurfaceResistance, soil_surface_resistance, ground_surface_resistance,
     kernel_surface_field, canopy_transmittance
-using NumericalEarth: stateindex
+using NumericalEarth.DataWrangling: stateindex
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
 canopy_ground_surface(FT; leaf_area_index = 4.0, soil_humidity = bare_soil_humidity(FT), kw...) =

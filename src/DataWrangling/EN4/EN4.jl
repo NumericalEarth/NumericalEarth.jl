@@ -7,7 +7,6 @@ using Dates: Dates, DateTime, Month
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
-using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
                        first_date, metadata_path, metadata_url, download_with_retries, unzip
 

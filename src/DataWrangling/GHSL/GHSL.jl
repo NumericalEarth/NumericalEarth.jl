@@ -8,7 +8,6 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: dimension_faces
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
-using NumericalEarth.Lands: Lands
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        metadata_path, native_grid, BoundingBox, bounding_box_suffix
@@ -137,7 +136,7 @@ Base.show(io::IO, dataset::AbstractGHSLDataset) = print(io, summary(dataset))
 """
 $(TYPEDEF)
 
-The GHSL built-up pair that [`building_morphometry`](@ref NumericalEarth.Lands.building_morphometry) reads together: the built-up
+The GHSL built-up pair that [`building_morphometry`](@ref NumericalEarth.DataWrangling.building_morphometry) reads together: the built-up
 `surface` ([`GHSBuiltS`](@ref)) and the building `height` ([`GHSBuiltH`](@ref)).
 Provides `:built_up_fraction` and `:building_volume` (m³ per m²) on a common grid at
 the surface product's resolution: the volume of each surface pixel is its built fraction
@@ -525,7 +524,7 @@ at most `maximum_raster_cells` native pixels (default `100_000_000`) per product
 when a grid cell spans multiple windows. Missing ocean tiles contribute zero built area
 and volume. Downloaded source tiles remain cached. Requires `using ArchGDAL`.
 """
-Lands.building_morphometry(grid, dataset::GHSBuilt; kw...) =
+DataWrangling.building_morphometry(grid, dataset::GHSBuilt; kw...) =
     error("Reading $(summary(dataset)) building morphometry requires `using ArchGDAL`.")
 
 end # module GHSL

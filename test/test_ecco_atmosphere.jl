@@ -4,7 +4,9 @@ include("download_utils.jl")
 using Statistics: median
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using NumericalEarth.Radiations: PrescribedRadiation
-using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
+using NumericalEarth.ECCO: ECCO4Monthly
+using NumericalEarth.Atmospheres: ECCOPrescribedAtmosphere
+using NumericalEarth.Radiations: ECCOPrescribedRadiation
 using NumericalEarth.DataWrangling: metadata_path, higher_bound
 
 # Pre-download the ECCO4Monthly forcing variables through the artifacts fallback, so the testset
