@@ -295,7 +295,7 @@ conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt
 # on the terrain-following grid a constant reference level ≈ constant height above ground near the
 # surface), and a zonal x-z section at `j_section`, the latitude row through the ARM SGP site.
 # A fourth writer saves the surface: the land skin temperature, the bucket saturation, and the
-# partition-blended skin temperature Tₛ the atmosphere sees (2-D already, no slicing needed —
+# partition-blended skin temperature Tⁱⁿ the atmosphere sees (2-D already, no slicing needed —
 # the writer stores each output's own grid).
 
 child = nest.child
@@ -324,7 +324,7 @@ simulation.output_writers[:section] = slice_writer((:, j_section, :), section_fi
 land_filename = name * "_land.jld2"
 land_fields = (Tˡᵃ = land.temperature,
                𝒮 = land.saturation,
-               Tₛ = surface_temperature(model.interfaces))
+               Tⁱⁿ = surface_temperature(model.interfaces))
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
                                               overwrite_files = true)
@@ -530,23 +530,23 @@ nothing #hide
 
 # ## Surface response
 #
-# The coupled surface closes the loop. The partition-blended skin temperature Tₛ — the one
+# The coupled surface closes the loop. The partition-blended skin temperature Tⁱⁿ — the one
 # surface the atmosphere and the radiation see — changes over the run only where the land
 # fraction lets it: daytime heating plus cooling under the squall line's cold pool and anvil
 # shading over the plains, next to nothing over the prescribed Gulf, and a muted response along
 # the fractional coast. The final bucket saturation shows where the squall line rained. Both
 # load back as 2-D `FieldTimeSeries` and plot directly.
 
-Tₛ_series = FieldTimeSeries(land_filename, "Tₛ")
+Tⁱⁿ_series = FieldTimeSeries(land_filename, "Tⁱⁿ")
 𝒮_series  = FieldTimeSeries(land_filename, "𝒮")
 
 fig_land = Figure(size = (1100, 420))
 
 ax_T = Axis(fig_land[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-            title = "ΔTₛ over $(prettytime(duration)) (K)")
+            title = "ΔTⁱⁿ over $(prettytime(duration)) (K)")
 ax_𝒮 = Axis(fig_land[1, 3]; xlabel = "longitude (°)", title = "final surface saturation 𝒮")
 
-hm_T = heatmap!(ax_T, Tₛ_series[end] - Tₛ_series[1]; colormap = :balance, colorrange = (-8, 8))
+hm_T = heatmap!(ax_T, Tⁱⁿ_series[end] - Tⁱⁿ_series[1]; colormap = :balance, colorrange = (-8, 8))
 hm_𝒮 = heatmap!(ax_𝒮, 𝒮_series[end]; colormap = :dense, colorrange = (0, 1))
 
 Colorbar(fig_land[1, 2], hm_T)
