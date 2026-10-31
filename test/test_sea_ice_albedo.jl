@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using Oceananigans.Units: Time
-using NumericalEarth: stateindex
+using NumericalEarth.DataWrangling: stateindex
 using NumericalEarth.Radiations: SeaIceAlbedo
 
 @testset "SeaIceAlbedo" begin
