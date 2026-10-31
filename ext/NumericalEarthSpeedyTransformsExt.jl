@@ -4,6 +4,7 @@ using NumericalEarth
 using NumericalEarth.Oceans: Oceans
 using Oceananigans
 using Oceananigans.Architectures: architecture, on_architecture, CPU
+using Oceananigans.DistributedComputations: Distributed, MPI, child_architecture
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: λnode, φnode
 using Oceananigans.ImmersedBoundaries: underlying_grid
@@ -161,12 +162,16 @@ function legendre_recursion_coefficients(FT, L)
 end
 
 function Oceans.apply_loading_operator!(Ψ, op::SpectralLoadingOperator, pᵇ)
-    grid = pᵇ.grid
-    Nx, Ny, _ = size(grid)
+    compute_loading_coefficients!(op, view(interior(pᵇ), :, :, 1))
+    synthesize_loading_potential!(Ψ, pᵇ.grid, op)
+    return nothing
+end
 
+# γₗ pᵇₗₘ in `op.coefficients` from pᵇ on the cells of the whole grid
+function compute_loading_coefficients!(op::SpectralLoadingOperator, pᵇ)
     # Conservative average onto the Gaussian grid; cells the ocean grid does not reach carry no load
     src = op.regridder.src_temp
-    reshape(src, Nx, Ny) .= view(interior(pᵇ), :, :, 1)
+    copy_to_source!(src, pᵇ)
     regrid!(op.gaussian_values, op.regridder, src)
     op.gaussian_values .= ifelse.(isfinite.(op.gaussian_values), op.gaussian_values, 0)
 
@@ -174,9 +179,79 @@ function Oceans.apply_loading_operator!(Ψ, op::SpectralLoadingOperator, pᵇ)
     copyto!(op.gaussian_field.data, op.gaussian_values)
     transform!(op.coefficients, op.gaussian_field, op.transform)
     op.coefficients.data .*= op.weights
-    copyto!(op.device_coefficients, op.coefficients.data)
+    return nothing
+end
 
+copy_to_source!(src, pᵇ) = reshape(src, size(pᵇ)) .= pᵇ
+copy_to_source!(src, pᵇ::Array) = copyto!(src, vec(pᵇ)) # from the host, where a broadcast to the device would fail
+
+function synthesize_loading_potential!(Ψ, grid, op::SpectralLoadingOperator)
+    copyto!(op.device_coefficients, op.coefficients.data)
     launch!(architecture(grid), grid, :xy, _synthesize_loading_potential!, Ψ, grid, op.device_coefficients, op.recursion, op.degree)
+    return nothing
+end
+
+#####
+##### Distributed grids: rank 0 gathers pᵇ and computes the coefficients, and every rank synthesizes Ψ on its cells
+#####
+
+const DistributedGrid = Oceananigans.Grids.AbstractGrid{<:Any, <:Any, <:Any, <:Any, <:Distributed}
+
+struct DistributedSpectralLoadingOperator{O, V, C, D, A}
+    global_operator :: O     # the operator of the whole grid on the CPU; only rank 0 regrids and transforms
+    local_values :: V        # this rank's pᵇ on the CPU
+    global_values :: V       # pᵇ of the whole grid on the CPU, gathered on rank 0
+    counts :: C              # the number of cells of each rank
+    device_coefficients :: D # γₗ pᵇₗₘ on this rank's device
+    recursion :: A           # Legendre recursion coefficients on this rank's device
+end
+
+Base.summary(op::DistributedSpectralLoadingOperator) = summary(op.global_operator) * ", gathered on rank 0"
+
+function Oceans.spherical_harmonic_loading_operator(grid::DistributedGrid; kwargs...)
+    arch = architecture(grid)
+    # Ranks hold whole rows, so gathering in rank order stacks their bands from south to north.
+    arch.ranks[1] == arch.ranks[3] == 1 ||
+        throw(ArgumentError("SphericalHarmonicSelfAttractionAndLoading supports y partitions only; got ranks $(arch.ranks)"))
+
+    # The whole grid, on the CPU and with one level: building it on each rank's device would cost memory the
+    # model needs, and only the horizontal cells matter.
+    local_grid = underlying_grid(grid)
+    Nx, Ny, _ = size(local_grid)
+    counts = MPI.Allgather(Nx * Ny, arch.communicator)
+    mapping = local_grid.conformal_mapping
+    global_grid = TripolarGrid(CPU(), eltype(grid);
+                               size = (Nx, sum(counts) ÷ Nx, 1),
+                               halo = (local_grid.Hx, local_grid.Hy, 1),
+                               z = (-1, 0),
+                               radius = local_grid.radius,
+                               southernmost_latitude = mapping.southernmost_latitude,
+                               north_poles_latitude = mapping.north_poles_latitude,
+                               first_pole_longitude = mapping.first_pole_longitude,
+                               fold_topology = fold_topology(mapping),
+                               pivot = fold_pivot(mapping))
+
+    global_operator = Oceans.spherical_harmonic_loading_operator(global_grid; kwargs...)
+    device_coefficients = on_architecture(child_architecture(arch), similar(global_operator.device_coefficients))
+    recursion = on_architecture(child_architecture(arch), global_operator.recursion)
+
+    return DistributedSpectralLoadingOperator(global_operator, zeros(Float64, Nx, Ny), zeros(Float64, size(global_grid, 1), size(global_grid, 2)),
+                                              counts, device_coefficients, recursion)
+end
+
+function Oceans.apply_loading_operator!(Ψ, op::DistributedSpectralLoadingOperator, pᵇ)
+    arch = architecture(pᵇ.grid)
+    root = arch.local_rank == 0
+    op.local_values .= view(Array(interior(pᵇ)), :, :, 1)
+    MPI.Gatherv!(op.local_values, root ? MPI.VBuffer(op.global_values, op.counts) : nothing, arch.communicator; root = 0)
+
+    global_operator = op.global_operator
+    root && compute_loading_coefficients!(global_operator, op.global_values)
+    MPI.Bcast!(global_operator.coefficients.data, arch.communicator; root = 0)
+
+    copyto!(op.device_coefficients, global_operator.coefficients.data)
+    launch!(arch, pᵇ.grid, :xy, _synthesize_loading_potential!, Ψ, pᵇ.grid, op.device_coefficients, op.recursion,
+            global_operator.degree)
 
     return nothing
 end
