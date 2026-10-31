@@ -97,10 +97,15 @@ Each side in `open_sides` (default: the `Bounded` sides of the child grid that t
 radiation on the boundary-normal and tangential velocities (`normal_velocity_scheme`, `tangential_velocity_scheme`;
 nudged toward the parent over 3 days on inflow and 360 days on outflow), tracer reservoirs on the tracers
 (`tracer_scheme`; relaxing toward the parent over 20 km on inflow), Flather on the barotropic transport, and Chapman
-on the free surface. Over the outermost `relaxation_width` cells of each open side (default: 2/3°), `T` and `S` and
+on the free surface. Over the outermost `relaxation_width` cells of each open side (default: 2/3°), the tracers and
 the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default 1/6 hours), leaving
 the barotropic flow to Flather (see [`ocean_boundary_relaxation`](@ref)); `relaxation_rate = nothing` disables it.
-`relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes `T` and `S` only where the flow enters through the side.
+`relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes the tracers only where the flow enters through the side.
+
+The parent supplies `T` and `S`. Tracers of the child beyond them, such as those of a `biogeochemistry`, take
+their parent from `parent_tracers`, a `NamedTuple` of `FieldTimeSeries` on the parent's clock (covering the open
+sides and their relaxation zones) or numbers, keyed by tracer name, and are then treated like `T` and `S`. Tracers
+missing from it keep their default boundary conditions and are neither relaxed nor initialized.
 
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport
 is the parent's depth mean velocity over its own column times the child's wet depth, and the boundary-normal
@@ -122,6 +127,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             normal_velocity_scheme = default_velocity_scheme(),
                             tangential_velocity_scheme = normal_velocity_scheme,
                             tracer_scheme = default_tracer_scheme(),
+                            parent_tracers = NamedTuple(),
                             relaxation_rate = 1/6hours,
                             relaxation_width = cells_spanning(grid, default_relaxation_degrees),
                             bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
@@ -144,7 +150,8 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     grid = blend_parent_bathymetry(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     validate_band_width(grid, open_sides, width, "relaxation_width")
-    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
+    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height,
+                                       tracers = NamedTuple(parent_tracers))
 
     nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
@@ -158,7 +165,8 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                                     forcing = combine_forcings(relaxation, NamedTuple(forcing)),
                                     kw...)
 
-    isnothing(initial_state) || set_from_parent!(child, initial_state, time)
+    validate_parent_tracers(child, parent_tracers)
+    isnothing(initial_state) || set_from_parent!(child, initial_state, time, parent_tracers)
 
     return NestedModel(parent, child, exchanger)
 end
@@ -211,9 +219,17 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
                               parent_bottom_height, initial_state = snapshot, kw...)
 end
 
+function validate_parent_tracers(child, parent_tracers)
+    for name in keys(parent_tracers)
+        name ∈ (:T, :S) && throw(ArgumentError("the parent supplies $name; parent_tracers holds the child's other tracers."))
+        name ∈ keys(child.tracers) || throw(ArgumentError("parent_tracers has $name, which is not a tracer of the child."))
+    end
+    return nothing
+end
+
 # Interpolate the parent onto the whole child grid at `time`, so the interior starts consistent with the
 # boundaries.
-function set_from_parent!(child, parent, time)
+function set_from_parent!(child, parent, time, parent_tracers = NamedTuple())
     grid = child.grid
     sources = parent_ocean_sources(parent)
 
@@ -230,6 +246,12 @@ function set_from_parent!(child, parent, time)
     sample_parent!(η₀, boundary_location(:η), sources.η, time)
 
     set!(child; u = u₀, v = v₀, T = T₀, S = S₀, η = interior(η₀))
+
+    for name in keys(parent_tracers)
+        c₀ = CenterField(grid)
+        sample_parent!(c₀, boundary_location(name), parent_tracers[name], time)
+        set!(child.tracers[name], c₀)
+    end
 
     return child
 end

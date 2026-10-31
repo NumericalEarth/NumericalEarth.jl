@@ -520,6 +520,40 @@ end
     @test maximum(T) > 10
 end
 
+@testset "Tracers beyond T and S take their parent from parent_tracers on $(arch)" for arch in test_architectures
+    parent_ocean = nesting_test_parent(arch; u = 0.1, T = 15)
+    grid = nesting_test_child_grid(arch)
+    Nx, Ny, Nz = size(grid)
+    parent_tracers = (c = parent_ocean.temperature, d = 2)
+    model = nested_ocean_model(parent_ocean, grid; tracers = (:T, :S, :c, :d, :q), parent_tracers, coriolis = nothing)
+    child = model.child
+
+    for side in lateral_sides, name in (:c, :d)
+        bc = getproperty(child.tracers[name].boundary_conditions, side)
+        @test bc.classification isa Value
+        @test bc.classification.scheme isa TracerReservoir
+    end
+    @test !(child.tracers.q.boundary_conditions.west.classification isa Value)
+
+    @test all(Array(interior(child.tracers.c)) .≈ 15)
+    @test all(Array(interior(child.tracers.d)) .== 2)
+    @test all(Array(interior(child.tracers.q)) .== 0)
+
+    set!(child, c = 0, d = 0, q = 0)
+    time_step!(model, 60)
+    c = Array(interior(child.tracers.c))
+    d = Array(interior(child.tracers.d))
+    q = Array(interior(child.tracers.q))
+    j = Ny ÷ 2
+    @test all(isfinite, c) && all(isfinite, d)
+    @test all(c[1, j, :] .> 0) && all(d[1, j, :] .> 0)
+    @test maximum(c[Nx ÷ 2, j, :]) < minimum(c[1, j, :])
+    @test all(q .== 0)
+
+    @test_throws ArgumentError nested_ocean_model(parent_ocean, grid; parent_tracers = (z = 1,))
+    @test_throws ArgumentError nested_ocean_model(parent_ocean, grid; parent_tracers = (T = 1,))
+end
+
 @testset "regrid_bathymetry from the missing values of an ocean dataset on $(arch)" for arch in test_architectures
     grid = coastal_grid(arch).underlying_grid
     metadatum = Metadatum(:temperature; dataset = SyntheticOcean(), date = first(synthetic_dates),
