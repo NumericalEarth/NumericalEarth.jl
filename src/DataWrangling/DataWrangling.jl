@@ -447,6 +447,7 @@ include("GHSL/GHSL.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("MODISLand/MODISLand.jl")
 include("WorldCover/WorldCover.jl")
+include("TPXO/TPXO.jl")
 
 using .ETOPO
 using .ECCO
@@ -470,6 +471,7 @@ using .GHSL
 using .CopernicusLandAlbedo
 using .MODISLand
 using .WorldCover
+using .TPXO
 
 function dataset_modules()
     modules = Module[]
