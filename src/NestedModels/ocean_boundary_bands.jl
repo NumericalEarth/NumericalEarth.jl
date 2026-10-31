@@ -10,7 +10,7 @@
 # boundary, not with the length of the run.
 
 using Oceananigans.Fields: Field, interpolate
-using Oceananigans.Grids: Bounded, Center, Face, FullyConnected, LeftConnected, RightConnected, inactive_cell, new_data, topology,
+using Oceananigans.Grids: Bounded, Center, Closed, Connected, Face, Sides, inactive_cell, new_data, topology,
                           validate_indices, λnode, φnode, rnode, ξnode, ηnode
 using Oceananigans.Operators: Δz
 using Oceananigans.OutputReaders: FlavorOfFTS
@@ -79,9 +79,9 @@ last_index(::Center, N) = N
 boundary_index(ℓ, side, N) = side ∈ (:west, :south) ? 1 : last_index(ℓ, N)
 
 # Whether the left and right ends of a direction with topology `T` are seams with a neighboring rank.
-rank_seams(::Type{FullyConnected}) = (true, true)
-rank_seams(::Type{LeftConnected}) = (true, false)
-rank_seams(::Type{RightConnected}) = (false, true)
+rank_seams(::Type{Sides{Connected, Connected}}) = (true, true)
+rank_seams(::Type{Sides{Connected, Closed}}) = (true, false)
+rank_seams(::Type{Sides{Closed, Connected}}) = (false, true)
 rank_seams(T) = (false, false)
 
 # The indices at which a field at location `ℓ` holds the parent along a direction with topology `T`, `N` interior
@@ -208,10 +208,10 @@ end
 end
 
 # Whether `side` of a grid with topology `T` in its direction is a wall of the whole domain: on a distributed grid,
-# a `Bounded` direction is `RightConnected` on its first rank, `LeftConnected` on its last, `FullyConnected` between.
+# a `Bounded` direction is `Sides{Closed, Connected}` on its first rank, `Sides{Connected, Closed}` on its last.
 on_domain_boundary(::Type{Bounded}, side) = true
-on_domain_boundary(::Type{RightConnected}, side) = side ∈ (:west, :south)
-on_domain_boundary(::Type{LeftConnected}, side) = side ∈ (:east, :north)
+on_domain_boundary(::Type{Sides{Closed, Connected}}, side) = side ∈ (:west, :south)
+on_domain_boundary(::Type{Sides{Connected, Closed}}, side) = side ∈ (:east, :north)
 on_domain_boundary(T, side) = false
 
 """
@@ -226,6 +226,20 @@ function domain_boundary_sides(grid, sides)
     return Tuple(side for side in sides if on_domain_boundary(side_topology(side), side))
 end
 
+@kernel function _compute_wet_surface_cells!(wet, grid, Nz)
+    i, j = @index(Global, NTuple)
+    @inbounds wet[i, j, 1] = !inactive_cell(i, j, Nz, grid)
+end
+
+# A CPU matrix of whether each surface cell of `grid` is wet. Moving an immersed grid to the CPU would rebuild its
+# immersed boundary, which fails on a rank's local grid.
+function compute_wet_surface_cells(grid)
+    Nz = size(grid, 3)
+    wet = Field{Center, Center, Nothing}(grid)
+    launch!(architecture(grid), grid, :xy, _compute_wet_surface_cells!, wet, grid, Nz)
+    return on_architecture(CPU(), interior(wet, :, :, 1)) .> 0
+end
+
 """
     open_boundary_sides(grid)
 
@@ -234,14 +248,13 @@ Return the lateral sides of `grid` that are open to the ocean: the sides on a `B
 column. Sides that are entirely land stay closed. On a distributed grid, these are the local rank's sides.
 """
 function open_boundary_sides(grid)
-    Nx, Ny, Nz = size(grid)
-    cpu_grid = on_architecture(CPU(), grid)
-    wet(i, j) = !inactive_cell(i, j, Nz, cpu_grid)
+    Nx, Ny, _ = size(grid)
+    wet = compute_wet_surface_cells(grid)
 
-    touches_water = (west  = any(j -> wet(1,  j), 1:Ny),
-                     east  = any(j -> wet(Nx, j), 1:Ny),
-                     south = any(i -> wet(i,  1), 1:Nx),
-                     north = any(i -> wet(i, Ny), 1:Nx))
+    touches_water = (west  = any(wet[1,  :]),
+                     east  = any(wet[Nx, :]),
+                     south = any(wet[:,  1]),
+                     north = any(wet[:, Ny]))
 
     return Tuple(side for side in domain_boundary_sides(grid, lateral_sides) if touches_water[side])
 end

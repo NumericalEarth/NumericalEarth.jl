@@ -127,9 +127,8 @@ and beyond the first land cell in from the boundary, combined across sides as `1
 velocity points average the two neighboring cell centers.
 """
 function relaxation_masks(grid, sides, width)
-    cpu_grid = on_architecture(CPU(), grid)
-    Nx, Ny, Nz = size(grid)
-    wet = [!inactive_cell(i, j, Nz, cpu_grid) for i in 1:Nx, j in 1:Ny]
+    Nx, Ny, _ = size(grid)
+    wet = compute_wet_surface_cells(grid)
     taper(d) = d < width ? cos(π * d / 2width)^2 : 0.0
 
     keep = ones(Nx, Ny)   # ∏(1 - mₛ)
