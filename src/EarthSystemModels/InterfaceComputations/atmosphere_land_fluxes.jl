@@ -47,7 +47,7 @@ function build_atmosphere_land_interface(grid, fluxes, state, velocity_differenc
     formulation = InterfaceFormulation(fluxes, state, velocity_difference)
     interface_temperature = build_interface_temperature(temperature_formulation(state), grid)
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
-    return AtmosphereInterface(al_fluxes, interface_temperature, interface_specific_humidity, formulation)
+    return AtmosphereLandInterface(al_fluxes, interface_temperature, interface_specific_humidity, formulation)
 end
 
 # The atmosphere-facing interface temperature: a single field, or the
@@ -386,7 +386,7 @@ $(TYPEDSIGNATURES)
 
 Surface energy loss and water fluxes consumed by land, positive upward (W m⁻² and kg m⁻² s⁻¹).
 """
-land_surface_fluxes(interface::AtmosphereInterface, Tˡᵃ) = land_surface_fluxes(interface.temperature, interface, Tˡᵃ)
+land_surface_fluxes(interface::AtmosphereLandInterface, Tˡᵃ) = land_surface_fluxes(interface.temperature, interface, Tˡᵃ)
 
 # TODO: Use KernelFunctionOperation after Oceananigans reconciles its Reactant traced
 # scalar type with the unwrapped element type produced by GPU adaptation.
@@ -425,7 +425,7 @@ $(TYPEDSIGNATURES)
 
 Surface temperature, albedo, and emissivity for outgoing radiation.
 """
-radiative_surface(interface::AtmosphereInterface, albedo, emissivity) =
+radiative_surface(interface::AtmosphereLandInterface, albedo, emissivity) =
     radiative_surface(interface.temperature, albedo, emissivity)
 radiative_surface(temperature, albedo, emissivity) = (; temperature, albedo, emissivity)
 radiative_surface(temperature::CanopyInterfaceDiagnostics, albedo, emissivity) =

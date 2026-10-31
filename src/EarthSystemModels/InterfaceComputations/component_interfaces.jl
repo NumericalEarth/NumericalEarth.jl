@@ -26,6 +26,13 @@ mutable struct AtmosphereInterface{J, ST, SQ, F}
     formulation :: F
 end
 
+mutable struct AtmosphereLandInterface{J, ST, SQ, F}
+    fluxes :: J
+    temperature :: ST
+    specific_humidity :: SQ
+    formulation :: F
+end
+
 """
     SeaIceOceanInterface{J, F, T, S, P}
 
@@ -48,6 +55,7 @@ end
 
 # Utilities to get the computed fluxes
 @inline computed_fluxes(interface::AtmosphereInterface)  = interface.fluxes
+@inline computed_fluxes(interface::AtmosphereLandInterface) = interface.fluxes
 @inline computed_fluxes(interface::SeaIceOceanInterface) = interface.fluxes
 
 vector_component_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
@@ -209,7 +217,7 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # one is the canopy-air node.
 @inline interface_node_temperature(t) = t
 @inline interface_node_temperature(t::CanopyInterfaceDiagnostics) = t.interface
-EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
+EarthSystemModels.surface_temperature(interface::AtmosphereLandInterface) =
     interface_node_temperature(interface.temperature)
 
 function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
@@ -219,17 +227,17 @@ function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
                                                  interfaces.atmosphere_ocean_interface)
 end
 
-EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
+EarthSystemModels.surface_temperature(land_interface::AtmosphereLandInterface, ocean_interface) =
     interface_node_temperature(land_interface.temperature)
 EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
-ground_conductance(interface::AtmosphereInterface) = ground_conductance(temperature_formulation(interface.formulation.state))
+ground_conductance(interface::AtmosphereLandInterface) = ground_conductance(temperature_formulation(interface.formulation.state))
 
-land_state_accessors(interface::AtmosphereInterface) = land_state_accessors(interface.formulation)
+land_state_accessors(interface::AtmosphereLandInterface) = land_state_accessors(interface.formulation)
 
-validate_zero_plane_displacement(interface::AtmosphereInterface, zᵃᵗ) =
+validate_zero_plane_displacement(interface::Union{AtmosphereInterface, AtmosphereLandInterface}, zᵃᵗ) =
     validate_zero_plane_displacement(interface.formulation.turbulent_fluxes, zᵃᵗ)
 
 #####

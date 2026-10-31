@@ -14,8 +14,8 @@ and temperatures the atmosphere and slab read. Build it with
 `atmosphere_land_interface = …` to `AtmosphereLandModel` / `ComponentInterfaces`.
 
 Fields:
-- `vegetated`      : the forested tile, an `AtmosphereInterface` with a [`CanopyInterface`](@ref).
-- `bare`           : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
+- `vegetated`      : the forested tile, an `AtmosphereLandInterface` with a [`CanopyInterface`](@ref).
+- `bare`           : the bare-soil tile, an `AtmosphereLandInterface` with an [`EnergyBalanceTemperature`](@ref).
 - `cover_fraction` : the vegetated cover fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`         : the blended [`AtmosphereSurfaceFluxes`](@ref).
 - `temperature`    : the blended [`CanopyInterfaceDiagnostics`](@ref). Canopy quantities (`canopy`,
