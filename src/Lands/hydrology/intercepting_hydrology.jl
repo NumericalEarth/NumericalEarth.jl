@@ -103,7 +103,8 @@ end
 end
 
 function prepare_time_step!(h::InterceptingHydrology, land)
-    time = land.clock.time
+    # The clock accumulates in Float64; the kernel sees the time at the grid's precision
+    time = clock_convert(kernel_time_type(land.clock), land.clock.time)
     update_field_time_series!(h.cover_fraction, Time(time))
     launch!(architecture(land.grid), land.grid, :xy, _cache_cover_fraction!,
             land.diagnostics.previous_cover_fraction, h.cover_fraction, land.grid, time)
