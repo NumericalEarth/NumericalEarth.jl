@@ -300,9 +300,11 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
     latitude_faces = dimension_faces(grid, 2)
     longitude_scale = grid.radius * deg2rad(1) * cosd(clamp(0, first(latitude_faces), last(latitude_faces)))
     latitude_scale = grid.radius * deg2rad(1)
+    # Roundoff tolerance for face counts, so exact multiples and coincident edges are not split.
+    δ = sqrt(eps(FT))
     function subdivide(faces, scale)
-        # Lattice cells no wider than a neighborhood; the tolerance keeps exact multiples from splitting.
-        subdivisions = ceil.(Int, (1 - 1e-6) .* diff(faces) .* scale ./ neighborhood)
+        # Lattice cells no wider than a neighborhood.
+        subdivisions = ceil.(Int, (1 - δ) .* diff(faces) .* scale ./ neighborhood)
         return [[faces[i] + (faces[i + 1] - faces[i]) * k / subdivisions[i]
                  for i in eachindex(subdivisions) for k in 0:subdivisions[i]-1]; faces[end]]
     end
@@ -314,8 +316,8 @@ function urban_roughness(grid::LatitudeLongitudeGrid, dataset; surface_layer_hei
 
     function pad(faces, half_width, lower, upper)
         first_spacing, last_spacing = faces[2] - faces[1], faces[end] - faces[end-1]
-        before = ceil(Int, min(half_width / first_spacing - 1/2, (first(faces) - lower) / first_spacing))
-        after = ceil(Int, min(half_width / last_spacing - 1/2, (upper - last(faces)) / last_spacing))
+        before = ceil(Int, min(half_width / first_spacing - 1/2, (first(faces) - lower) / first_spacing) - δ)
+        after = ceil(Int, min(half_width / last_spacing - 1/2, (upper - last(faces)) / last_spacing) - δ)
         return clamp.([first(faces) .- (before:-1:1) .* first_spacing; faces; last(faces) .+ (1:after) .* last_spacing],
                       lower, upper)
     end

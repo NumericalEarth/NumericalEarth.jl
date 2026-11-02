@@ -72,6 +72,14 @@ $(TYPEDSIGNATURES)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
 end
 
+# Effective saturation at the `suction_head` (m), for the interface's plant-stress endpoints.
+@inline function effective_saturation(i, j, k, grid, r::VanGenuchtenRetention, suction_head)
+    FT = typeof(suction_head)
+    αᵃᵉ = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃   = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
+    return van_genuchten_saturation(αᵃᵉ * suction_head, 𝓃)
+end
+
 Base.summary(r::VanGenuchtenRetention) =
     string("VanGenuchtenRetention(αᵃᵉ=", prettysummary(r.inverse_air_entry_head),
            ", 𝓃=", prettysummary(r.pore_size_uniformity), ")")

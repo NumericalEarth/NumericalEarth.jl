@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using CUDA: @allowscalar
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Diagnostics: NaNChecker, nan_detected
-using Oceananigans.Grids: MutableVerticalDiscretization
+using Oceananigans.Grids: MutableVerticalDiscretization, CenterFolded, FaceFolded
 using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
@@ -94,13 +94,13 @@ end
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
         for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
-            for fold_topology in (RightFaceFolded, RightCenterFolded)
+            for fold_topology in (FaceFolded, CenterFolded)
 
             @info ".. on $(typeof(arch)) with $(typeof(z)) and $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
                                            z,
-                                           halo = (7, 7, 4),
+                                           halo = (7, 7, 5),
                                            fold_topology)
 
             bottom_height = synthetic_bottom_height(underlying_grid;
@@ -127,7 +127,7 @@ end
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=5)
 
-            if fold_topology === RightFaceFolded # the partial budgets only, the full one runs on both
+            if fold_topology === FaceFolded # the partial budgets only, the full one runs on both
                 # Without shortwave penetration
                 @testset "Surface-only fluxes" begin
                     ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
