@@ -348,8 +348,10 @@ jobs:
           Pkg.Registry.update()
       - name: Run the nested gradient test
         timeout-minutes: 150
+        # -O1: the traced Julia methods run once to emit the program, so optimizing them at the default
+        # -O2 only slows the compile (at -O2 the runner was lost two hours into `initialize!`)
         run: |
-          julia --project=test/reactant --color=yes --check-bounds=auto -e '
+          julia --project=test/reactant --color=yes --check-bounds=auto -O1 -e '
               using Pkg
               # Pinned to the latest Reactant release for this job only
               Pkg.add(name = "Reactant", version = "0.2.304")
