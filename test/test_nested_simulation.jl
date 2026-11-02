@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, interpolate_from_parent!, query_node
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
@@ -9,7 +9,7 @@ using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, OnDi
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, rnode, znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
@@ -1371,4 +1371,27 @@ end
     @test parent.clock.time == nested.child.clock.time == 3
     @test parent.west.clock.time == parent.east.clock.time == 3
     @test parent.west.clock.iteration == parent.east.clock.iteration == 3
+end
+
+# `interpolate` locates the vertical through the source grid's `znodes`, which on a terrain-following
+# grid are the reference levels, so a terrain-following source is queried at the reference node.
+@testset "query_node samples a terrain-following source in its own vertical coordinate" begin
+    plateau = 400.0
+    z = collect(range(0, 12000, length = 25))
+    horizontal = (size = (6, 6, length(z) - 1), longitude = (-100, -96), latitude = (34, 38), halo = (5, 5, 5),
+                  topology = (Bounded, Bounded, Bounded))
+    grid = LatitudeLongitudeGrid(; horizontal..., z = TerrainFollowingVerticalDiscretization(z))
+    Breeze.materialize_terrain!(grid, (λ, φ) -> plateau)
+    flat_grid = LatitudeLongitudeGrid(; horizontal..., z)
+
+    reference = query_node(grid, 3, 3, 1, grid, Center(), Center(), Center())
+    physical  = query_node(flat_grid, 3, 3, 1, grid, Center(), Center(), Center())
+    @test reference[3] ≈ rnode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3]  ≈ znode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3] - reference[3] ≈ plateau rtol = 0.05
+
+    source = CenterField(grid)
+    set!(source, (λ, φ, z) -> z)
+    target = interpolate_from_parent!(CenterField(grid), source)
+    @test Array(interior(target)) ≈ Array(interior(source))
 end

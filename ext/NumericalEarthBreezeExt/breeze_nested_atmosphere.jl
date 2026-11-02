@@ -21,7 +21,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent
+                                   VectorComponent, interpolate_from_parent!
 
 using Oceananigans:
     Oceananigans,
@@ -40,7 +40,7 @@ using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
-using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Grids: znode, ξnode, ηnode, rnode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
@@ -60,12 +60,18 @@ using Breeze:
     NoDivergenceDamping,
     MixedPhaseEquilibrium,
     SpecificForcing,
+    TerrainFollowingGrid,
     TKEBasedTurbulenceClosure,
     materialize_terrain!,
     moisture_prognostic_name,
     moisture_specific_name
 
 using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
+
+# A terrain-following grid's `znodes` are its reference levels, so a terrain-following parent is
+# sampled at the child's reference node.
+@inline NumericalEarth.NestedModels.query_node(::TerrainFollowingGrid, i, j, k, grid, ℓx, ℓy, ℓz) =
+    (ξnode(i, j, k, grid, ℓx, ℓy, ℓz), ηnode(i, j, k, grid, ℓx, ℓy, ℓz), rnode(i, j, k, grid, ℓx, ℓy, ℓz))
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -583,11 +589,8 @@ function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t�
     return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
 end
 
-function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
-    field = Field{loc...}(child_grid)
-    interpolate!(field, fts[Time(t₀)])
-    return field
-end
+interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center)) =
+    interpolate_from_parent!(Field{loc...}(child_grid), fts[Time(t₀)])
 
 # Initialize the nested child from the parent-derived `prognostic` (by default the exchanger's, the SAME
 # state that drives the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
