@@ -351,7 +351,10 @@ jobs:
         run: |
           julia --project=test/reactant --color=yes --check-bounds=auto -e '
               using Pkg
+              # Pinned to the latest Reactant release for this job only
+              Pkg.add(name = "Reactant", version = "0.2.304")
               Pkg.instantiate()
+              Pkg.status(["Reactant", "Reactant_jll"]; mode = Pkg.PKGMODE_MANIFEST)
               include("test/reactant/test_reactant_nested_gradient.jl")
           '
 
