@@ -105,6 +105,8 @@ Keyword Arguments
 - `lateral_boundary_condition`: `:no_slip` (default) sets the ice velocity to zero on immersed
                                 lateral boundaries, arresting ice against coastlines and through
                                 narrow channels; `:free_slip` leaves them stress-free
+- `boundary_conditions`: boundary conditions for `u`, `v`, `h` and `ℵ`, e.g. open edges; an entry for
+                         `u` or `v` replaces the one built from `lateral_boundary_condition`
 - `dynamics`: sea ice dynamics model to use (default is `sea_ice_dynamics(grid, ocean)`)
 - `bottom_heat_boundary_condition`: heat boundary condition at the ice-ocean interface (default
                                     is `IceWaterThermalEquilibrium` with ocean surface salinity)
@@ -131,6 +133,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             sea_ice_density = 900, # kg m⁻³
                             snow_density = 330, # kg m⁻³
                             lateral_boundary_condition = :no_slip,
+                            boundary_conditions = NamedTuple(),
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
@@ -170,6 +173,7 @@ function sea_ice_simulation(grid, ocean=nothing;
     snowfall         = Field{Center, Center, Nothing}(grid)
 
     velocity_bcs = sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
+    boundary_conditions = merge(velocity_bcs, boundary_conditions)
 
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
@@ -187,7 +191,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
-                                boundary_conditions = velocity_bcs,
+                                boundary_conditions,
                                 top_heat_flux)
 
     verbose = false

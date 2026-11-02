@@ -62,3 +62,14 @@ end
     @test u_lateral_boundary_condition(u.boundary_conditions.immersed) isa NoSlip
     @test v_lateral_boundary_condition(v.boundary_conditions.immersed) isa NoSlip
 end
+
+@testset "Sea-ice simulation takes boundary conditions for open edges" begin
+    grid = shelf_grid()
+    u_bcs = FieldBoundaryConditions(grid, (Face(), Center(), nothing); east = NormalFlowBoundaryCondition(0.1))
+    h_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing); east = ValueBoundaryCondition(1))
+    sea_ice = sea_ice_simulation(grid; boundary_conditions = (; u = u_bcs, h = h_bcs))
+
+    @test sea_ice.model.velocities.u.boundary_conditions.east.condition == 0.1
+    @test sea_ice.model.ice_thickness.boundary_conditions.east.classification isa Value
+    @test v_lateral_boundary_condition(sea_ice.model.velocities.v.boundary_conditions.immersed) isa NoSlip
+end
