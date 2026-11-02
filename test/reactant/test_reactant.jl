@@ -4,7 +4,7 @@ using Reactant: @trace
 using Oceananigans: Oceananigans, CPU, interior, set!
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic, RectilinearGrid
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: ExplicitFreeSurface, HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.TimeSteppers: Clock, time_step!, update_state!, first_time_step!
 using Oceananigans.Units: minutes
