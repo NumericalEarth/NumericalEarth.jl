@@ -1088,7 +1088,7 @@ end
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing,
                 time_indices_in_memory = 3)
-    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
     conjure_time_step_wizard!(sim, IterationInterval(1); cfl = 0.3, max_Δt = 2.0)
@@ -1127,7 +1127,7 @@ end
 
     model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
                                     base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
-    ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
     expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
@@ -1198,7 +1198,7 @@ end
                       unrelaxed_model.exchanger.prognostic)
 
     for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
-        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        ext.initialize_nested_child!(model; balancer = false, prognostic)
         for _ in 1:8
             time_step!(model, 0.5)
         end
@@ -1213,7 +1213,7 @@ end
 
     # Running the strip child in two `run!` calls reproduces its continuous run.
     rerun_model = nest(strips, 1/30)
-    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    ext.initialize_nested_child!(rerun_model; balancer = false, prognostic = initial_states[2])
     simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
     run!(simulation)
     simulation.stop_iteration = 8
@@ -1394,4 +1394,50 @@ end
     set!(source, (λ, φ, z) -> z)
     target = interpolate_from_parent!(CenterField(grid), source)
     @test Array(interior(target)) ≈ Array(interior(source))
+end
+
+telescope_vertical_levels = collect(range(0, 12000, length = 17))
+ridge(λ, φ) = 400 * exp(-((λ + 98)^2 + (φ - 36)^2) / 0.5)
+
+telescope_grid(extent; arch = CPU()) =
+    LatitudeLongitudeGrid(arch; size = (8, 8, length(telescope_vertical_levels) - 1),
+                          longitude = (-98 - extent / 2, -98 + extent / 2),
+                          latitude = (36 - extent / 2, 36 + extent / 2),
+                          z = TerrainFollowingVerticalDiscretization(telescope_vertical_levels), halo = (5, 5, 5),
+                          topology = (Bounded, Bounded, Bounded))
+
+function telescope_terrain(grid)
+    terrain = Field{Center, Center, Nothing}(grid)
+    set!(terrain, ridge)
+    return terrain
+end
+
+function live_telescope_root(extent; arch = CPU())
+    grid = telescope_grid(extent; arch)
+    Breeze.materialize_terrain!(grid, ridge)
+    root = atmosphere_model(grid)
+    set!(root; θ = 300, u = 8, qᵗ = 4e-3)
+    update_state!(root)
+    return root
+end
+
+function telescope_nest(parent, extent; arch = CPU(), kw...)
+    grid = telescope_grid(extent; arch)
+    return nested_atmosphere_model(parent, grid; terrain = telescope_terrain(grid), terrain_blend_width = 2,
+                                   relaxation_rate = 1/300, relaxation_width = 2, balancer = false, kw...)
+end
+
+@testset "nested_atmosphere_model in a live parent inherits its state and steps with it" begin
+    parent = live_telescope_root(4.0)
+    nest = telescope_nest(parent, 2.0)
+
+    @test maximum(abs, Array(interior(nest.child.velocities.u)) .- 8) < 0.1
+
+    run!(Simulation(nest; Δt = 0.5, stop_iteration = 3))
+
+    @test parent.clock.iteration == 3
+    @test parent.clock.time ≈ nest.child.clock.time
+    for field in prognostic_fields(nest.child)
+        @test all(isfinite, Array(interior(field)))
+    end
 end
