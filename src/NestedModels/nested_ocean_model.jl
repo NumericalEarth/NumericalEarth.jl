@@ -10,7 +10,7 @@ using Oceananigans.Units: days, hours, kilometers
 using Oceananigans.DistributedComputations: all_reduce
 
 using ..Bathymetry: regrid_bathymetry
-using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions
+using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions, estimate_maximum_Δt
 using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding,
                        matching_bathymetry
 
@@ -217,6 +217,23 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
 
     return nested_ocean_model(parent, grid; open_sides, relaxation_width, bathymetry_blend_width,
                               parent_bottom_height, initial_state = snapshot, kw...)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return a `Simulation` of [`nested_ocean_model`](@ref)`(grid, parent_dataset; dates, verbose, kw...)`, the nested
+counterpart of [`ocean_simulation`](@ref), stepping with `Δt` (default: the maximum stable time step estimated
+from `grid`) until `stop_time`. The ocean starts from the parent at `first(dates)`.
+"""
+function nested_ocean_simulation(grid::AbstractGrid, parent_dataset; dates,
+                                 Δt = estimate_maximum_Δt(grid),
+                                 stop_time = Inf,
+                                 verbose = false,
+                                 kw...)
+
+    model = nested_ocean_model(grid, parent_dataset; dates, verbose, kw...)
+    return Simulation(model; Δt, stop_time, verbose)
 end
 
 function validate_parent_tracers(child, parent_tracers)

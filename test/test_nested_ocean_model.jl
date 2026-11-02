@@ -114,6 +114,22 @@ end
     @test !any(isnan, interior(nested.child.tracers.T))
 end
 
+@testset "nested_ocean_simulation wraps the nested ocean in a Simulation on $(arch)" for arch in test_architectures
+    grid = coastal_grid(arch)
+    ocean = nested_ocean_simulation(grid, SyntheticOcean(); dates = synthetic_dates, parent_padding = 10,
+                                    relaxation_width = 3, Δt = 60)
+
+    @test ocean isa NestedSimulation
+    @test ocean.Δt == 60
+    @test keys(ocean.model.exchanger.bands) == (:east, :south, :north)
+
+    ocean.stop_iteration = 2
+    run!(ocean)
+    @test iteration(ocean) == 2
+    @test ocean.model.parent.clock.time == ocean.model.child.clock.time == 120
+    @test !any(isnan, interior(ocean.model.child.tracers.T))
+end
+
 @testset "nested_ocean_model in a full-domain PrescribedOcean on $(arch)" for arch in test_architectures
     child_grid = coastal_grid(arch)
     parent_region = BoundingBox(longitude = (0, 60), latitude = (-35, 45))

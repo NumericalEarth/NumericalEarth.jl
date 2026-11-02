@@ -4,7 +4,7 @@
 # the Antarctic Circumpolar Current around Bouvet Island, 5ᵒW to 20ᵒE and 57ᵒS to 50ᵒS,
 # at 1/8ᵒ horizontal resolution, and all four sides are open to the parent.
 #
-# `nested_ocean_model(grid, GLORYSDaily(); dates)` builds the whole nest:
+# `nested_ocean_simulation(grid, GLORYSDaily(); dates)` builds the whole nest:
 #
 # - GLORYS strips along each open side, streamed from disk and sampled onto narrow bands
 #   once per child step;
@@ -76,27 +76,27 @@ grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height; mi
 
 dates = (DateTime(2000, 1, 1), DateTime(2000, 1, 16))
 
-model = nested_ocean_model(grid, GLORYSDaily(); dates)
+ocean = nested_ocean_simulation(grid, GLORYSDaily(); dates)
 
-# The child is an ordinary `HydrostaticFreeSurfaceModel` on the blended bathymetry.
+# The simulation's model is a `NestedModel`. Its child is an ordinary `HydrostaticFreeSurfaceModel`
+# on the blended bathymetry.
 
-child = model.child
+child = ocean.model.child
 
 # ### Atmosphere and coupled model
 #
 # ERA5 hourly single-level fields over the domain force the ocean through bulk formulae.
 
-region = BoundingBox(longitude = (λ₁ - 1, λ₂ + 1), latitude = (φ₁ - 1, φ₂ + 1))
+region = BoundingBox(grid; padding = 1)
+start_date, end_date = dates
 
-atmosphere = ERA5PrescribedAtmosphere(arch; start_date = first(dates), end_date = last(dates), region)
-radiation  = ERA5PrescribedRadiation(arch;  start_date = first(dates), end_date = last(dates), region)
+atmosphere = ERA5PrescribedAtmosphere(arch; start_date, end_date, region)
+radiation  = ERA5PrescribedRadiation(arch;  start_date, end_date, region)
 
-# A `NestedModel` goes into a `Simulation` and an `OceanOnlyModel` like any other ocean model.
+# The nested ocean simulation goes into an `OceanOnlyModel` like any other ocean simulation.
 
-Δt = 10minutes
-ocean = Simulation(model; Δt)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
-simulation = Simulation(coupled_model; Δt, stop_time = 15days)
+simulation = Simulation(coupled_model; Δt = 10minutes, stop_time = 15days)
 
 # We add a callback to print a message about how the simulation is going.
 
