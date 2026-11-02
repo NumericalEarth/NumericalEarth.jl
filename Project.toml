@@ -78,7 +78,7 @@ NumericalEarthWOAExt = "WorldOceanAtlasTools"
 NumericalEarthZarrExt = "Zarr"
 
 [sources]
-Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "dkz/on-architecture-reshaped-missing-v0.114"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "dkz/on-architecture-reshaped-missing-v0.116"}
 
 [compat]
 Accessors = "0.1.44"
