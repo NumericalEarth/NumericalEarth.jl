@@ -15,7 +15,7 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy, get_temperature_and_salinity, thermal_expansionᶜᶜᶠ
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
-using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
+using Oceananigans.Forcings: Forcings, MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
@@ -25,9 +25,8 @@ using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids,
 using Oceananigans.Operators: active_weighted_ℑxyᶠᶜᶜ, active_weighted_ℑxyᶜᶠᶜ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans.TurbulenceClosures: TurbulenceClosures, κzᶜᶜᶠ, VerticalScalarDiffusivity
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: TKEBasedVerticalDiffusivities,
-                                                                     CATKEVerticalDiffusivity,
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ, VerticalScalarDiffusivity
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
 using Oceananigans.Units: minutes, hours

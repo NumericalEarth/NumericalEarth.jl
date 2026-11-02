@@ -1,11 +1,11 @@
 include("runtests_setup.jl")
 
+using Oceananigans.Forcings: surface_radiative_buoyancy_flux, transmitted_fraction, transmitted_fraction_derivative,
+                             transmitted_thickness
 using Oceananigans.Grids: MutableVerticalDiscretization
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: update_grid_scaling!
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity, surface_radiative_buoyancy_flux, transmitted_fraction,
-                                       transmitted_thickness
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: transmitted_fraction_derivative
+using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 using Oceananigans.Units: Time
 using NumericalEarth.Oceans: TwoColorRadiation, absorption_coefficient, compute_absorption_coefficient!,
                              shortwave_radiative_forcing, get_radiative_forcing, default_ocean_closure
