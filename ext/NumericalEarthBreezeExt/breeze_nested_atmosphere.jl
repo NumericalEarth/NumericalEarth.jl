@@ -43,7 +43,7 @@ using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.Operators: intrinsic_vector
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid, lcc_forward
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
 using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
@@ -177,7 +177,7 @@ end
 
 # On a Lambert-conformal child the walls are lines of constant projected x or y, so the distance to the
 # nearest wall is measured in the projection.
-function boundary_relaxation_mask(grid::LambertConformalConicGrid, width; ramp = SmoothStepRamp())
+function boundary_relaxation_mask(grid::ConformalConicGrid, width; ramp = SmoothStepRamp())
     map = grid.conformal_mapping
     Nx, Ny, _ = size(grid)
     x₁, y₁ = map.x₁, map.y₁
@@ -185,7 +185,7 @@ function boundary_relaxation_mask(grid::LambertConformalConicGrid, width; ramp =
     y₂ = y₁ + Ny * map.Δy
     w = width * max(map.Δx, map.Δy)
     return (λ, φ, z) -> begin
-        x, y = lcc_forward(map, λ, φ)
+        x, y = geographic_to_conformal_conic(map, λ, φ)
         d = min(x - x₁, x₂ - x, y - y₁, y₂ - y)
         s = clamp(d / w, zero(d), one(d))
         return oftype(d, ramp(s))
@@ -194,7 +194,7 @@ end
 
 # Only the Lambert-conformal mapping carries a projected plane to measure the wall distance in.
 boundary_relaxation_mask(grid::OrthogonalSphericalShellGrid, width; ramp = SmoothStepRamp()) =
-    throw(ArgumentError("boundary_relaxation_mask requires a LambertConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
+    throw(ArgumentError("boundary_relaxation_mask requires a ConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
