@@ -270,7 +270,7 @@ function InterfaceComputations.default_ai_temperature(sea_ice::Simulation{<:SeaI
     internal_flux = if isnothing(snow_thermo)
         ice_flux
     else
-        IceSnowConductiveFlux(snow_thermo.internal_heat_flux.conductivity, ice_flux.conductivity)
+        IceSnowConductiveFlux(snow_thermo.internal_heat_flux, ice_flux)
     end
     return SkinTemperature(internal_flux)
 end

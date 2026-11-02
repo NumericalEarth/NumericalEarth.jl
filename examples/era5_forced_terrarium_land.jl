@@ -123,7 +123,7 @@ simulation = Oceananigans.Simulation(model; Δt = 1minute, stop_time = (Nt - 1) 
 # callback reports the domain skin-temperature range twice a day.
 
 state    = land.model.state
-outputs  = (; Tₛ = state.skin_temperature, G = state.ground_heat_flux)
+outputs  = (; Tⁱⁿ = state.skin_temperature, G = state.ground_heat_flux)
 filename = "era5_forced_terrarium_land"
 
 simulation.output_writers[:land] = JLD2Writer(model, outputs;
@@ -132,9 +132,9 @@ simulation.output_writers[:land] = JLD2Writer(model, outputs;
                                               overwrite_files = true)
 
 function progress(sim)
-    Tₛ = state.skin_temperature
-    @info @sprintf("t = %s, ⟨Tₛ⟩ = %.2f °C (%.2f to %.2f), wall time: %s",
-                   prettytime(sim), mean(Tₛ), minimum(Tₛ), maximum(Tₛ), prettytime(sim.run_wall_time))
+    Tⁱⁿ = state.skin_temperature
+    @info @sprintf("t = %s, ⟨Tⁱⁿ⟩ = %.2f °C (%.2f to %.2f), wall time: %s",
+                   prettytime(sim), mean(Tⁱⁿ), minimum(Tⁱⁿ), maximum(Tⁱⁿ), prettytime(sim.run_wall_time))
     return nothing
 end
 
@@ -151,21 +151,21 @@ run!(simulation)
 # Left: the domain skin-temperature envelope and the domain-mean ground heat flux (positive
 # upward) over time. Right: the final skin temperature over the box.
 
-Tₛ_ts = FieldTimeSeries("$filename.jld2", "Tₛ")
+Tⁱⁿ_ts = FieldTimeSeries("$filename.jld2", "Tⁱⁿ")
 G_ts  = FieldTimeSeries("$filename.jld2", "G")
 
-t_hours = Tₛ_ts.times ./ hour
+t_hours = Tⁱⁿ_ts.times ./ hour
 Nₜ      = length(t_hours)
-T_mean  = [mean(Tₛ_ts[n]) for n in 1:Nₜ]
-T_min   = [minimum(Tₛ_ts[n]) for n in 1:Nₜ]
-T_max   = [maximum(Tₛ_ts[n]) for n in 1:Nₜ]
+T_mean  = [mean(Tⁱⁿ_ts[n]) for n in 1:Nₜ]
+T_min   = [minimum(Tⁱⁿ_ts[n]) for n in 1:Nₜ]
+T_max   = [maximum(Tⁱⁿ_ts[n]) for n in 1:Nₜ]
 G_mean  = [mean(G_ts[n]) for n in 1:Nₜ]
 
 λ, φ, _ = Oceananigans.nodes(land_grid, Center(), Center(), Center())
-Tₛ_final = interior(Tₛ_ts[Nₜ], :, :, 1)
+Tⁱⁿ_final = interior(Tⁱⁿ_ts[Nₜ], :, :, 1)
 
 let fig = Makie.Figure(size = (1400, 800), fontsize = 16)
-    ax_T = Makie.Axis(fig[1, 1]; title = "Domain skin temperature", ylabel = "Tₛ (°C)")
+    ax_T = Makie.Axis(fig[1, 1]; title = "Domain skin temperature", ylabel = "Tⁱⁿ (°C)")
     Makie.band!(ax_T, t_hours, T_min, T_max; color = (:orange, 0.25))
     Makie.lines!(ax_T, t_hours, T_mean; color = :firebrick, label = "mean")
     Makie.lines!(ax_T, t_hours, T_min;  color = :steelblue, linestyle = :dash, label = "min")
@@ -178,8 +178,8 @@ let fig = Makie.Figure(size = (1400, 800), fontsize = 16)
 
     ax_m = Makie.Axis(fig[1:2, 2]; title = "Final skin temperature", xlabel = "longitude", ylabel = "latitude",
                       aspect = Makie.DataAspect())
-    hm = Makie.heatmap!(ax_m, λ, φ, Tₛ_final; colormap = :thermal)
-    Makie.Colorbar(fig[1:2, 3], hm; label = "Tₛ (°C)")
+    hm = Makie.heatmap!(ax_m, λ, φ, Tⁱⁿ_final; colormap = :thermal)
+    Makie.Colorbar(fig[1:2, 3], hm; label = "Tⁱⁿ (°C)")
 
     Makie.Label(fig[0, 1:3], "ERA5-forced Terrarium land, Central Borneo")
 
