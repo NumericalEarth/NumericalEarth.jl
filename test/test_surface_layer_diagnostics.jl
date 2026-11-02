@@ -21,7 +21,7 @@ single_column_grid(arch, FT = Float64) =
 function single_column_land_model(grid;
                                   surface_layer_height = 10,
                                   uᵃᵗ = 5, vᵃᵗ = 0, Tᵃᵗ = 288, qᵃᵗ = 0.003, pᵃᵗ = 101325,
-                                  Tₛ = 293,
+                                  Tⁱⁿ = 293,
                                   hydrology = DryLand(),
                                   water_storage = 0,
                                   fluxes = nothing)
@@ -35,7 +35,7 @@ function single_column_land_model(grid;
     fill!(parent(atmosphere.pressure),     pᵃᵗ)
 
     land = SlabLand(grid; hydrology, energy = SlabEnergy(FT))
-    set!(land; T = Tₛ)
+    set!(land; T = Tⁱⁿ)
     fill!(land.water_storage, water_storage)
 
     atmosphere_land_fluxes = isnothing(fluxes) ? default_atmosphere_land_fluxes(land, FT) : fluxes
@@ -83,32 +83,32 @@ value(operation) = column(compute!(Field(operation)))
 
         approximate_state     = (; fluxes = (; u★, θ★ = zero(FT), q★ = zero(FT)), u = zero(FT), v = zero(FT))
         atmosphere_state      = (; u = FT(5), v = zero(FT), p = FT(101325), h_bℓ = FT(512))
-        interface_properties  = (; velocity_formulation = RelativeVelocity())
+        interface_formulation = (; velocity_difference = RelativeVelocity())
         atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT),
                                    gravitational_acceleration = FT(9.81))
 
         argument_types = (typeof(fluxes), FT, FT, FT, FT, FT,
                           typeof(approximate_state), typeof(atmosphere_state),
-                          typeof(interface_properties), typeof(atmosphere_properties))
+                          typeof(interface_formulation), typeof(atmosphere_properties))
 
-        @test Base.return_types(iterate_interface_fluxes, argument_types) == [Tuple{FT, FT, FT}]
+        @test Base.return_types(iterate_interface_fluxes, argument_types) == [NTuple{5, FT}]
     end
 end
 
 @testset "Interface specific humidity" begin
     for arch in test_architectures
-        Tₛ = 293.0
+        Tⁱⁿ = 293.0
         pᵃᵗ = 101325.0
 
-        dry = single_column_land_model(single_column_grid(arch); Tₛ, pᵃᵗ, hydrology = DryLand())
+        dry = single_column_land_model(single_column_grid(arch); Tⁱⁿ, pᵃᵗ, hydrology = DryLand())
         @test column(dry.interfaces.atmosphere_land_interface.specific_humidity) == 0
 
-        wet = single_column_land_model(single_column_grid(arch); Tₛ, pᵃᵗ,
+        wet = single_column_land_model(single_column_grid(arch); Tⁱⁿ, pᵃᵗ,
                                        hydrology = BucketHydrology(Float64; maximum_water_storage = 10),
                                        water_storage = 5)
 
         ℂᵃᵗ = wet.atmosphere.thermodynamics_parameters
-        qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, Thermodynamics.Liquid())
+        qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, Thermodynamics.Liquid())
         @test column(wet.interfaces.atmosphere_land_interface.specific_humidity) ≈ qᵛ⁺
     end
 end
