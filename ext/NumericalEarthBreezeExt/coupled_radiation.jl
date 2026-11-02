@@ -19,12 +19,15 @@
 
 using Accessors: @set
 using NumericalEarth.NestedModels: NestedModel
+using NumericalEarth.EarthSystemModels.InterfaceComputations: initialize_land_interface!, update_surface_temperature!
 
 function Oceananigans.initialize!(model::NumericalEarth.EarthSystemModels.EarthSystemModel{<:Breeze.RadiativeTransferModel})
     Oceananigans.initialize!(model.interfaces.exchanger, model)
-    # Diagnose the interface surface temperature before solving radiation.
-    update_state!(model)
-    update_state!(component_model(model.atmosphere); compute_tendencies = false)
+    if model.clock.iteration == 0
+        initialize_land_interface!(model)
+        update_surface_temperature!(model)
+        update_state!(component_model(model.atmosphere); compute_tendencies=false)
+    end
     return nothing
 end
 
@@ -68,6 +71,9 @@ Breeze.AtmosphereModels.radiation_flux_divergence(r::CoupledRadiation) = r.flux_
 Breeze.AtmosphereModels.update_radiation!(::CoupledRadiation{Nothing, Nothing}, model) = nothing
 Breeze.AtmosphereModels.update_radiation!(r::CoupledRadiation, model) =
     Breeze.AtmosphereModels.update_radiation!(r.radiative_transfer_model, model)
+
+# The proxy carries no state of its own: what it aliases is checkpointed with the radiative transfer model.
+Oceananigans.prognostic_state(::CoupledRadiation) = nothing
 
 # Time step at the EarthSystemModel level is a no-op for the RTM: the
 # atmosphere's own `update_state!` (which runs each step) drives the radiation

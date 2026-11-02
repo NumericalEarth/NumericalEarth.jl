@@ -1,7 +1,7 @@
 # PrescribedRadiation-aware methods for the radiation getter functions
 # declared (with `nothing` fallbacks) in InterfaceComputations.
 
-@inline EarthSystemModels.InterfaceComputations.kernel_radiation_properties(r::PrescribedRadiation) =
+@inline EarthSystemModels.InterfaceComputations.kernel_radiation_properties(r::PrescribedRadiation, exchanger=nothing) =
     (σ = r.stefan_boltzmann_constant,
      surface_properties = r.surface_properties)
 

@@ -68,6 +68,7 @@ function default_sea_ice end
 #####
 
 function thermodynamics_parameters end
+function molmass_dryair end
 function surface_layer_height end
 function boundary_layer_height end
 

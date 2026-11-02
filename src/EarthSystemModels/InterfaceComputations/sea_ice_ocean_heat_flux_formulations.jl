@@ -1,5 +1,4 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux, effective_conductivity,
-                                        thermal_resistance
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux, effective_conductivity
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)
@@ -285,9 +284,8 @@ Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
     # Get conductive flux parameters - dispatches on flux type
     κ, Tˢⁱ = conductive_flux_parameters(flux, ice_state, ℰ)
 
-    # Linear liquidus Tₘ(S) = λ₁ S + λ₂ at the sea surface
-    λ₂ = melting_temperature(liquidus, 0)
-    λ₁ = melting_temperature(liquidus, 1) - λ₂
+    λ₁ = - liquidus.salinity_slope
+    λ₂ =   liquidus.freshwater_melting_temperature
 
     # Transfer coefficients
     η = ρᵒᶜ * cᵒᶜ * αₕ * u★ / ℰ  # turbulent heat
