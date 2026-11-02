@@ -221,21 +221,25 @@ end
     # Part 4: Freshwater and salt fluxes
     # =============================================
     # Jʷ tracks total ice+snow mass lost to the ocean (top + bottom + any flooding), since the
-    # resulting water enters the ocean regardless of why the ice/snow melted.
+    # resulting water enters the ocean regardless of why the ice/snow melted. Jˢ must use the same
+    # total `Eᵢ`: all of that water carries the ice's brine salinity `Sˢⁱ` into the ocean, whether
+    # it melted at the top or the bottom, so crediting only the bottom-melt share here (while Jʷ
+    # keeps crediting all of it) would add salty meltwater as if it were salt-free, leaking salt
+    # out of the ocean's tracked budget.
     #
-    # Jˢ and Jᴴ attribute heat/salt content instead: they use `q`, the ocean-driven melt rate
-    # implied by the interface balance that produced Tb/Sb, rather than `ice_ocean_mass_flux`
-    # (ClimaSeaIce's total ice tendency). `ice_ocean_mass_flux` also includes atmosphere-driven
-    # top-surface melt/freeze, which has no ocean-side temperature/salinity of its own — using it
-    # here would attribute that top-surface exchange to the ocean at the bottom interface's Tb/Sb,
-    # leaking heat/salt into the ocean whenever the top-surface tendency changes (e.g. once a thin
-    # snow cover fully melts away and the ice surface's melting-point ceiling drops).
+    # Jᴴ attributes heat content differently: it uses `q`, the ocean-driven melt rate implied by
+    # the interface balance that produced Tb/Sb, rather than `ice_ocean_mass_flux` (ClimaSeaIce's
+    # total ice tendency), because `ice_ocean_mass_flux` also includes atmosphere-driven top-surface
+    # melt/freeze, which has no ocean-side temperature of its own — using it here would attribute
+    # that top-surface exchange to the ocean at the bottom interface's Tb, leaking heat into the
+    # ocean whenever the top-surface tendency changes (e.g. once a thin snow cover fully melts away
+    # and the ice surface's melting-point ceiling drops).
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
         Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
+        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
         Eᵢᵒ = - q # bottom-only (ocean-driven) ice mass tendency, self-consistent with Tb/Sb
-        Jˢ[i, j, 1] = Eᵢᵒ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
         Jᴴ[i, j, 1] = - Tb * Eᵢᵒ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
     end
 end
