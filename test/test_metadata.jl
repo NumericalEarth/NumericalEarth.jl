@@ -9,6 +9,7 @@ using NumericalEarth.DataWrangling: native_times, averaging_window, window_cente
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5MonthlyPressureLevels, ERA5MonthlyLand
 using NumericalEarth.DataWrangling.SeaWiFS: SeaWiFSMonthly
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
 
 using Oceananigans: location
 using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid,
@@ -147,6 +148,27 @@ end
     @test first(seam_λ) == -110.0f0
     @test last(seam_λ) == 30.0f0
     @test topology(seam_grid)[1] == Bounded
+end
+
+@testset "BoundingBox and boundary strips take per-axis padding" begin
+    grid = LatitudeLongitudeGrid(size = (10, 8, 1), longitude = (-100, -90), latitude = (30, 38), z = (0, 1))
+
+    box = BoundingBox(grid; padding = 1)
+    @test box.longitude == (-101, -89)
+    @test box.latitude == (29, 39)
+
+    box = BoundingBox(grid; padding = (2, 0.5))
+    @test box.longitude == (-102, -88)
+    @test box.latitude == (29.5, 38.5)
+
+    # A stub component keeps each strip's region, so no dataset is read. Two cells are 2°.
+    stub_strip(region, dates, dataset; architecture) = (; region, clock = Clock(time = 0))
+    component = BoundaryPrescribedComponent(stub_strip, grid, nothing, nothing; width = 2, padding = (2, 0.5))
+    strips = boundary_strips(component)
+    @test strips.west.region.longitude == (-102, -96)
+    @test strips.west.region.latitude == (29.5, 38.5)
+    @test strips.north.region.longitude == (-102, -88)
+    @test strips.north.region.latitude == (35.5, 38.5)
 end
 
 @testset "Metadata region keyword" begin
@@ -296,7 +318,7 @@ end
 @testset "ERA5 accumulation windows" begin
     # ERA5 accumulations and mean rates cover the hour ending at the stamp, so their windows
     # run backwards from it and their nodes sit half an hour before it.
-    for name in (:total_precipitation, :convective_precipitation, :evaporation, :mean_evaporation_rate,
+    for name in (:total_precipitation, :convective_precipitation, :snowfall, :evaporation, :mean_evaporation_rate,
                  :downwelling_shortwave_radiation, :downwelling_longwave_radiation,
                  :mean_surface_momentum_flux_x, :mean_surface_momentum_flux_y,
                  :mean_surface_sensible_heat_flux, :mean_surface_latent_heat_flux)

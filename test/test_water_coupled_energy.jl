@@ -25,7 +25,7 @@ using Oceananigans.TimeSteppers: time_step!
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(), runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = cᵈʳʸ,
             liquid_heat_capacity = 4186,
@@ -39,7 +39,7 @@ using Oceananigans.TimeSteppers: time_step!
         set!(land; T = T₀, M = 0.0)
         fill!(land.fluxes.surface_energy_flux, 0)
         fill!(land.fluxes.vapor_flux, 0)
-        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 0)
         fill!(land.fluxes.liquid_precipitation_temperature, T₀)
 
         t = 0.0
@@ -71,7 +71,7 @@ end
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = LinearReservoirDrainage(drainage_time_scale = 1e6),
+            deep_liquid_water_flux = LinearReservoirDrainage(drainage_time_scale = 1e6),
             runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = 1e6,
@@ -86,7 +86,7 @@ end
         set!(land; T = 290.0, M = 200.0)
         fill!(land.fluxes.surface_energy_flux, 0)
         fill!(land.fluxes.vapor_flux, 0)
-        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 0)
         fill!(land.fluxes.liquid_precipitation_temperature, 290.0)
 
         for _ in 1:50
@@ -109,7 +109,7 @@ end
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(), runoff = NoRunoff())
 
         # Identical forcing, two arbitrary internal-energy references. The physical
         # temperature evolution cannot depend on Tᵣ; it does so iff the vapor mass
@@ -125,7 +125,7 @@ end
             set!(land; T = 300.0, M = 200.0)
             fill!(land.fluxes.surface_energy_flux, 50.0)  # latent cooling, positive upward
             fill!(land.fluxes.vapor_flux, 2e-5)           # evaporation, positive upward
-            fill!(land.fluxes.liquid_precipitation_flux, 0)
+            fill!(land.fluxes.liquid_water_precipitation_flux, 0)
             for _ in 1:100
                 time_step!(land, 100.0)
             end
@@ -146,7 +146,7 @@ end
             slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1.0, pore_size_uniformity = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2.0),
-            deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(), runoff = NoRunoff())
 
         # With `advect_surface_liquid_energy = false`, rain enters at the slab
         # temperature: it changes M but not T, for any internal-energy reference Tᵣ.
@@ -161,7 +161,7 @@ end
             set!(land; T = 300.0, M = 100.0)
             fill!(land.fluxes.surface_energy_flux, 0)
             fill!(land.fluxes.vapor_flux, 0)
-            fill!(land.fluxes.liquid_precipitation_flux, 1e-4)  # rain, positive downward
+            fill!(land.fluxes.liquid_water_precipitation_flux, 1e-4)  # rain, positive downward
             fill!(land.fluxes.liquid_precipitation_temperature, 275.0)
             for _ in 1:100
                 time_step!(land, 100.0)
@@ -202,7 +202,7 @@ end
             slab_depth = 1, porosity = 0.4, storage_height = 1000,
             retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-6, pore_size_uniformity = 2),
-            deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
+            deep_liquid_water_flux = NoDeepLiquidWaterFlux(), runoff = NoRunoff())
         energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = cᵈʳʸ,
             liquid_heat_capacity = 4186,
@@ -216,7 +216,7 @@ end
         set!(land; T = T₀, M = 0)
         fill!(land.fluxes.surface_energy_flux, 0)
         fill!(land.fluxes.vapor_flux, 0)
-        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 0)
         fill!(land.fluxes.liquid_precipitation_temperature, T₀)
 
         t = 0.0

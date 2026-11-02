@@ -266,12 +266,12 @@ end
             retention_curve = VanGenuchtenRetention(; inverse_air_entry_head = αᵃᵉ, pore_size_uniformity = 𝓃),
             hydraulic_conductivity = VanGenuchtenConductivity(; matching_point_conductivity = K₀,
                                         pore_size_uniformity = 𝓃, pore_connectivity_exponent = ηᴷ),
-            deep_liquid_flux = FreeDrainageFlux(), runoff = NoRunoff())
+            deep_liquid_water_flux = FreeDrainageFlux(), runoff = NoRunoff())
 
         land = SlabLand(grid; hydrology)
         set!(land; T = 290.0, M = 150.0)
         fill!(land.fluxes.vapor_flux, 0)
-        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 0)
 
         for _ in 1:20
             time_step!(land, 3600.0)
@@ -393,18 +393,18 @@ end
             hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-4,
                                                               pore_size_uniformity = 1.082,
                                                               pore_connectivity_exponent = -8.3),
-            deep_liquid_flux = DarcyDeepLiquidFlux(exchange_length = 1.0),
+            deep_liquid_water_flux = DarcyDeepLiquidWaterFlux(exchange_length = 1.0),
             runoff = NoRunoff())
 
         land = SlabLand(grid; hydrology)
         set!(land; T = 290.0, M = 10.0)
-        fill!(land.fluxes.liquid_precipitation_flux, 0)
+        fill!(land.fluxes.liquid_water_precipitation_flux, 0)
         fill!(land.fluxes.vapor_flux, 1e-4)
         for _ in 1:50
             time_step!(land, 3600.0)
         end
         @test only(column(land.water_storage)) == 0
         @test isfinite(only(column(land.saturation)))
-        @test isfinite(only(column(land.diagnostics.deep_liquid_flux)))
+        @test isfinite(only(column(land.diagnostics.deep_liquid_water_flux)))
     end
 end
