@@ -104,7 +104,8 @@ the barotropic flow to Flather (see [`ocean_boundary_relaxation`](@ref)); `relax
 
 The parent supplies `T` and `S`. Tracers of the child beyond them, such as those of a `biogeochemistry`, take
 their parent from `parent_tracers`, a `NamedTuple` of `FieldTimeSeries` on the parent's clock (covering the open
-sides and their relaxation zones) or numbers, keyed by tracer name, and are then treated like `T` and `S`. Tracers
+sides and their relaxation zones) or numbers, keyed by tracer name (see [`parent_tracer_series`](@ref) to read
+them from a dataset), and are then treated like `T` and `S`. Tracers
 missing from it keep their default boundary conditions and are neither relaxed nor initialized.
 
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport
