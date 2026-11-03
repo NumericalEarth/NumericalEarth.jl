@@ -625,7 +625,7 @@ end
     simulation.callbacks[:control] = Callback(sim -> nothing, IterationInterval(2))
     radiation = Breeze.RadiativeTransferModel(eltype(grid)(1361), nothing, nothing, nothing,
         nothing, nothing, nothing, ntuple(_ -> ZFaceField(grid), 4)...,
-        CenterField(grid), nothing, nothing, IterationInterval(1))
+        CenterField(grid), nothing, nothing, nothing, IterationInterval(1))
     coupled = NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(simulation, radiation)
     @test coupled.stop_time == 2.0
     @test coupled.stop_iteration == 5
