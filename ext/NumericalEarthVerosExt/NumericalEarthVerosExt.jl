@@ -3,9 +3,10 @@ module NumericalEarthVerosExt
 using CondaPkg: CondaPkg
 using Downloads: Downloads
 using Oceananigans: Oceananigans
-using Oceananigans.Architectures: CPU
-using Oceananigans.Fields: Field
-using Oceananigans.Grids: Bounded, Flat, Periodic, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: Field, interior
+using Oceananigans.Grids: Bounded, Periodic, Center, Face, LatitudeLongitudeGrid, halo_size
+using Oceananigans.ImmersedBoundaries: GridFittedBottom, ImmersedBoundaryGrid
 using NumericalEarth: NumericalEarth
 using PythonCall: Py, PyArray, pyconvert, pyexec, pyimport
 

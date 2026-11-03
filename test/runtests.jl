@@ -40,7 +40,8 @@ remote_data_tests = ["test_bathymetry",
                      "test_soilgrids",
                      "test_dataset_region",
                      "test_diagnostics_1",
-                     "test_mangling"]
+                     "test_mangling",
+                     "test_veros"]
 
 if filter_tests!(testsuite, args)
     # Network probes run only from the DataDownload workflow, which names them explicitly
@@ -55,11 +56,11 @@ if filter_tests!(testsuite, args)
     end
 
     delete!(testsuite, "reactant/test_reactant")
-    delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
     if gpu_test
         # Remove CPU-only tests when testing on GPUs
         delete!(testsuite, "test_speedy_coupling")
+        delete!(testsuite, "test_veros")
     else
         # Remove the slowest tests from CPU CI to keep total runtime
         # manageable; GPU CI still runs them. See issue #193.
@@ -87,6 +88,12 @@ end
 if remote_data
     delete_inpainted_files(@get_scratch!("."))
     download_test_data()
+end
+
+# Installing Veros can replace Python, so it runs before any test process starts one
+if haskey(testsuite, "test_veros")
+    install_veros = "using NumericalEarth, CondaPkg, PythonCall; Base.get_extension(NumericalEarth, :NumericalEarthVerosExt).install_veros()"
+    run(`$(Base.julia_cmd()) --project=$(Base.active_project()) -e $install_veros`)
 end
 
 runtests(NumericalEarth, args; testsuite)
