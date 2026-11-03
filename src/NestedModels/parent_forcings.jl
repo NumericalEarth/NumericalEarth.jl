@@ -23,6 +23,8 @@ InterpolatedParentTarget(field) = InterpolatedParentTarget(field, instantiated_l
 Adapt.adapt_structure(to, t::InterpolatedParentTarget) =
     InterpolatedParentTarget(adapt(to, t.field), t.location, adapt(to, t.grid))
 
+Oceananigans.OutputReaders.extract_field_time_series(::InterpolatedParentTarget) = ()
+
 Base.summary(t::InterpolatedParentTarget) = "parent-sampled " * summary(t.field)
 
 @inline Oceananigans.Forcings.evaluate_target(i, j, k, grid, t::InterpolatedParentTarget, ℓ, time) =

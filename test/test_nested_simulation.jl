@@ -1497,6 +1497,7 @@ land_coupled(nest, extent) = AtmosphereLandModel(Simulation(nest; Δt = 0.5, ver
     inner  = component_model(inner_alm.atmosphere)
     @test middle.parent === outer_alm
     @test inner.parent === middle_alm
+    @test isempty(Oceananigans.OutputReaders.extract_field_time_series((fields(inner.child), inner.child.forcing)))
 
     Δt = 0.5
     run!(Simulation(inner_alm; Δt, stop_iteration = 4))

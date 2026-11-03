@@ -115,6 +115,10 @@ Interpolated(source::S) where S<:Union{InterpolatedSource, VectorComponent} =
 Adapt.adapt_structure(to, w::Interpolated{D, S, LX, LY, LZ}) where {D, S, LX, LY, LZ} =
     Interpolated{D, S, LX, LY, LZ}(adapt(to, w.source), adapt(to, w.source_grid))
 
+# A live parent advances its own time series.
+Oceananigans.OutputReaders.extract_field_time_series(::Interpolated{<:Any, <:Any, <:Any, <:Any, <:Any,
+                                                    <:Union{Field, VectorComponent{<:Any, <:Field, <:Field}}}) = ()
+
 #####
 ##### Regularization: convert the location-less wrapper to the tagged form.
 #####
