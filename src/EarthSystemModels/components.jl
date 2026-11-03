@@ -44,6 +44,14 @@ ocean_salinity(ocean) = ZeroField()
 ocean_surface_temperature(ocean) = ZeroField()
 ocean_surface_salinity(ocean) = ZeroField()
 ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
+
+"""
+$(TYPEDSIGNATURES)
+
+Ocean velocities averaged over the top `reference_depth` meters, the reference velocities of the sea ice-ocean drag;
+`reference_depth = nothing` returns [`ocean_surface_velocities`](@ref).
+"""
+surface_layer_velocities(ocean, reference_depth) = ocean_surface_velocities(ocean)
 temperature_units(ocean) = DegreesCelsius()
 
 #####
@@ -60,6 +68,7 @@ function default_sea_ice end
 #####
 
 function thermodynamics_parameters end
+function molmass_dryair end
 function surface_layer_height end
 function boundary_layer_height end
 

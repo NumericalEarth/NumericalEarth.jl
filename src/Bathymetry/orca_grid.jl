@@ -4,7 +4,7 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
-using Oceananigans.Grids: RightCenterFolded, RightFaceFolded, generate_coordinate, longitude_in_same_window
+using Oceananigans.Grids: Sides, Closed, CenterFolded, FaceFolded, generate_coordinate, longitude_in_same_window
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
@@ -379,9 +379,9 @@ end
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,
-`(Periodic, RightCenterFolded, Bounded)` with a `TPivot` fold for the T-pivot eORCA025 and eORCA12.
+`(Periodic, RightCenterFolded, Bounded)` with a `TPivot` fold for the T-pivot ORCA2, eORCA025 and eORCA12.
 
-The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCAQuarter()`, or `ORCATwelfth()`).
+The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCATwo()`, `ORCAQuarter()`, or `ORCATwelfth()`).
 The mesh mask and bathymetry files are downloaded automatically via the
 `DataWrangling.ORCA` metadata interface.
 
@@ -391,7 +391,7 @@ directly from the `mesh_mask` NetCDF file. If all staggered NEMO fields are pres
 coordinates are available (`glamt/gphit/glamf/gphif`), staggered coordinates and
 metrics are reconstructed approximately using Tripolar-style spherical assumptions.
 The duplicated columns eORCA carries at its east edge for cyclic exchange are dropped, so `Nx` is the number
-of distinct columns: 360 for eORCA1, 1440 for eORCA025 and 4320 for eORCA12.
+of distinct columns: 360 for eORCA1, 180 for ORCA2, 1440 for eORCA025 and 4320 for eORCA12.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
 and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
@@ -405,7 +405,7 @@ Positional Arguments
 Keyword Arguments
 =================
 
-- `dataset`: The ORCA dataset to use. Default: `ORCAOne()`. `ORCAQuarter()` (eORCA025, quarter-degree) and `ORCATwelfth()`
+- `dataset`: The ORCA dataset to use. Default: `ORCAOne()`. `ORCATwo()` (ORCA2, two-degree), `ORCAQuarter()` (eORCA025, quarter-degree) and `ORCATwelfth()`
              (eORCA12, twelfth-degree) are also supported (eORCA1 data from Zenodo; <https://doi.org/10.5281/zenodo.4436658>).
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
@@ -456,7 +456,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     first_pole_longitude = Float64(λFF[pole_idx, end])
 
     pivot = north_fold_pivot(dataset)
-    fold_topology = pivot === FPivot ? RightFaceFolded : RightCenterFolded
+    fold = pivot === FPivot ? FaceFolded : CenterFolded
+    fold_topology = Sides{Closed, fold}
 
     # The first kept column `ic + 1` aligns NEMO's fold mirror (i ↔ jpi + 1 - i for an F pivot,
     # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one.
@@ -511,7 +512,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         to_host(Δyᶜᶜᵃ), to_host(Δyᶠᶜᵃ), to_host(Δyᶜᶠᵃ), to_host(Δyᶠᶠᵃ),
         to_host(Azᶜᶜᵃ), to_host(Azᶠᶜᵃ), to_host(Azᶜᶠᵃ), to_host(Azᶠᶠᵃ),
         convert(FT, radius),
-        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold_topology, pivot)
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude, fold, pivot)
     )
 
     underlying_grid = distribute_tripolar_grid(arch, global_grid)

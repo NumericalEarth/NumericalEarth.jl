@@ -91,6 +91,8 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     regrid!(exchange_state.p,     from_atmosphere, pa)
     regrid!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
     regrid!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
+    parent(exchange_state.ℐꜜˢʷ) .*= -1
+    parent(exchange_state.ℐꜜˡʷ) .*= -1
     regrid!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
     isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
 

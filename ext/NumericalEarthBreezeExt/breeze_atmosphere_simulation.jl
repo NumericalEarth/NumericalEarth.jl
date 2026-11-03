@@ -52,7 +52,7 @@ end
                      coriolis = nothing,
                      forcing = NamedTuple(),
                      closure = nothing,
-                     clock = Clock{eltype(grid)}(time=0),
+                     clock = Clock(grid),
                      initialize = true)
 
 Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
@@ -82,7 +82,7 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
 To nest this child in a coarser parent atmosphere, use [`nested_atmosphere_model`](@ref) (Breeze
-extension), which derives the lateral BCs and Davies relaxation from the parent and wraps the result
+extension), which derives the lateral BCs and lateral boundary relaxation from the parent and wraps the result
 in a `NestedModel`.
 """
 function NumericalEarth.Atmospheres.atmosphere_model(grid;
@@ -98,7 +98,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                      coriolis = nothing,
                                                      forcing = NamedTuple(),
                                                      closure = nothing,
-                                                     clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                     clock = Oceananigans.TimeSteppers.Clock(grid),
                                                      initialize = true,
                                                      radiation = CoupledRadiation())
 

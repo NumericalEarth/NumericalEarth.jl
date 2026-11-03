@@ -10,7 +10,7 @@ using NumericalEarth.DataWrangling.GHSL: ghsl_tile_index, ghsl_tiles_in_bbox,
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
-                                    metadata_filename, available_variables,
+                                    metadata_filename, metadata_path, available_variables,
                                     is_three_dimensional, default_inpainting
 
 using Oceananigans.Fields: location
@@ -167,6 +167,12 @@ end
     @test_throws ArgumentError GHSBuiltS(resolution = GHSBuiltS100m, epoch = 1999)  # not a 5-year step
 end
 
+@testset "GHSBuilt default epoch" begin
+    dataset = GHSBuilt()
+    @test dataset.surface.epoch == 2018
+    @test dataset.surface.resolution === GHSBuiltS10m
+end
+
 #####
 ##### Windowed-read URL construction (JRC open-data host).
 #####
@@ -215,7 +221,9 @@ end
 @testset "GHSL regional raster geometry" begin
     region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 51.525))
 
-    for (name, dataset) in ((:building_height, GHSBuiltH()), (:built_up_fraction, GHSBuiltS()))
+    for (name, dataset) in ((:building_height, GHSBuiltH()), (:built_up_fraction, GHSBuiltS()),
+                            (:built_up_fraction, GHSBuiltS(resolution = GHSBuiltS10m)),
+                            (:built_up_fraction, GHSBuilt()))
         metadatum = Metadatum(name; dataset, region)
         grid = native_grid(metadatum)
         raster = ghsl_regional_raster(metadatum)
@@ -225,6 +233,9 @@ end
         @test raster.region.latitude  == y_domain(grid)
         @test raster.longitude == collect(λnodes(grid, Center()))
         @test raster.latitude  == collect(φnodes(grid, Center()))
+
+        latitude_spacing = 180 / size(dataset, name)[2]
+        @test all(isapprox.(diff(φnodes(grid, Face())), latitude_spacing; rtol=1e-8))
 
         # The window covers the request — the native grid brackets it and pads up to a
         # cell per side — so the tiles it needs include every tile the request touches.
@@ -245,5 +256,8 @@ end
     meta = Metadatum(:building_height; dataset = GHSBuiltH(), region)
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException ghsl_tiles_to_netcdf(meta, tempname() * ".nc")
+        grid = LatitudeLongitudeGrid(size = (2, 2), longitude = region.longitude, latitude = region.latitude,
+                                     topology = (Bounded, Bounded, Flat))
+        @test_throws "using ArchGDAL" urban_roughness(grid, GHSBuilt(); surface_layer_height = 100)
     end
 end

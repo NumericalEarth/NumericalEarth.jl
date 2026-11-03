@@ -21,7 +21,7 @@ single_column_grid(arch, FT = Float64) =
 function single_column_land_model(grid;
                                   surface_layer_height = 10,
                                   uᵃᵗ = 5, vᵃᵗ = 0, Tᵃᵗ = 288, qᵃᵗ = 0.003, pᵃᵗ = 101325,
-                                  Tₛ = 293,
+                                  Tⁱⁿ = 293,
                                   hydrology = DryLand(),
                                   water_storage = 0,
                                   fluxes = nothing)
@@ -35,7 +35,7 @@ function single_column_land_model(grid;
     fill!(parent(atmosphere.pressure),     pᵃᵗ)
 
     land = SlabLand(grid; hydrology, energy = SlabEnergy(FT))
-    set!(land; T = Tₛ)
+    set!(land; T = Tⁱⁿ)
     fill!(land.water_storage, water_storage)
 
     atmosphere_land_fluxes = isnothing(fluxes) ? default_atmosphere_land_fluxes(land, FT) : fluxes
@@ -83,32 +83,32 @@ value(operation) = column(compute!(Field(operation)))
 
         approximate_state     = (; fluxes = (; u★, θ★ = zero(FT), q★ = zero(FT)), u = zero(FT), v = zero(FT))
         atmosphere_state      = (; u = FT(5), v = zero(FT), p = FT(101325), h_bℓ = FT(512))
-        interface_properties  = (; velocity_formulation = RelativeVelocity())
+        interface_formulation = (; velocity_difference = RelativeVelocity())
         atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT),
                                    gravitational_acceleration = FT(9.81))
 
         argument_types = (typeof(fluxes), FT, FT, FT, FT, FT,
                           typeof(approximate_state), typeof(atmosphere_state),
-                          typeof(interface_properties), typeof(atmosphere_properties))
+                          typeof(interface_formulation), typeof(atmosphere_properties))
 
-        @test Base.return_types(iterate_interface_fluxes, argument_types) == [Tuple{FT, FT, FT}]
+        @test Base.return_types(iterate_interface_fluxes, argument_types) == [NTuple{5, FT}]
     end
 end
 
 @testset "Interface specific humidity" begin
     for arch in test_architectures
-        Tₛ = 293.0
+        Tⁱⁿ = 293.0
         pᵃᵗ = 101325.0
 
-        dry = single_column_land_model(single_column_grid(arch); Tₛ, pᵃᵗ, hydrology = DryLand())
+        dry = single_column_land_model(single_column_grid(arch); Tⁱⁿ, pᵃᵗ, hydrology = DryLand())
         @test column(dry.interfaces.atmosphere_land_interface.specific_humidity) == 0
 
-        wet = single_column_land_model(single_column_grid(arch); Tₛ, pᵃᵗ,
+        wet = single_column_land_model(single_column_grid(arch); Tⁱⁿ, pᵃᵗ,
                                        hydrology = BucketHydrology(Float64; maximum_water_storage = 10),
                                        water_storage = 5)
 
         ℂᵃᵗ = wet.atmosphere.thermodynamics_parameters
-        qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, Thermodynamics.Liquid())
+        qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, Thermodynamics.Liquid())
         @test column(wet.interfaces.atmosphere_land_interface.specific_humidity) ≈ qᵛ⁺
     end
 end
@@ -213,19 +213,46 @@ end
 end
 
 @testset "Surface-layer diagnostics with convective gustiness" begin
-    for arch in test_architectures
-        h = 10.0
-        model = single_column_land_model(single_column_grid(arch); surface_layer_height = h)
+    for arch in test_architectures, FT in (Float64, Float32)
+        h = FT(10)
+        model = single_column_land_model(single_column_grid(arch, FT); surface_layer_height = h)
 
-        diagnostics = surface_layer_diagnostics(model; velocity_height = h,
-                                                       temperature_height = h,
-                                                       specific_humidity_height = h)
+        diagnostics_at(z; kw...) = surface_layer_diagnostics(model; velocity_height = z,
+                                                                    temperature_height = z,
+                                                                    specific_humidity_height = z, kw...)
 
-        # The gustiness enhancement is carried by u★ and is not undone here, while the
-        # temperature and humidity scales are built from the resolved increments.
-        @test value(diagnostics.u) > 5
-        @test value(diagnostics.T) ≈ 288
-        @test value(diagnostics.q) ≈ 0.003
+        gust_free = diagnostics_at(h)
+        gusty = diagnostics_at(h; include_subgrid_velocities = true)
+
+        # By default the profile returns the atmosphere wind at the surface-layer height; the
+        # gust-enhanced wind the fluxes saw is available on request.
+        @test isapprox(value(gust_free.u), 5; rtol = 8eps(FT))
+        @test value(gusty.u) > 5
+
+        # Both share the profile shape, `Π(z - d) / Π(Δh - d)`.
+        for z in (2, 5)
+            @test value(diagnostics_at(z).u) / value(gust_free.u) ≈
+                  value(diagnostics_at(z; include_subgrid_velocities = true).u) / value(gusty.u)
+        end
+
+        # The temperature and humidity scales are built from the resolved increments.
+        @test value(gust_free.T) == value(gusty.T)
+        @test value(gust_free.q) == value(gusty.q)
+        @test value(gust_free.T) ≈ 288
+        @test value(gust_free.q) ≈ 0.003
+
+        # The direction is the atmosphere wind's.
+        oblique = single_column_land_model(single_column_grid(arch, FT); surface_layer_height = h,
+                                           uᵃᵗ = 4, vᵃᵗ = 3)
+
+        for z in (2, 10)
+            diagnostics = surface_layer_diagnostics(oblique; velocity_height = z)
+            @test value(diagnostics.v) / value(diagnostics.u) ≈ 3 / 4
+        end
+
+        diagnostics = surface_layer_diagnostics(oblique; velocity_height = h)
+        @test isapprox(value(diagnostics.u), 4; rtol = 8eps(FT))
+        @test isapprox(value(diagnostics.v), 3; rtol = 8eps(FT))
     end
 end
 
@@ -284,6 +311,21 @@ end
         # The surface current is added back, and the Celsius interface temperature converted.
         @test value(diagnostics.u) ≈ uᵃᵗ
         @test value(diagnostics.T) ≈ 288
+
+        # With gustiness, the atmosphere wind's difference from the current is scaled by the profile.
+        gusty_model = ocean_column_model(SimilarityTheoryFluxes(Float64))
+
+        gusty_diagnostics(z; kw...) =
+            surface_layer_diagnostics(gusty_model, gusty_model.interfaces.atmosphere_ocean_interface;
+                                      velocity_height = z, kw...)
+
+        @test isapprox(value(gusty_diagnostics(h).u), uᵃᵗ; rtol = 8eps())
+        @test value(gusty_diagnostics(h; include_subgrid_velocities = true).u) > uᵃᵗ
+
+        Π_ratio = (value(gusty_diagnostics(2; include_subgrid_velocities = true).u) - uᵒᶜ) /
+                  (value(gusty_diagnostics(h; include_subgrid_velocities = true).u) - uᵒᶜ)
+
+        @test value(gusty_diagnostics(2).u) ≈ uᵒᶜ + (uᵃᵗ - uᵒᶜ) * Π_ratio
 
         # A wind-dependent wave formulation needs the bulk velocity, which is not stored.
         wave_roughness = MomentumRoughnessLength(Float64; wave_formulation = WindDependentWaveFormulation(Float64))
