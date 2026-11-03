@@ -23,6 +23,10 @@
 #
 # `qᵛᵉ` is the scheme-dependent moisture the child binds under `moisture_prognostic_name`: true vapor
 # for `:ρqᵛ`, vapor + cloud condensate for `:ρqᵉ` (saturation adjustment).
+#
+# A non-equilibrium child with a condensate `seeding` (see `breeze_parent_condensate.jl`) additionally
+# receives its condensate prognostics (e.g. P3's ρqᶜˡ, ρqʳ, ρnʳ, ρqⁱ, ρnⁱ), TOTAL-weighted like the
+# moisture, and θˡⁱ then removes latent heat for exactly the seeded liquid and ice.
 
 using Oceananigans.Architectures: CPU, on_architecture
 using Oceananigans.Fields: Center, ZeroField, AbstractField
@@ -74,7 +78,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
 @kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛᵉ, θ, u, v,
                                              T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, uₚ, vₚ,
-                                             pˢᵗ, constants, equilibrium_moisture)
+                                             pˢᵗ, constants, equilibrium_moisture, seeding)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
@@ -90,14 +94,17 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         ρ  = air_density(Tᵢ, qᵛᵢ, qˡᵢ, qⁱᵢ, pᵢ, Rᵈ, Rᵛ)
         qᵗ = qᵛᵢ + qˡᵢ + qⁱᵢ
 
-        # The child is handed precipitation-free air: it makes its own precipitation, at its own
-        # resolution and dynamics, so the parent's `qʳ`/`qˢ` cross neither channel. The moisture slot is
-        # `moisture_prognostic_name` at face value — `qᵉ = qᵗ − qʳ − qˢ` for an equilibrium scheme, true
-        # vapor otherwise — and θˡⁱ gives up latent heat for exactly the condensate that slot carries, so
-        # the child recovers the parent's temperature from the pair it was actually given.
-        qᶜˡᵢ = ifelse(equilibrium_moisture, qᶜˡ[i, j, k], zero(Tᵢ))
-        qᶜⁱᵢ = ifelse(equilibrium_moisture, qᶜⁱ[i, j, k], zero(Tᵢ))
-        qᵛᵉ  = qᵛᵢ + qᶜˡᵢ + qᶜⁱᵢ
+        # An equilibrium child is handed precipitation-free air: it makes its own precipitation, at its
+        # own resolution and dynamics, so the parent's `qʳ`/`qˢ` cross neither channel. The moisture slot
+        # is `moisture_prognostic_name` at face value — `qᵉ = qᵗ − qʳ − qˢ` for an equilibrium scheme,
+        # true vapor otherwise — and θˡⁱ gives up latent heat for exactly the condensate the child
+        # holds: the moisture slot's for an equilibrium scheme, the seeded condensate prognostics for a
+        # non-equilibrium one (none without a `seeding`), so the child recovers the parent's temperature.
+        q = (qᶜˡ = qᶜˡ[i, j, k], qʳ = qʳ[i, j, k], qᶜⁱ = qᶜⁱ[i, j, k], qˢ = qˢ[i, j, k])
+        qˡˢ, qⁱˢ = seeded_condensate(seeding, q)
+        qᶜˡᵢ = ifelse(equilibrium_moisture, q.qᶜˡ, qˡˢ)
+        qᶜⁱᵢ = ifelse(equilibrium_moisture, q.qᶜⁱ, qⁱˢ)
+        qᵛᵉ  = ifelse(equilibrium_moisture, qᵛᵢ + qᶜˡᵢ + qᶜⁱᵢ, qᵛᵢ)
 
         θᵢ = liquid_ice_potential_temperature(Tᵢ, qᵛᵢ, qᶜˡᵢ, qᶜⁱᵢ, pᵢ, pˢᵗ, constants)
 
@@ -115,6 +122,29 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         u[i, j, k] = uₚ[i, j, k]
         v[i, j, k] = vₚ[i, j, k]
     end
+end
+
+# The seeded condensate prognostics of a non-equilibrium child, on the parent grid: the same total density
+# as `_compute_child_prognostics!`, then `parent_condensate_prognostics` stored field by field.
+@kernel function _compute_seeded_prognostics!(seeded, T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, constants, seeding)
+    i, j, k = @index(Global, NTuple)
+    @inbounds begin
+        Tᵢ  = T[i, j, k]
+        qᵛᵢ = max(0, qᵛ[i, j, k])
+        q   = (qᶜˡ = qᶜˡ[i, j, k], qʳ = qʳ[i, j, k], qᶜⁱ = qᶜⁱ[i, j, k], qˢ = qˢ[i, j, k])
+        Rᵈ  = dry_air_gas_constant(constants)
+        Rᵛ  = vapor_gas_constant(constants)
+        ρ   = air_density(Tᵢ, qᵛᵢ, q.qᶜˡ + q.qʳ, q.qᶜⁱ + q.qˢ, p[i, j, k], Rᵈ, Rᵛ)
+        store_point!(seeded, values(parent_condensate_prognostics(seeding, q, ρ)), i, j, k)
+    end
+end
+
+# Unrolled over the tuple at compile time, so the kernel holds no loop over heterogeneous fields.
+@inline store_point!(::Tuple{}, ::Tuple{}, i, j, k) = nothing
+
+@inline function store_point!(fields::Tuple, values::Tuple, i, j, k)
+    @inbounds first(fields)[i, j, k] = first(values)
+    return store_point!(Base.tail(fields), Base.tail(values), i, j, k)
 end
 
 # A per-variable input accessor at time level `n`: a `FieldTimeSeries` yields its `n`-th snapshot, a
@@ -143,7 +173,7 @@ end
 # `[3, length(times)]`). The 3-level default is the minimal moving window that still spans a child step
 # crossing a parent node: one level below the end-of-step interpolation bracket, the bracket itself, and
 # one level above it.
-function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory = 3)
+function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory = 3, seeded_names = ())
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
     # Not `clamp`: with fewer than 3 times its lower bound would win over `length(times)`
@@ -151,7 +181,9 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
                                                       time_indexing = length(times) > 1 ? Cyclical() : Clamp())
-    return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
+    base = (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
+    seeded = NamedTuple{seeded_names}(Tuple(build() for _ in seeded_names))
+    return merge(base, seeded)
 end
 
 # The number of time levels `parent_atmosphere` holds in memory (the fewest over the strips of a
@@ -163,7 +195,7 @@ resident_time_indices(parent_atmosphere::BoundaryPrescribedComponent) =
 # Fill the derived FTS's resident window with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
 function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates,
-                                   moisture_name)
+                                   moisture_name, seeding = nothing)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
     FT = eltype(grid)
@@ -178,7 +210,18 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                 source_snapshot(condensates.qᶜⁱ, n, FT), source_snapshot(condensates.qˢ, n, FT),
                 source_snapshot(parent_atmosphere.pressure, n, FT),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
-                pˢᵗ, constants, equilibrium_moisture)
+                pˢᵗ, constants, equilibrium_moisture, seeding)
+
+        # A second kernel only when the child carries seeded condensate, so a child without one runs
+        # exactly the vapor-only exchange.
+        if !isnothing(seeding)
+            seeded = Tuple(prognostic[name][n] for name in seeded_prognostic_names(seeding))
+            launch!(arch, grid, :xyz, _compute_seeded_prognostics!, seeded,
+                    parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
+                    source_snapshot(condensates.qᶜˡ, n, FT), source_snapshot(condensates.qʳ, n, FT),
+                    source_snapshot(condensates.qᶜⁱ, n, FT), source_snapshot(condensates.qˢ, n, FT),
+                    source_snapshot(parent_atmosphere.pressure, n, FT), constants, seeding)
+        end
     end
 
     for fts in prognostic
@@ -197,21 +240,24 @@ end
 # child clock, and — when the child clock has crossed into a new parent interval — cycles the derived
 # window forward and recomputes it. The name is direction-neutral for eventual two-way nesting.
 
-struct StateExchanger{P, Pr, C, S, Q}
+struct StateExchanger{P, Pr, C, S, Q, D}
     parent        :: P    # the parent PrescribedAtmosphere (raw ERA5 state)
     prognostic    :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid
     constants     :: C
     pˢᵗ           :: S
     condensates   :: Q    # NamedTuple (qᶜˡ, qʳ, qᶜⁱ, qˢ); entries may be `nothing` (⇒ `ZeroField`)
     moisture_name :: Symbol  # the child's `moisture_prognostic_name`: what `ρqᵛᵉ` must hold
+    seeding       :: D    # condensate seeding of a non-equilibrium child, or `nothing`
 end
 
 # Diagnostics on the exchanger's density-weighted prognostics at time index `n`, as lazy operations.
 # Momentum/energy are dry-weighted (recover ÷ρᵈ); moisture is a partial density (recover ÷ρ). The
 # total density ρ = ρᵈ + Σρqˣ sums the dry density with every moisture/condensate partial density the
-# exchanger carries — currently just ρqᵛᵉ, so it stays correct when condensate densities are added.
-# It omits the parent's precipitation, which the exchanger does not transfer.
-total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛᵉ[n]
+# exchanger carries: ρqᵛᵉ plus any seeded condensate mass. It omits parent condensate the exchanger does
+# not transfer (precipitation for an equilibrium child, everything for an unseeded vapor-only child).
+total_density(ex::StateExchanger, n=1) =
+    foldl(+, Tuple(ex.prognostic[name][n] for name in seeded_mass_names(ex.seeding));
+          init = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛᵉ[n])
 
 # Reconstruct the child prognostic state (ρ, θˡⁱ, qᵗ) at `time` from the parent's FULL-memory raw fields
 # via `breeze_prognostic_state`, using the exchanger's stored constants / pˢᵗ / condensate sources. Unlike
@@ -233,24 +279,29 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                                         qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
                                         qˢ  = parent_atmosphere.microphysical_variables.qˢ),
                          time_indices_in_memory = 3,
-                         moisture_name = :ρqᵛ)
+                         moisture_name = :ρqᵛ,
+                         seeding = nothing)
 
     # Fill any hydrometeor a caller-supplied `condensates` omits with `nothing` (⇒ ZeroField), so the
     # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), something(condensates, (;)))
 
-    prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+    # Seeded condensate densities live on the parent grid, so their parameters take its float type.
+    seeding    = seeding_with_eltype(eltype(parent_atmosphere.temperature.grid), seeding)
+    prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name, seeding;
                                         time_indices_in_memory)
-    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
+    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name, seeding)
     exchange_state!(exchanger, @allowscalar first(parent_atmosphere.temperature.times))   # position the parent's windows
     return exchanger
 end
 
 # The derived child prognostics of `parent_atmosphere`, filled over the initial resident window.
-function child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+function child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name, seeding = nothing;
                                 time_indices_in_memory = 3)
-    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    return compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name)
+    seeded_names = seeded_prognostic_names(seeding)
+    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory, seeded_names)
+    return compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name,
+                                      seeding)
 end
 
 # One exchanger per strip, keyed by side; `condensates` is keyed by side too, or `nothing`.
@@ -268,7 +319,7 @@ function child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchang
     condensates = NamedTuple{names}(isnothing(exchanger.condensates[name]) ? nothing :
                                     parent_atmosphere.microphysical_variables[name] for name in names)
     return child_prognostic_state(parent_atmosphere, exchanger.pˢᵗ, exchanger.constants, condensates,
-                                  exchanger.moisture_name)
+                                  exchanger.moisture_name, exchanger.seeding)
 end
 
 # A strip parent carries one exchanger per side, all with the child's constants, moisture and
@@ -322,6 +373,6 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # values. Skip it unless the bracket moved (or this is the initial fill) to spare the hot path two
     # parent-grid kernels + halo fills per step.
     (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates,
-                                                   ex.moisture_name)
+                                                   ex.moisture_name, ex.seeding)
     return nothing
 end
