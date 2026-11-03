@@ -560,8 +560,8 @@ ocean_grid = ImmersedBoundaryGrid(ocean_grid, GridFittedBottom(bottom_height))
 nothing #hide
 
 # `GloFASPrescribedLand` downloads the discharge, locates the river mouths from
-# the land/ocean boundary, and maps each mouth to the nearest active ocean cell
-# of `ocean_grid` — conserving the total volume of freshwater (see
+# the land/ocean boundary, and spreads each mouth over the active ocean cells of
+# `ocean_grid` around it — conserving the total volume of freshwater (see
 # [`build_river_routing`](@ref)).
 
 land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
@@ -572,11 +572,11 @@ land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
 nothing #hide
 
 # The resulting `RiverRouting` records, for each river mouth, the coastal ocean
-# cell that receives its discharge. We overlay the mouths (on the GloFAS network)
+# cells that receive its discharge. We overlay the mouths (on the GloFAS network)
 # and their destination ocean cells (on the coastline) on the discharge map to
 # visualize the relocation.
 
-routing = land.river_routing
+routing = land.river_routing.rivers
 
 λn = λnodes(land.grid, Center(), Center(), Center())
 φn = φnodes(land.grid, Center(), Center(), Center())

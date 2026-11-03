@@ -25,21 +25,31 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Snap so the native cell *centers* bracket the bbox: include the cell whose
-# center is at or below the lower edge and the one whose center is at or above the
-# upper edge. This keeps the bbox inside the center hull so it stays interpolatable
-# at its edges (downscaling clamps outside the hull). Pads by 0 or 1 cell depending
-# on where the edge falls within a native cell (an edge in a cell's first half — or
-# exactly on a face — needs the extra cell; an edge past the center does not).
-function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+"""
+    native_cell_range(bounds, interfaces, N)
+
+The 1-based range of native cells covered by `bounds` on an axis spanning `interfaces` in
+`N` cells: the cells whose centers bracket `bounds`, including the cell whose center is at
+or below the lower edge and the one at or above the upper edge, so `bounds` stays inside
+the center hull and interpolatable at its edges.
+"""
+function native_cell_range(bounds, interfaces, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = clamp(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0, N)
-    i⁺ = clamp(ceil( Int, (bbox_interfaces[2] - left) / Δ + 1/2), 0, N)
+    i⁻ = clamp(floor(Int, (bounds[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bounds[2] - left) / Δ + 1/2), 0, N)
     if i⁺ ≤ i⁻
         i⁺ = min(i⁻ + 1, N)
         i⁻ = max(i⁺ - 1, 0)
     end
+    return (i⁻ + 1):i⁺
+end
+
+function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    cells = native_cell_range(bbox_interfaces, interfaces, N)
+    i⁻, i⁺ = first(cells) - 1, last(cells)
     return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
 end
 
@@ -109,9 +119,12 @@ end
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
 and a column `RectilinearGrid` for `Column` regions.
+
+The grid is built on the child architecture of `arch`, so with a `Distributed` architecture every rank reads and
+inpaints the whole dataset and then regrids onto its own subdomain.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
-    construct_native_grid(metadata, metadata.region, arch; halo)
+    construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
 
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)
@@ -308,6 +321,8 @@ end
     @inbounds to_field[i, j, k] = interpolate(to_node, from_field, from_location, from_grid)
 end
 
+same_grid(a::AbstractGrid, b::AbstractGrid) = typeof(a) === typeof(b) && a == b
+
 """
     interpolate_physical!(to_field, from_field)
 
@@ -317,7 +332,7 @@ Interpolate `from_field` onto `to_field`. Identical to Oceananigans'
 `znode` rather than the reference `rnode`. `interpolate!` builds its target node
 from `_node`, whose vertical component is `rnode`, so it would place the source
 at the LAM's reference heights and ignore the terrain — putting the lowest cells
-below the (clipped) surface of a `PressureLevelGrid` source.
+below the surface of a `PressureLevelGrid` source.
 
 !!! note "TODO"
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node
@@ -389,7 +404,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid;
     return target
 end
 
-function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum, args...; kw...)
     regrid_from_metadata!(target_field, metadata; kw...)
     return target_field
 end
@@ -544,10 +559,7 @@ multi-date sets, build a `NamedTuple` of `FieldTimeSeries` per variable, e.g.
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
     dates = getfield(mset, :dates)
     if !(dates isa AnyDateTime)
-        throw(ArgumentError(
-            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
-            "For multi-date sets build a NamedTuple of FieldTimeSeries per variable, e.g. " *
-            "`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`."))
+        throw(ArgumentError("Field(::MetadataSet) requires a scalar `date`, got a multi-date axis"))
     end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))

@@ -442,5 +442,55 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         end
     end
 
+    @testset "download_era5_land through an injected retrieve" begin
+        dataset = ERA5MonthlyLand()
+        requests = []
+
+        # Stands in for the CDS: records the request and answers it with a file holding every
+        # month of the request's year × month product.
+        function fake_retrieve(product, request, path)
+            push!(requests, (product, request))
+            times = vec([DateTime(parse(Int, y), parse(Int, m)) for y in request["year"], m in request["month"]])
+            NCDatasets.Dataset(path, "c") do ds
+                NCDatasets.defDim(ds, "longitude", 2)
+                NCDatasets.defDim(ds, "latitude", 2)
+                NCDatasets.defDim(ds, "valid_time", length(times))
+                NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [-1.0, 1.0]
+                NCDatasets.defVar(ds, "latitude", Float64, ("latitude",))[:] = [40.0, 41.0]
+                time_var = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
+                                             attrib = ["units" => "seconds since 1970-01-01"])
+                time_var[:] = times
+                skt = NCDatasets.defVar(ds, "skt", Float32, ("longitude", "latitude", "valid_time"))
+                for (k, time) in enumerate(times)
+                    skt[:, :, k] .= Float32(Dates.month(time))
+                end
+            end
+            return path
+        end
+
+        mktempdir() do dir
+            meta = Metadatum(:skin_temperature; dataset, date = DateTime(2020, 3, 1), dir)
+            path = download(meta; retrieve = fake_retrieve)
+
+            @test path == metadata_path(meta)
+            @test length(requests) == 1
+            product, request = requests[1]
+            @test product == "reanalysis-era5-land-monthly-means"
+            @test request["variable"] == ["skin_temperature"]
+            @test request["year"] == ["2020"]
+            @test request["month"] == lpad.(string.(1:12), 2, '0')
+
+            NCDatasets.Dataset(path) do ds
+                @test ds.dim["valid_time"] == 12
+                @test ds["valid_time"][3] == DateTime(2020, 3, 1)
+                @test all(ds["skt"][:, :, 3] .== 3)
+            end
+
+            # The yearly file serves every other date of that year
+            download(Metadatum(:skin_temperature; dataset, date = DateTime(2020, 11, 1), dir); retrieve = fake_retrieve)
+            @test length(requests) == 1
+        end
+    end
+
     @info "✓ CopernicusClimateDataStore extension tests passed"
 end

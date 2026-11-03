@@ -43,7 +43,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
 
     Downloads.download(metadata)
 
-    # The time axis matches the clock that queries it, not the grid.
+    # Float64 like the model clock: past 2^28 s a Float32 axis rounds the nodes by up to 32 s
     times = native_times(metadata)
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
@@ -61,12 +61,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    # Grids of different type are never equal; the `typeof` guard short-circuits
-    # before the node comparison, which for a `PressureLevelGrid` reduces the whole
-    # geopotential to a column-mean profile (`mean_height_profile`) only to discard
-    # it whenever — as for any interpolation target — the grid isn't the native one.
-    native = native_grid(metadata, architecture(grid))
-    on_native_grid = typeof(grid) === typeof(native) && grid == native
+    on_native_grid = same_grid(grid, native_grid(metadata, architecture(grid)))
     backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
@@ -99,6 +94,7 @@ warning_id(metadata) = Symbol(:time_coverage_, nameof(typeof(metadata.dataset)))
 
 function validate_time_coverage(metadata, time_indexing::Cyclical)
     length(metadata) == 1 && return nothing
+    spans_whole_cycle(metadata) && return nothing
     head, tail = uncovered_time_gaps(metadata)
     head == 0 && tail == 0 && return nothing
 

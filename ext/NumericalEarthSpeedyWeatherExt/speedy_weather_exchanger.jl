@@ -54,7 +54,9 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
 end
 
 function ConservativeRegridding.regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
-    regrid!(vec(interior(field)), regridder, vec(data))
+    # Stage `data` in the regridder's dense source buffer so `mul!` dispatches to the GPU sparse kernel
+    regridder.src_temp .= vec(data)
+    regrid!(vec(interior(field)), regridder, regridder.src_temp)
 end
 
 function ConservativeRegridding.regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
@@ -89,6 +91,8 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     regrid!(exchange_state.p,     from_atmosphere, pa)
     regrid!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
     regrid!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
+    parent(exchange_state.ℐꜜˢʷ) .*= -1
+    parent(exchange_state.ℐꜜˡʷ) .*= -1
     regrid!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
     isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
 

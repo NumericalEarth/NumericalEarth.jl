@@ -26,7 +26,12 @@ exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 # Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
 # `nothing` leaves the field untouched.
 set_prescribed_field!(fts, ::Nothing) = nothing
-set_prescribed_field!(fts, value::Number) = Oceananigans.set!(fts, value)
+
+function set_prescribed_field!(fts, value::Number)
+    Oceananigans.set!(fts, value)
+    fill_halo_regions!(fts)
+    return nothing
+end
 
 #####
 ##### Functions extended by sea-ice and ocean models
@@ -39,6 +44,14 @@ ocean_salinity(ocean) = ZeroField()
 ocean_surface_temperature(ocean) = ZeroField()
 ocean_surface_salinity(ocean) = ZeroField()
 ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
+
+"""
+$(TYPEDSIGNATURES)
+
+Ocean velocities averaged over the top `reference_depth` meters, the reference velocities of the sea ice-ocean drag;
+`reference_depth = nothing` returns [`ocean_surface_velocities`](@ref).
+"""
+surface_layer_velocities(ocean, reference_depth) = ocean_surface_velocities(ocean)
 temperature_units(ocean) = DegreesCelsius()
 
 #####
@@ -55,6 +68,7 @@ function default_sea_ice end
 #####
 
 function thermodynamics_parameters end
+function molmass_dryair end
 function surface_layer_height end
 function boundary_layer_height end
 
@@ -128,11 +142,8 @@ adopt_clock(::Nothing, clock) = nothing
 
 function adopt_clock(simulation::Simulation, clock)
     same_time_type(simulation.model.clock.time, clock.time) && return simulation
-    throw(ArgumentError(string(
-        "the simulation clock tracks time as ", typeof(simulation.model.clock.time),
-        " but the EarthSystemModel clock uses ", typeof(clock.time), ". A Simulation's clock type ",
-        "follows its grid and cannot be coerced; rebuild the simulation on a grid ",
-        "with float type ", typeof(clock.time), ", or construct the EarthSystemModel with a matching `clock`.")))
+    throw(ArgumentError(string("the simulation clock tracks time as ", typeof(simulation.model.clock.time),
+                               " but the EarthSystemModel clock uses ", typeof(clock.time))))
 end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT

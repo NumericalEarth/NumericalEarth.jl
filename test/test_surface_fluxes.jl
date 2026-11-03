@@ -3,12 +3,14 @@ include("runtests_setup.jl")
 using ClimaSeaIce.Rheologies
 using ClimaSeaIce.SeaIceDynamics
 using Oceananigans.TimeSteppers: update_state!
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Units: hours, days
+using SeawaterPolynomials.TEOS10: θ_from_Θ
 using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
                                                               SimilarityScales,
-                                                              surface_specific_humidity,
+                                                              surface_specific_humidity, saturation_humidity_slope,
                                                               SkinTemperature,
                                                               BulkTemperature,
                                                               DiffusiveFlux,
@@ -19,8 +21,11 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               CriticalSaturation,
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
+                                                              InterfaceFluxScales, InterfaceVelocities,
                                                               compute_interface_humidity,
-                                                              saturation_specific_humidity
+                                                              saturation_specific_humidity,
+                                                              ImpureSaturationSpecificHumidity,
+                                                              GillSaturationEnhancement
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Statistics: mean, std
 using Thermodynamics
@@ -46,8 +51,7 @@ end
                                  closure = nothing,
                                  bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch)
 
         @allowscalar begin
             h  = atmosphere.surface_layer_height
@@ -136,8 +140,8 @@ end
             @test all(Array(interior(assessed_diffusivity)) .≈ 3e-3)
 
             # The skin temperature solve runs with the assessed diffusivity
-            Tₛ = interfaces.atmosphere_ocean_interface.temperature
-            @test all(isfinite, Array(interior(Tₛ)))
+            Tⁱⁿ = interfaces.atmosphere_ocean_interface.temperature
+            @test all(isfinite, Array(interior(Tⁱⁿ)))
 
             # The diffusivity operation is stripped from the kernel arguments
             # unless the temperature formulation needs it
@@ -174,11 +178,10 @@ end
             coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
-            Tᵒᶜ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
+            Tᵒᶜ = θ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
-            interface_properties = interfaces.atmosphere_ocean_interface.properties
-            q_formulation = interface_properties.specific_humidity_formulation
+            q_formulation = interfaces.atmosphere_ocean_interface.formulation.state.specific_humidity
             qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
             g = ocean.model.buoyancy.formulation.gravitational_acceleration
 
@@ -230,8 +233,7 @@ end
                                            bottom_drag_coefficient = 0)
 
         set!(ocean_with_land.model, T = 15, S = 30)
-        land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
+        land = synthetic_prescribed_land(arch)
         model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
 
         # Verify land exchanger is wired up
@@ -259,7 +261,7 @@ end
                                     size = (2, 2, 10),
                                 latitude = (-0.5, 0.5),
                                longitude = (-0.5, 0.5),
-                                       z = (-1, 0),
+                                       z = (-1000, 0),
                                 topology = (Bounded, Bounded, Bounded))
 
         ocean = ocean_simulation(grid; momentum_advection = nothing,
@@ -268,10 +270,10 @@ end
                                                   closure = nothing,
                                   bottom_drag_coefficient = 0.0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+        atmosphere = synthetic_prescribed_atmosphere(arch; dates = all_dates(SyntheticAtmosphere(), :temperature)[1:2])
 
         fill!(ocean.model.tracers.T, -2.0)
+        fill!(ocean.model.tracers.S, 35.0)
 
         @allowscalar begin
             ocean.model.tracers.T[1, 2, 10] = 1.0
@@ -285,8 +287,10 @@ end
 
             coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere)
 
-            # Test that the temperature has snapped up to freezing
-            @test minimum(ocean.model.tracers.T) == 0
+            # Test that the temperature has snapped up to the freezing point where it lies above -2 ᵒC
+            Tₘ = melting_temperature.(Ref(sea_ice.liquidus), 35, znodes(grid, Center()))
+            @test Tₘ[end] > -2 > Tₘ[1]
+            @test Array(interior(ocean.model.tracers.T, 1, 1, :)) ≈ max.(-2, Tₘ)
         end
 
         @info "Testing Surface Fluxes with sea ice..."
@@ -327,11 +331,29 @@ end
 
         τˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
         τʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
+        λˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum_coefficient
+        λʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum_coefficient
 
+        # The drag is split as Fₑ + λ uᵒ with λ = ρₑ Cᴰ |Δu|; the ice is at rest, so Fₑ vanishes and
+        # λ uᵒ carries the whole stress.
         @allowscalar begin
-            @test τˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.1
-            @test τʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.2
+            @test λˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2)
+            @test λʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2)
+            @test τˣ[1, 1, 1] + λˣ[1, 1, 1] * 0.1 == sqrt(0.1^2 + 0.2^2) * 0.1
+            @test τʸ[1, 1, 1] + λʸ[1, 1, 1] * 0.2 == sqrt(0.1^2 + 0.2^2) * 0.2
         end
+    end
+end
+
+@testset "Saturation humidity slope" begin
+    for FT in (Float32, Float64), phase in (Thermodynamics.Liquid(), Thermodynamics.Ice())
+        ℂ, p, h = AtmosphereThermodynamicsParameters(FT), FT(101325), FT(1//8)
+        q(T) = saturation_specific_humidity(ℂ, T, p, phase)
+        # Fourth-order central difference across the range the surface balances sample
+        for T in FT.((200, 240, 273.15, 288, 300, 320, 340))
+            @test saturation_humidity_slope(ℂ, T, p, phase) ≈ (-q(T + 2h) + 8q(T + h) - 8q(T - h) + q(T - 2h)) / 12h rtol=1e-3
+        end
+        @inferred saturation_humidity_slope(ℂ, FT(300), p, phase)
     end
 end
 
@@ -347,22 +369,21 @@ end
     # The saturated reservoir is at the bulk (energy) temperature `Tᵈ`; the skin
     # temperature does not enter the vapor balance.
     Tᵈ = 295.0
-    Ψᵢ = (; T = Tᵈ) # interior state (unused by SkinHumidity, passed for signature)
-    Tₛ = 310.0 # skin temperature, deliberately ≠ Tᵈ — qˢ must be independent of it
+    Ψˡᵃ = (; T = Tᵈ) # land state: the bulk reservoir temperature
+    Tⁱⁿ = 310.0 # skin temperature, deliberately ≠ Tᵈ — qˢ must be independent of it
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵈ, pᵃᵗ, Thermodynamics.Liquid())
     @test qᵛ⁺ > qᵃᵗ # reservoir saturation exceeds the sub-saturated air
 
-    # AirLandInterfaceState with an upward moisture flux (q★ < 0 ⟹ qˢ > qᵃᵗ);
-    # bulk reservoir temperature carried in the energy component.
-    mkΨₛ(q) = AirLandInterfaceState(0.3, -0.01, -1e-4, 0.0, 0.0, Tₛ, q,
-                                    (saturation = 1.0,), (temperature = Tᵈ,))
+    # AirLandInterfaceState with a fixed aerodynamic conductance Gᵃ = ρ u★ Ξq.
+    mkΨⁱⁿ(q) = AirLandInterfaceState(InterfaceFluxScales(0.3, -0.01, -1e-4, 0.0, 0.2),
+                                    InterfaceVelocities(0.0, 0.0), Tⁱⁿ, q)
 
     # Drive the fixed point to convergence for a few saturation depths
     converge(d) = begin
         sh = SkinHumidity(surface_thickness=d, vapor_diffusivity=2e-2)
         q = qᵛ⁺
         for _ in 1:100
-            q = compute_interface_humidity(sh, Tₛ, mkΨₛ(q), Ψₐ, Ψᵢ, ℙₐ)
+            q = compute_interface_humidity(sh, Tⁱⁿ, mkΨⁱⁿ(q), Ψₐ, Ψˡᵃ, nothing, ℙₐ)
         end
         return q
     end
@@ -384,9 +405,8 @@ end
 
     # Zero turbulent flux (first iterate) ⟹ saturated surface qˢ = qᵛ⁺
     sh = SkinHumidity(surface_thickness=0.1, vapor_diffusivity=2e-2)
-    Ψₛ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0,
-                                (saturation = 1.0,), (temperature = Tᵈ,))
-    @test compute_interface_humidity(sh, Tₛ, Ψₛ⁰, Ψₐ, Ψᵢ, ℙₐ) ≈ qᵛ⁺
+    Ψⁱⁿ⁰ = AirLandInterfaceState(0.0, 0.0, 0.0, 0.0, 0.0, Tⁱⁿ, 0.0)
+    @test compute_interface_humidity(sh, Tⁱⁿ, Ψⁱⁿ⁰, Ψₐ, Ψˡᵃ, nothing, ℙₐ) ≈ qᵛ⁺
 end
 
 @testset "FractionalHumidity (Manabe critical wetness)" begin
@@ -394,104 +414,45 @@ end
     ℙₐ = (; thermodynamics_parameters = ℂ)
     pᵃᵗ = 101325.0
     Ψₐ = (; p = pᵃᵗ, q = 0.005, T = 290.0)
-    Ψᵢ = (; T = 295.0) # unused by FractionalHumidity, passed for signature
-    Tₛ = 295.0
-    qᵛ⁺ = saturation_specific_humidity(ℂ, Tₛ, pᵃᵗ, Thermodynamics.Liquid())
+    Tⁱⁿ = 295.0
+    qᵛ⁺ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, Thermodynamics.Liquid())
 
     # Manabe efficiency: β = min(𝒮/𝒮ᶜ, 1), 𝒮ᶜ = 0.75
     cs = CriticalSaturation(0.75)
-    @test evaporation_efficiency(cs, (saturation = 0.0,))   == 0.0
-    @test evaporation_efficiency(cs, (saturation = 0.375,)) ≈ 0.5
-    @test evaporation_efficiency(cs, (saturation = 0.75,))  ≈ 1.0
-    @test evaporation_efficiency(cs, (saturation = 1.0,))   ≈ 1.0   # saturated above 𝒮ᶜ
+    @test evaporation_efficiency(cs, (𝒮 = 0.0,))   == 0.0
+    @test evaporation_efficiency(cs, (𝒮 = 0.375,)) ≈ 0.5
+    @test evaporation_efficiency(cs, (𝒮 = 0.75,))  ≈ 1.0
+    @test evaporation_efficiency(cs, (𝒮 = 1.0,))   ≈ 1.0   # saturated above 𝒮ᶜ
 
     # Constant efficiency ignores the land state
-    @test evaporation_efficiency(0.3, (saturation = 0.9,)) == 0.3
+    @test evaporation_efficiency(0.3, (𝒮 = 0.9,)) == 0.3
 
-    # qˢ = β · qᵛ⁺(Tₛ), with β derived from the materialized hydrology state
-    mkΨₛ(𝒮) = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0, (saturation = 𝒮,), (;))
+    # qˢ = β · qᵛ⁺(Tⁱⁿ), with β derived from the land state
+    Ψⁱⁿ = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tⁱⁿ, 0.0)
+    Ψˡᵃ(𝒮) = (; T = 295.0, 𝒮)
     fh = FractionalHumidity(efficiency = cs)
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.0),   Ψₐ, Ψᵢ, ℙₐ) ≈ 0.0
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.375), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.5 * qᵛ⁺
-    @test compute_interface_humidity(fh, Tₛ, mkΨₛ(1.0),   Ψₐ, Ψᵢ, ℙₐ) ≈ qᵛ⁺ # saturated
+    @test compute_interface_humidity(fh, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(0.0),   nothing, ℙₐ) ≈ 0.0
+    @test compute_interface_humidity(fh, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(0.375), nothing, ℙₐ) ≈ 0.5 * qᵛ⁺
+    @test compute_interface_humidity(fh, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(1.0),   nothing, ℙₐ) ≈ qᵛ⁺ # saturated
 
     # Constant-efficiency FractionalHumidity is a uniform fraction of saturation
     fc = FractionalHumidity(efficiency = 0.4)
-    @test compute_interface_humidity(fc, Tₛ, mkΨₛ(0.1), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.4 * qᵛ⁺
+    @test compute_interface_humidity(fc, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ(0.1), nothing, ℙₐ) ≈ 0.4 * qᵛ⁺
 end
 
-#=
-@testset "Fluxes regression" begin
-    for arch in test_architectures
-        @info "Testing fluxes regression..."
+@testset "Saturation vapor pressure enhancement (Gill 1982)" begin
+    ℂ = AtmosphereThermodynamicsParameters(Float64)
+    pᵃᵗ, Tⁱⁿ, Sₛ = 101325.0, 293.15, 35.0
+    phase = Thermodynamics.Liquid()
 
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = (20, 20, 20),
-                                 latitude = (-60, 60),
-                                longitude = (0, 360),
-                                        z = (-5000, 0))
+    εᵈᵛ⁻¹ = 1 / Thermodynamics.Parameters.Rv_over_Rd(ℂ)
+    pᵛ⁺ = 0.98 * Thermodynamics.saturation_vapor_pressure(ℂ, Tⁱⁿ, phase)
+    fᵛ = 1 + 1e-8 * pᵃᵗ * (4.5 + 6e-4 * (Tⁱⁿ - celsius_to_kelvin)^2)
+    qᵛ⁺(pᵛ) = εᵈᵛ⁻¹ * pᵛ / (pᵃᵗ - (1 - εᵈᵛ⁻¹) * pᵛ)
 
-        # Speed up compilation by removing all the unnecessary stuff
-        momentum_advection = nothing
-        tracer_advection   = nothing
-        tracers  = (:T, :S)
-        buoyancy = nothing
-        closure  = nothing
-        coriolis = nothing
+    unenhanced = ImpureSaturationSpecificHumidity(phase, 0.98)
+    enhanced = ImpureSaturationSpecificHumidity(phase, 0.98; saturation_enhancement = GillSaturationEnhancement())
 
-        ocean = ocean_simulation(grid; momentum_advection, tracer_advection, closure, tracers, coriolis)
-
-        date = DateTimeProlepticGregorian(1993, 1, 1)
-        dataset = ECCO4Monthly()
-        T_metadata = Metadatum(:temperature; date, dataset)
-        S_metadata = Metadatum(:salinity; date, dataset)
-
-        set!(ocean.model; T=T_metadata, S=S_metadata)
-
-        end_date   = all_dates(RepeatYearJRA55(), :temperature)[10]
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date, backend = InMemory())
-        radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
-        sea_ice    = nothing
-
-        coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-        times = 0:1hours:1days
-        Ntimes = length(times)
-
-        # average the fluxes over one day
-        Jᵀ = interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        Jˢ = interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        τˣ = interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        τʸ = interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-
-        for time in times[2:end]
-            coupled_model.clock.time = time
-            update_state!(coupled_model)
-            Jᵀ .+= interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            Jˢ .+= interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            τˣ .+= interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            τʸ .+= interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        end
-
-        Jᵀ_mean = mean(Jᵀ)
-        Jˢ_mean = mean(Jˢ)
-        τˣ_mean = mean(τˣ)
-        τʸ_mean = mean(τʸ)
-
-        Jᵀ_std = std(Jᵀ)
-        Jˢ_std = std(Jˢ)
-        τˣ_std = std(τˣ)
-        τʸ_std = std(τʸ)
-
-        # Regression test
-        @test_broken Jᵀ_mean ≈ -3.526464713488678e-5
-        @test_broken Jˢ_mean ≈ 1.1470078542716042e-6
-        @test_broken τˣ_mean ≈ -1.0881334225579832e-5
-        @test_broken τʸ_mean ≈ 5.653281786086694e-6
-
-        @test_broken Jᵀ_std ≈ 7.477575901188957e-5
-        @test_broken Jˢ_std ≈ 3.7416720607945508e-6
-        @test_broken τˣ_std ≈ 0.00011349625113971719
-        @test_broken τʸ_std ≈ 7.627885224680635e-5
-    end
+    @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
+    @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
 end
-=#

@@ -94,17 +94,22 @@ end
         @test model.radiation.interface_fluxes.ocean isa InterfaceRadiationFlux
         @test model.radiation.interface_fluxes.sea_ice isa InterfaceRadiationFlux
 
+        set!(radiation; downwelling_shortwave = 250, downwelling_longwave = 350)
+        set!(ocean.model, T = 20, S = 35)
         time_step!(model, 60)
+        state = model.interfaces.exchanger.radiation.state
+        @test only(Array(interior(state.ℐꜜˢʷ))) ≈ -250
+        @test only(Array(interior(state.ℐꜜˡʷ))) ≈ -350
         @test iteration(model) == 1
     end
 end
 
-@testset "JRA55PrescribedRadiation" begin
+@testset "Dataset-backed PrescribedRadiation" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing JRA55PrescribedRadiation on $A..."
+        @info "Testing dataset-backed PrescribedRadiation on $A..."
 
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
+        radiation = synthetic_prescribed_radiation(arch)
 
         @test radiation isa PrescribedRadiation
         @test radiation.downwelling_shortwave isa FieldTimeSeries

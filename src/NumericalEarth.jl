@@ -45,18 +45,29 @@ export
     NestedSimulation,
     nested_atmosphere_model,
     parent_boundary_conditions,
-    parent_forcings,
     # Atmosphere-land interface closures
     BulkHumidity,
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    CanopyConductanceHumidity,
+    CanopyInterface,
+    PrognosticCanopyAir,
+    PrognosticSkin,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    ExponentialSoilResistance,
+    GroundSurfaceResistance,
+    TiledLandInterface,
+    JarvisConductance,
+    AbsorbedPhotosyntheticallyActiveRadiation,
+    AltitudeCorrection,
     atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
@@ -64,9 +75,9 @@ export
     ChlorophyllOptics,
     absorption_coefficient,
     equivalent_chlorophyll,
-    AbstractPrescribedComponent,
     PrescribedRadiation,
     PrescribedAtmosphere,
+    BoundaryPrescribedComponent,
     PrescribedLand,
     ECCOPrescribedRadiation,
     JRA55PrescribedRadiation,
@@ -90,9 +101,13 @@ export
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
+    SurfacePartition,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
     SlabLand,
@@ -100,18 +115,26 @@ export
     BucketHydrology,
     WaterCoupledEnergy,
     VariablySaturatedHydrology,
+    InterceptingHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
-    NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+    WaterViscosity, CosbyConductivity, saturated_conductivity,
+    NoDeepLiquidWaterFlux, FreeDrainageFlux, DarcyDeepLiquidWaterFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    WeynantsPedotransfer, HYPRESPedotransfer,
+    soil_hydraulic_parameters, soil_hydraulic_properties,
     # Urban aerodynamic roughness closures
-    AbstractUrbanRoughness, MorphometricRoughness,
+    MorphometricRoughness,
     IsotropicFrontalArea, EmpiricalFrontalArea,
     UniformHeight, VariableHeight,
-    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
+    urban_roughness,
+    fill_aerodynamic_roughness_gaps!,
     surface_temperature,
+    surface_layer_diagnostics,
     regrid_bathymetry,
     regrid_topography,
+    regrid_ocean_fraction,
     smooth_topography!,
+    connect_basins!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
@@ -122,35 +145,35 @@ export
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
-    WOAClimatology, WOAAnnual, WOAMonthly,
-    ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km,
+    WOAAnnual, WOAMonthly,
+    ASTERGEDv3, ASTERGEDHigh100m, ASTERGEDLow1km,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
-    ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200,
+    ESAWorldCover, WorldCoverV100, WorldCoverV200,
+    MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
-    AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
+    AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
-    JRA55FieldTimeSeries,
-    ORCAOne, ORCAQuarter, ORCATwelfth,
+    ORCAOne, ORCATwo, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
     GlobalBuildingFootprints3D, building_morphometry,
-    GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m,
+    GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    land_model,
+    land_simulation,
     breeze_prognostic_state,
-    bulk_drag,
     hydrostatic_pressure_from_surface,
-    density_from_pressure,
     ocean_simulation,
+    river_mouth_vertical_diffusivity,
     sea_ice_simulation,
     default_sea_ice,
-    sea_ice_dynamics,
     initialize!,
     net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
@@ -168,7 +191,7 @@ using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries, TimeInterpolator
 
 import Oceananigans: location
 
@@ -218,9 +241,10 @@ const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
 
 const SKOFTS = SomeKindOfFieldTimeSeries
 
-@inline stateindex(a::Number, i, j, k, args...) = a
+@inline stateindex(a::Union{Number, Nothing}, i, j, k, args...) = a
 @inline stateindex(a::AbstractArray, i, j, k, args...) = @inbounds a[i, j, k]
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
+@inline stateindex(a::SKOFTS, i, j, k, time_interpolator::TimeInterpolator) = @inbounds a[i, j, k, time_interpolator]
 
 @inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
     # `_node` always returns the full (λ, φ, z) triple — with placeholder
@@ -230,17 +254,8 @@ const SKOFTS = SomeKindOfFieldTimeSeries
     return a(λ, φ, z, time)
 end
 
-@inline function stateindex(a::Tuple, i, j, k, grid, time, args...)
-    N = length(a)
-    ntuple(Val(N)) do n
-        stateindex(a[n], i, j, k, grid, time, args...)
-    end
-end
-
-@inline function stateindex(a::NamedTuple, i, j, k, grid, time, args...)
-    vals = stateindex(values(a), i, j, k, grid, time, args...)
-    names = keys(a)
-    return NamedTuple{names}(vals)
+@inline function stateindex(a::Union{Tuple, NamedTuple}, i, j, k, grid, time, args...)
+    return map(value -> stateindex(value, i, j, k, grid, time, args...), a)
 end
 
 #####
@@ -254,7 +269,6 @@ include("Atmospheres/Atmospheres.jl")
 include("Lands/Lands.jl")
 include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
-include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
@@ -264,7 +278,6 @@ using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
-using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
 using .Lands
@@ -274,7 +287,7 @@ using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using .NestedModels
-using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
+using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS
@@ -291,6 +304,7 @@ using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
+using .DataWrangling.MODISLand
 using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload

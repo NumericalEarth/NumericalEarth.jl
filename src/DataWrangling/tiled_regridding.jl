@@ -119,9 +119,11 @@ function regrid_in_tiles!(target, metadata, native, tile_bytes = default_tile_by
     λ, φ = read_file_coords(metadata)
     mangling = mangling_for(metadata, length(φ))
 
-    native_longitude = λnodes(native, Center(), Center(), Center())
-    native_latitude = φnodes(native, Center(), Center(), Center())
+    native_longitude = on_architecture(CPU(), λnodes(native, Center(), Center(), Center()))
+    native_latitude = on_architecture(CPU(), φnodes(native, Center(), Center(), Center()))
     target_longitude, target_latitude = horizontal_centers(grid)
+    target_longitude = on_architecture(CPU(), target_longitude)
+    target_latitude = on_architecture(CPU(), target_latitude)
 
     offset_i = native_file_offset(λ, native_longitude)
     offset_j = native_file_offset(φ, native_latitude)
@@ -170,6 +172,7 @@ function tiled_native_grid(target, metadata, inpainting, halo)
     isnothing(horizontal_centers(target.grid)) && return nothing
 
     native = native_grid(metadata, child_architecture(target.grid); halo)
+    same_grid(target.grid, native) && return nothing
     topology(native, 1) === Bounded || return nothing
 
     return native
@@ -205,6 +208,15 @@ function regrid_from_metadata!(target, metadata;
     if isnothing(native)
         source = Field(metadata, architecture(target.grid); inpainting, halo, kw...)
         validate_vertical_extent(target.grid, source.grid, metadata)
+
+        # A copy has no stencil to spread missing cells through.
+        if same_grid(target.grid, source.grid) && location(target) === location(source) &&
+           target.indices == source.indices
+            interior(target) .= interior(source)
+            fill_halo_regions!(target)
+            return target
+        end
+
         return interpolate_physical!(target, source, metadata)
     end
 
