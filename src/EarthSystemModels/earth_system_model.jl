@@ -1,6 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.Grids: znode, Center
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, MV, SB, Arch} <: AbstractModel{Nothing, Arch}
@@ -395,7 +396,7 @@ grid = LatitudeLongitudeGrid(GPU();
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -437,7 +438,7 @@ grid = LatitudeLongitudeGrid(size = (20, 20, 4),
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -516,7 +517,8 @@ end
 
     @inbounds begin
         for k in 1:Nz
-            Tm = melting_temperature(liquidus, S[i, j, k])
+            z  = znode(i, j, k, grid, Center(), Center(), Center())
+            Tm = melting_temperature(liquidus, S[i, j, k], z)
             T[i, j, k] = max(T[i, j, k], Tm)
         end
     end

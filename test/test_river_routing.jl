@@ -169,7 +169,7 @@ end
                                        longitude = (-10, 10),
                                        latitude = (-10, 10),
                                        z = (-100, 0),
-                                       halo = (7, 7, 4))
+                                       halo = (7, 7, 5))
 
     bottom_height(λ, φ) = ifelse(λ < 0, -100, 10)
     target_grid = ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom_height))

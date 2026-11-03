@@ -14,7 +14,7 @@ using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
 using Oceananigans.Operators: intrinsic_vector, rotation_angle
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConicGrid
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid
 using Oceananigans.Forcings: MultipleForcings, evaluate_target
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics,
@@ -138,9 +138,9 @@ end
     parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
     set!(parent.temperature, (λ, φ, z, t) -> 290)
 
-    child_grid = LambertConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
-                                           standard_parallels = (33, 45), central_longitude = -100,
-                                           latitude_of_origin = 39, z = (0, 1))
+    child_grid = ConformalConicGrid(arch; size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                                    standard_parallels = (33, 45), central_longitude = -100,
+                                    latitude_of_origin = 39, z = (0, 1))
     loc = (Center(), Center(), Center())
     bc = NM.Interpolated(parent.temperature)
 
@@ -179,9 +179,9 @@ end
 
     # A conformal-conic child east of its central meridian: grid-x is not east, so a purely eastward
     # parent must acquire a grid-y component.
-    ccg = LambertConformalConicGrid(CPU(); size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
-                                    standard_parallels = (33, 45), central_longitude = -100,
-                                    latitude_of_origin = 39, z = (0, 1))
+    ccg = ConformalConicGrid(CPU(); size = (20, 20, 4), x = (200e3, 600e3), y = (-200e3, 200e3),
+                             standard_parallels = (33, 45), central_longitude = -100,
+                             latitude_of_origin = 39, z = (0, 1))
     regularized(C, grid) = regularize_boundary_condition(NM.Interpolated(NM.VectorComponent{C}(uᵉ, vᵉ)),
                                                          grid, loc, 1, LeftBoundary)
     uᵢ = getbc(regularized(:u, ccg), j, k, ccg, nothing)
@@ -771,8 +771,8 @@ end
 @testset "Boundary relaxation mask and parent region follow a Lambert-conformal child's walls on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     Nx, Ny, width = 40, 30, 5
-    grid = LambertConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
-                                     standard_parallel = 38.5, z = (0, 1))
+    grid = ConformalConicGrid(arch; size = (Nx, Ny, 2), center = (-97.5, 38.5), spacing = 13e3,
+                              standard_parallel = 38.5, z = (0, 1))
 
     mask = CenterField(grid)
     set!(mask, ext.boundary_relaxation_mask(grid, width))
@@ -1216,6 +1216,24 @@ end
     exchanger = ext.state_exchanger(parent, 1e5, ThermodynamicConstants(); condensates = nothing)
     ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
     @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
+end
+
+# A prescribed parent takes the child's clock after every step, with no branch on the gap between
+# the clocks (issue #816), and follows it back when it starts ahead.
+@testset "NestedModel: a prescribed parent follows the child's clock" begin
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 10.0])
+    nested = NumericalEarth.NestedModels.NestedModel(parent, HydrostaticFreeSurfaceModel(grid))
+
+    for _ in 1:3
+        time_step!(nested, 1.0)
+    end
+    @test parent.clock.time == nested.child.clock.time == 3
+    @test parent.clock.iteration == nested.child.clock.iteration == 3
+
+    parent.clock.time = 7
+    time_step!(nested, 1.0)
+    @test parent.clock.time == nested.child.clock.time == 4
 end
 
 @testset "Moving nest: translate_domain! keeps the overlap and follows a track on $(arch)" for arch in test_architectures

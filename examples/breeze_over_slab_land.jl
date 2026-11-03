@@ -262,14 +262,14 @@ set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 # edges have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
 # limits evaporation self-consistently. Stomata close as the soil dries below
 # the critical saturation, so the dry edges neither evaporate nor transpire.
-# The atmosphere runs in `Float32` (its clock follows the grid), so the coupled
-# model needs a matching `Float32` clock.
+# The atmosphere and land clocks are `Clock(grid)`: time accumulates in `Float64`
+# while kernels see it at the grid's `Float32`, and the coupled model's clock matches.
 canopy_humidity = CanopyConductanceHumidity(moisture_stress = CriticalSaturation(0.5))
 canopy = CanopyInterface(; soil_humidity, canopy_humidity)
 
 model = AtmosphereLandModel(atmos, slab_land; radiation,
                             atmosphere_land_interface_state = canopy,
-                            clock = Clock{eltype(grid)}(time = 0))
+                            clock = Clock(grid))
 
 # The wizard recomputes Δt every iteration so the step always tracks the
 # current CFL — important for a convective LES on a 100 m grid, where a

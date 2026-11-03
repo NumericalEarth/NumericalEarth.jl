@@ -32,7 +32,8 @@ using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
 using DocStringExtensions: TYPEDSIGNATURES
 
-using ..EarthSystemModels: EarthSystemModels, component_model
+using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
+                           BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
 
 include("nested_model.jl")
