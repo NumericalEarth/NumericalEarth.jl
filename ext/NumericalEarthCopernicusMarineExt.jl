@@ -24,7 +24,9 @@ function copernicusmarine_dataset_id(dataset, name)
 end
 
 function native_horizontal_resolution(dataset)
-    if dataset isa GLORYS.AbstractGLORYSDataset
+    if dataset isa GLORYS.AbstractGLORYSBGCDataset
+        return 1 / 4
+    elseif dataset isa GLORYS.AbstractGLORYSDataset
         return 1 / 12
     elseif dataset isa AVISO.AVISODataset
         return AVISO.native_horizontal_resolution(dataset)
