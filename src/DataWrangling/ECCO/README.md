@@ -29,3 +29,13 @@ or within Julia by
 ENV["ECCO_USERNAME"] = "your_username"
 ENV["ECCO_WEBDAV_PASSWORD"] = "cRaZYpASSwORD"
 ```
+
+## The `ECCO2` directory is no longer served
+
+`https://ecco.jpl.nasa.gov/drive/files` lists only `NearRealTime`, `Version4`, and `Version5`, and
+every path beneath `files/ECCO2/` answers `403 Forbidden` to an account the drive otherwise accepts.
+This covers `ECCO2Monthly`, `ECCO2Daily`, `ECCO2DarwinMonthly`, and `ECCO4DarwinMonthly` — both
+ECCO-Darwin datasets are stored under `files/ECCO2/` whatever grid their name refers to.
+`ECCO4Monthly` reads from `files/Version4/` and is unaffected. Setting the variables above will not
+restore access. Downloads are still attempted, so these datasets will work again if the directory
+returns, at which point this note and the check in `ECCO.jl` can go.

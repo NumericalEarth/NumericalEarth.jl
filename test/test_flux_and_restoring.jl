@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
-using NumericalEarth.Oceans: MultipleFluxes, net_flux
+using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, net_flux
 using NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes
 
 # A constant top-cell tendency `G`, mimicking the part of a `DatasetRestoring`
@@ -22,22 +22,36 @@ end
                                      longitude = (0, 360),
                                      z = (-100, 0))
 
-        # The grid has uniform Δz = 100 / 4 = 25 m at the top cell.
-        Δz_top = 25.0
-
         @testset "default path: no additional_fluxes" begin
             ocean = ocean_simulation(grid; warn=false)
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top
+            u_top = ocean.model.velocities.u.boundary_conditions.top
 
-            # Plain FluxBoundaryCondition over a writable Field
-            @test S_top.condition isa Field
-            @test T_top.condition isa Field
+            # Tracer top boundary conditions always pair the solver's flux field with the
+            # freshwater exchange, so they are wrapped even with no user-supplied flux.
+            @test S_top.condition isa DiscreteBoundaryFunction
+            @test T_top.condition isa DiscreteBoundaryFunction
+            @test S_top.condition.func isa MultipleFluxes
+            @test T_top.condition.func isa MultipleFluxes
+            @test S_top.condition.func.additional_fluxes isa FreshwaterExchange
+            @test T_top.condition.func.additional_fluxes isa FreshwaterExchange
+            @test S_top.condition.func.additional_fluxes.additional === nothing
+            @test T_top.condition.func.additional_fluxes.additional === nothing
 
-            # net_fluxes returns those same fields (no unwrap needed)
+            # Momentum carries no freshwater exchange: an affine flux whose explicit part is a writable
+            # Field and whose implicit part carries the ice-ocean drag coefficient.
+            @test u_top.condition.explicit_flux isa Field
+            @test u_top.condition.implicit_coefficient isa Field
+
+            # net_fluxes unwraps to the writable flux fields the coupled solver writes into
             nf = net_fluxes(ocean)
-            @test nf.S === S_top.condition
-            @test nf.T === T_top.condition
+            @test nf.S isa Field
+            @test nf.T isa Field
+            @test nf.S === S_top.condition.func.flux_field
+            @test nf.T === T_top.condition.func.flux_field
+            @test nf.u === u_top.condition.explicit_flux
+            @test nf.u_coefficient === u_top.condition.implicit_coefficient
         end
 
         @testset "wrapped path: salinity restoring" begin
@@ -49,10 +63,9 @@ end
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top
 
-            # S is wrapped, T is left alone
-            @test S_top.condition isa DiscreteBoundaryFunction
-            @test S_top.condition.func isa MultipleFluxes
-            @test T_top.condition isa Field
+            # The user flux rides along inside S's freshwater exchange; T keeps an empty slot
+            @test S_top.condition.func.additional_fluxes.additional isa ConstantTendency
+            @test T_top.condition.func.additional_fluxes.additional === nothing
 
             fr = S_top.condition.func
             @test fr.flux_field isa Field
@@ -62,9 +75,9 @@ end
             nf = net_fluxes(ocean)
             @test nf.S isa Field
             @test nf.S === fr.flux_field
-            @test nf.T === T_top.condition
+            @test nf.T === T_top.condition.func.flux_field
 
-            # Math: J_solver = 0 by default, so BC value = -G * Δz_top
+            # J_solver = 0 by default and the freshwater volume flux is still zero, so only G survives
             fields = ocean.model.tracers
             CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
             @test val ≈ G
@@ -75,5 +88,58 @@ end
             CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
             @test val ≈ J + G
         end
+    end
+end
+
+struct ZonalSurfaceSalinityRestoring{FT}
+    rate :: FT
+    target :: FT
+    variation :: FT
+end
+
+@inline function (restoring::ZonalSurfaceSalinityRestoring)(i, j, grid, clock, fields)
+    Nx = size(grid, 1)
+    Nz = size(grid, 3)
+    target = restoring.target + restoring.variation * sinpi(2 * (i - 1) / Nx)
+    @inbounds return restoring.rate * (fields.S[i, j, Nz] - target)
+end
+
+@testset "Conservative surface flux restoring" begin
+    for arch in test_architectures, timestepper in (:SplitRungeKutta3, :QuasiAdamsBashforth2)
+        grid = RectilinearGrid(arch;
+                               size = (8, 8, 4),
+                               halo = (7, 7, 7),
+                               x = (0, 1e5),
+                               y = (0, 1e5),
+                               z = (-100, 0),
+                               topology = (Periodic, Periodic, Bounded))
+
+        raw_restoring = ZonalSurfaceSalinityRestoring(1e-6, 37.0, 0.5)
+        restoring = ConservativeSurfaceFluxRestoring(raw_restoring, grid)
+
+        ocean = ocean_simulation(grid;
+                                 Δt = Oceananigans.Units.minute,
+                                 closure = nothing,
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 radiative_forcing = nothing,
+                                 bottom_drag_coefficient = 0,
+                                 timestepper,
+                                 additional_surface_fluxes = (; S=restoring),
+                                 warn = false)
+
+        set!(ocean.model, T=10, S=35)
+        salt_content = Field(Integral(ocean.model.tracers.S))
+        initial_salt = only(Array(interior(compute!(salt_content))))
+
+        refresh = ConservativeSurfaceFluxRestoringCallback(restoring, ocean.model)
+        add_callback!(ocean, refresh, IterationInterval(1); name=:conservative_restoring)
+        ocean.stop_iteration = 4
+        run!(ocean)
+
+        salinity = Array(interior(ocean.model.tracers.S))
+        final_salt = only(Array(interior(compute!(salt_content))))
+        @test final_salt ≈ initial_salt rtol=1e-10
+        @test maximum(salinity) - minimum(salinity) > 0
     end
 end

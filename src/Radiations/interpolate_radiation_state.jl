@@ -62,8 +62,9 @@ end
     ℐꜜˢʷ = interp_atmos_time_series(downwelling.shortwave, args...)
     ℐꜜˡʷ = interp_atmos_time_series(downwelling.longwave,  args...)
 
+    # Prescribed downwelling magnitudes become positive-upward fluxes.
     @inbounds begin
-        state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ
-        state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ
+        state.ℐꜜˢʷ[i, j, 1] = -ℐꜜˢʷ
+        state.ℐꜜˡʷ[i, j, 1] = -ℐꜜˡʷ
     end
 end

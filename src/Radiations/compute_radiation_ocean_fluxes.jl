@@ -2,7 +2,7 @@ using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel, sea_ice_concentration
 using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, convert_to_kelvin
-using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing, compute_radiative_forcing!
+using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing, compute_absorption_coefficient!, compute_radiative_forcing!
 
 """
     compute_radiation_ocean_fluxes!(coupled_model)
@@ -42,6 +42,7 @@ function EarthSystemModels.compute_radiation_ocean_fluxes!(coupled_model::EarthS
     interface_temperature = ao_interface.temperature
     ocean_properties = coupled_model.interfaces.ocean_properties
     penetrating_radiation = get_radiative_forcing(ocean)
+    compute_absorption_coefficient!(penetrating_radiation, Time(clock.time))
 
     # Precompute radiation-model state that requires a vertical pass over ocean
     # tracers (e.g. biogeochemically-dependent absorption); no-op for analytic
@@ -61,8 +62,14 @@ function EarthSystemModels.compute_radiation_ocean_fluxes!(coupled_model::EarthS
             interface_temperature,
             ocean_properties)
 
+    apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean)
+
     return nothing
 end
+
+apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry) = nothing
+apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean::Simulation) =
+    apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean.model.biogeochemistry)
 
 @kernel function _compute_radiation_ocean_fluxes!(net_ocean_fluxes,
                                                   interface_radiative_flux,
@@ -81,13 +88,13 @@ end
 
     @inbounds begin
         ℵᵢ = ice_concentration[i, j, 1]
-        Tₛ = ocean_surface_temperature[i, j, 1]
+        Tⁱⁿ = ocean_surface_temperature[i, j, 1]
     end
-    Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
+    Tⁱⁿ = convert_to_kelvin(ocean_properties.temperature_units, Tⁱⁿ)
 
     rs = air_sea_interface_radiation_state(rk, radiation_state, i, j, kᴺ, grid, time)
 
-    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ, rs.σ, rs.ϵ)
+    ℐꜛˡʷ = emitted_longwave_radiation(Tⁱⁿ, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
@@ -110,7 +117,7 @@ end
     @inbounds begin
         net_ocean_fluxes.T[i, j, 1] += ifelse(inactive, zero(grid), Jᵀ_rad)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end

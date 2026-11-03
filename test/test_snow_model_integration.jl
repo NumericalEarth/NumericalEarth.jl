@@ -10,7 +10,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentExchanger,
     ComponentInterfaces,
     SkinTemperature,
-    InterfaceProperties,
     conductive_flux_balance_temperature
 using NumericalEarth.SeaIces: default_snow_thermodynamics
 
@@ -82,14 +81,9 @@ using NumericalEarth.SeaIces: default_snow_thermodynamics
         end
 
         @testset "Snow insulates: warmer surface temperature [$A]" begin
-            # Build two coupled models — one without snow, one with snow and
-            # nonzero snow thickness — then compare surface temperatures after
-            # one coupled time step. Snow adds thermal resistance, so the
-            # surface should be warmer (closer to the warmer atmosphere).
-            #
-            # Radiation is disabled (ε=0) so the surface energy balance
-            # reduces to conductive + turbulent fluxes; otherwise the
-            # Stefan–Boltzmann loss swamps the small snow-insulation signal.
+            # Snow adds thermal resistance, so the surface ends up warmer after one coupled step.
+            # Radiation is disabled (ε=0) so the energy balance reduces to conductive + turbulent
+            # fluxes; otherwise the Stefan-Boltzmann loss swamps the snow-insulation signal.
             ocean_grid = RectilinearGrid(arch;
                                          size = (1, 1, 2),
                                          extent = (1, 1, 1),
@@ -206,8 +200,8 @@ end
 
             ai_temp = default_ai_temperature(sea_ice)
             @test ai_temp.internal_flux isa IceSnowConductiveFlux
-            @test ai_temp.internal_flux.ice_conductivity == 2.0
-            @test ai_temp.internal_flux.snow_conductivity == 0.31
+            @test ai_temp.internal_flux.ice.conductivity == 2.0
+            @test ai_temp.internal_flux.snow.conductivity == 0.31
         end
     end
 end

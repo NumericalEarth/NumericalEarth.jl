@@ -12,6 +12,16 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 - **Style**: ExplicitImports.jl for source code; `using NumericalEarth` for examples
 - **Testing**: ParallelTestRunner.jl for distributed testing
 
+### Environments
+
+- The root environment treats Breeze, Makie, and other extension triggers as **weakdeps** —
+  `julia --project=.` cannot `using Breeze`. Run Breeze-coupled code with `--project=test`
+  or `--project=docs`.
+- Manifests go stale when compat bounds or `[sources]` pins change —
+  re-resolve before diagnosing load errors or "undeclared at import time" warnings.
+- Quick syntax check without loading packages:
+  `julia -e 'Meta.parseall(read("file.jl", String))'`.
+
 ## Critical Rules
 
 ### Kernel Functions (GPU compatibility)
@@ -59,6 +69,28 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 
 ### Software Design
 
+- **Never unpack a property immediately after a constructor** (`foo(args...).bar`). It means the
+  constructor returns the wrong type for the call site — fix it by providing a constructor that
+  returns what's needed (e.g. a model-level `atmosphere_model(grid; …)` alongside the simulation-level
+  `atmosphere_simulation(grid; …)`), not by reaching into the result. Use constructors as designed.
+- **The example drives the API**: when an example (or script) hand-rolls infrastructure — region
+  padding, relaxation masks, terrain preparation, initialization, output slicing — push it into
+  the library as a constructor keyword, dataset hook, or exported utility. Don't polish the
+  hand-rolled version in place.
+- **Constructors own their domain**: derive what is derivable instead of requiring precomputed
+  inputs — regions from grids plus the dataset's `default_horizontal_padding`, anchors from the dataset,
+  physics defaults internally. The user supplies intent (`grid`, `dataset`, `dates`), not plumbing.
+- **Dataset objects carry product identity only** (cadence, levels, native grid) — never variable
+  names, regions, or dates. Dataset-specific behavior enters through `DataWrangling` hooks
+  (`default_horizontal_padding`, `matching_single_level_dataset`, `default_download_directory`, …)
+  dispatched on the dataset type, so downstream packages can add datasets without touching
+  NumericalEarth.
+- **Date windows are `(start_date, end_date)` tuples**, expanded to the dataset's native cadence
+  by `DataWrangling.expand_dates`. Don't add `start_date`/`end_date` keyword arguments to new code.
+- **Put key identity in `Base.summary`** (e.g. a regional atmosphere's domain bounds) so composite
+  models' displays inherit it — never manually print what `show`/`summary` already displays.
+- **Extension-implemented API**: declare a stub with docstring and export in `src`
+  (`function foo end`), define the method in the extension as `NumericalEarth.Module.foo(...) = ...`.
 - Minimize code duplication (allow only for trivial one-liners)
 - When something would be better in Oceananigans, add a detailed TODO note
 - Almost always extend functions in source code, not in examples
@@ -74,20 +106,26 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 - **Kernels**: may prefix with underscore — `_kernel_function`
 - **Variables**: English long name or unicode from `notation.md`. Add new variables to that table.
 - **Avoid abbreviations**: `latitude` not `lat`, `temperature` not `temp`
+- **American English** in code, comments, docstrings, and docs: `center` not `centre`,
+  `meter` not `metre`, `neighbor` not `neighbour`, `behavior` not `behaviour`, `-ize` not `-ise`.
+  Proper nouns keep their own spelling (European **Centre** for Medium-Range Weather Forecasts).
 
 ## Module Structure
 
 ```
 src/
 ├── NumericalEarth.jl         # Main module, exports
-├── Atmospheres/              # Interfaces for atmospheres (prescribed or diagnostic)
-├── Bathymetry/               # Module for downloading and modifying bathymetry and topography
-├── DataWrangling/            # Interfaces for atmospheres (prescribed or diagnostic)
-├── Diagnostics/              # Various diagnostics from all model components
-├── EarthSystemModels/        # Module that brings all Earth system model components together
-├── InitialConditions/        # Module for initial conditions
-├── Oceans/                   # Interfaces for oceans (prescribed or diagnostic)
-└── SeaIces/                  # Interfaces for sea ices (prescribed or diagnostic)
+├── Atmospheres/              # Atmosphere components (prescribed, or Breeze via extension)
+├── Bathymetry/               # Downloading, regridding, and smoothing bathymetry and topography
+├── DataWrangling/            # Datasets for bathymetry, initialization, forcing, restoring, validation
+├── Diagnostics/              # Diagnostics across model components
+├── EarthSystemModels/        # Brings all Earth system model components together
+├── Grids/                    # Pressure-level grids
+├── Lands/                    # Land components (prescribed, slab, hydrology, river routing)
+├── NestedModels/             # Nested regional models driven by a parent
+├── Oceans/                   # Ocean components (Oceananigans simulations, slab, prescribed)
+├── Radiations/               # Prescribed radiation and surface radiative properties
+└── SeaIces/                  # Sea ice components
 ```
 
 ## Common Pitfalls
@@ -111,16 +149,18 @@ src/
 Follow [ColPrac](https://github.com/SciML/ColPrac). Feature branches, descriptive commits,
 update tests and docs with code changes, check CI before merging.
 
-**PRs fail CI with trailing whitespace or trailing blank lines.** Before committing:
-remove trailing whitespace, remove trailing blank lines, ensure file ends with exactly one newline.
+Before committing: remove trailing whitespace, remove trailing blank lines, ensure each file
+ends with exactly one newline.
 
 ## Agent Behavior
 
+- **Before presenting any change, run the checklist in `.claude/rules/restraint-rules.md` over your own
+  `git diff` and cut what it catches.** Report the result in one line. This is mandatory for every edit.
 - Prioritize type stability and GPU compatibility
 - Follow established patterns in existing code
 - Add tests for new functionality; update exports when adding public API
 - Reference physics equations in comments when implementing dynamics
-- When unsure: study working examples first (BOMEX, RICO, etc.), look at similar
+- When unsure: study working examples in `examples/` first, look at similar
   Oceananigans implementations, review tests for usage patterns
 
 ## Further Reading
@@ -129,10 +169,7 @@ Detailed reference docs are in `.agents/` — read on demand:
 
 | Document | Content |
 |----------|---------|
-| `.agents/testing.md` | Running tests, writing tests, debugging, QA |
-| `.agents/documentation.md` | Building docs, fast builds, Literate.jl examples, doctest details |
-| `.agents/validation.md` | Reproducing paper results, common issues, TC genesis |
-| `.agents/physics-debugging.md` | Thermodynamic variables, diagnose-before-fix, model architecture |
+| `.agents/cluster.md` | Slurm/GPU clusters: precompilation, MPI launches, job health, sysimages |
 
 ### Auto-loading Rules
 
@@ -142,11 +179,7 @@ Rules in `.claude/rules/` load automatically when you touch matching files:
 - `testing-rules.md` — test writing and running (test/)
 - `docs-rules.md` — documentation building and style (docs/)
 - `examples-rules.md` — Literate.jl example conventions (examples/)
-
-### Skills (slash commands)
-
-- `/run-tests` — run targeted tests, prioritized by what's likely to break
-- `/build-docs` — build documentation locally
-- `/add-feature` — checklist for adding new physics/features
-- `/new-simulation` — set up, run, and visualize a new simulation
-- `/babysit-ci` — monitor CI, auto-fix small issues, retrigger flaky runs
+- `style-rules.md` — naming, notation, and comment style (src/, test/, validation/, examples/)
+- `julia-repl-rules.md` — prefer an MCP Julia REPL over Bash when available (always)
+- `restraint-rules.md` — **keeping the code human-written**: diff size, one invariant one mechanism,
+  no guards for unreachable states, comments that describe only this code (src/, test/, examples/)
