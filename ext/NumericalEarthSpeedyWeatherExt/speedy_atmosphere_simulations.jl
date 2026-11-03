@@ -1,6 +1,5 @@
 const SpeedySimulation = SpeedyWeather.Simulation
-const SpeedyEarthSystemModel = NumericalEarth.EarthSystemModel{<:Any, <:SpeedySimulation}
-const SpeedyNoSeaIceEarthSystemModel = NumericalEarth.EarthSystemModel{<:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
+const SpeedyNoSeaIceEarthSystemModel = NumericalEarth.EarthSystemModel{<:Any, <:SpeedySimulation, <:Any, <:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}}
 
 Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
