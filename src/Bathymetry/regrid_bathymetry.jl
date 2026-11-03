@@ -27,6 +27,12 @@ end
 
 Return bathymetry that corresponds to  `metadata` onto `target_grid`.
 
+The metadata of a static bathymetry (e.g. `Metadatum(:bottom_height; dataset = ETOPO2022())`) supplies
+the seafloor elevation directly, and that of an ocean product's static depth (e.g.
+`Metadatum(:depth; dataset = GLORYSStatic())`, see [`matching_bathymetry`](@ref)) its positive depth. Any other metadatum is taken as a three-dimensional ocean variable, such as
+`Metadatum(:temperature; dataset = GLORYSDaily(), date, region)`, whose missing values mark the seafloor:
+the bottom of each column is the bottom face of its deepest wet cell, and a column wet nowhere is land.
+
 Arguments
 =========
 
@@ -139,26 +145,7 @@ function _regrid_bathymetry(target_grid, metadata;
 
     arch = architecture(target_grid)
 
-    bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
-    FT = eltype(target_grid)
-
-    filepath = metadata_path(metadata)
-    dataset = Dataset(filepath, "r")
-
-    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
-    close(dataset)
-
-    if !isnothing(height_above_water)
-        # Overwrite the height of cells above water.
-        # This has an impact on reconstruction. Greater height_above_water reduces total
-        # wet area by biasing coastal regions to land during bathymetry regridding.
-        land = z_data .> 0
-        z_data[land] .= height_above_water
-    end
-
-    native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
-    set!(native_z, z_data)
-    fill_halo_regions!(native_z)
+    native_z = native_bottom_height(metadata, arch, eltype(target_grid); height_above_water)
 
     target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
                                                 passes = interpolation_passes)
@@ -178,6 +165,54 @@ function _regrid_bathymetry(target_grid, metadata;
     fill_halo_regions!(target_z)
 
     return target_z
+end
+
+# A static bathymetry stores the seafloor as a two-dimensional elevation.
+function native_bottom_height(metadata::Metadatum{<:AbstractStaticBathymetry}, arch, FT; height_above_water)
+    bathymetry_native_grid = native_grid(metadata, arch; halo = (10, 10, 1))
+
+    filepath = metadata_path(metadata)
+    dataset = Dataset(filepath, "r")
+
+    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
+    close(dataset)
+
+    if !isnothing(height_above_water)
+        # Overwrite the height of cells above water.
+        # This has an impact on reconstruction. Greater height_above_water reduces total
+        # wet area by biasing coastal regions to land during bathymetry regridding.
+        land = z_data .> 0
+        z_data[land] .= height_above_water
+    end
+
+    native_z = Field{Center, Center, Nothing}(bathymetry_native_grid)
+    set!(native_z, z_data)
+    fill_halo_regions!(native_z)
+
+    return native_z
+end
+
+# GLORYS's static sea floor depth is positive downward and missing over land.
+function native_bottom_height(metadata::Metadatum{<:GLORYSStatic}, arch, FT; height_above_water)
+    depth = Field(metadata, arch; inpainting = nothing)
+    native_z = Field{Center, Center, Nothing}(depth.grid)
+    interior(native_z) .= ifelse.(isnan.(interior(depth)), 0, .-interior(depth))
+    fill_halo_regions!(native_z)
+    return native_z
+end
+
+# Any other dataset holds a three-dimensional ocean state, whose missing values mark the seafloor:
+# read without inpainting, so the mask survives.
+function native_bottom_height(metadata::Metadatum, arch, FT; height_above_water)
+    is_three_dimensional(metadata) ||
+        throw(ArgumentError("cannot derive a seafloor from $(metadata.name) of $(summary(metadata.dataset)): " *
+                            "it is neither a static bathymetry nor a three-dimensional variable whose " *
+                            "missing values mark the seafloor."))
+
+    dataset_field = Field(metadata, arch; inpainting = nothing)
+    native_z = bottom_height_from_mask(compute_mask(metadata, dataset_field))
+    fill_halo_regions!(native_z)
+    return native_z
 end
 
 """

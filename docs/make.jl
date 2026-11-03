@@ -43,6 +43,7 @@ examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false),
     Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
+    Example("Nested regional ocean near Bouvet Island", "bouvet_nested_ocean_simulation"; build_always=false, gpu=true),
     # Near-global is the heaviest example (¼°, ~35M cells) and stays disabled.
     # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
     Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),

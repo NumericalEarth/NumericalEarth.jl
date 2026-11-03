@@ -81,12 +81,12 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
     ℵ = coupled_model.sea_ice.model.ice_concentration
 
     required_ocean_tracers = (:T, :S,
-                              if_phosphate_available(ocean.model.tracers)...,
-                              if_silicon_available(ocean.model.tracers)...,
+                              if_phosphate_available(ocean.tracers)...,
+                              if_silicon_available(ocean.tracers)...,
                               required_biogeochemical_tracers(biogeochemistry.underlying_biogeochemistry.oxygen)...,
                               required_biogeochemical_tracers(biogeochemistry.underlying_biogeochemistry.inorganic_carbon)...)
 
-    ocean_tracers = ocean.model.tracers[required_ocean_tracers]
+    ocean_tracers = ocean.tracers[required_ocean_tracers]
 
     fluxes = tracer_fluxes(biogeochemistry, coupled_model.interfaces.net_fluxes.ocean)
 
@@ -94,7 +94,7 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
             grid, :xy,
             compute_all_gas_exchange!,
             grid,
-            ocean.model.clock,
+            ocean.clock,
             fluxes,
             ℵ,
             ocean_tracers,

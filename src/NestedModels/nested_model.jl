@@ -59,6 +59,7 @@ exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_st
 fields(nm::NestedModel)            = fields(nm.child)
 prognostic_fields(nm::NestedModel) = prognostic_fields(nm.child)
 architecture(nm::NestedModel)      = architecture(nm.child)
+Base.eltype(nm::NestedModel)       = eltype(nm.child)
 iteration(nm::NestedModel)         = iteration(nm.child)
 
 # Adaptive Δt: the wizard's `AdvectiveCFL` queries the simulation model, which is the
@@ -87,8 +88,15 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # clock tick + FTS-window refresh; a live prognostic parent would integrate its own dynamics over
 # Δt_parent. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; callbacks=())
-    exchange_state!(nm.exchanger, nm.clock.time + Δt)
-    time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
+    nested_time_step!(nm, nm.exchanger, Δt, (callbacks..., nm.child_callbacks...))
+    return nothing
+end
+
+# The exchanger decides the order: this default steps the child and then the parent; an exchanger that
+# needs the parent's state at the end of the step (e.g. `OceanBoundaryExchanger`) steps the parent first.
+function nested_time_step!(nm, exchanger, Δt, callbacks)
+    exchange_state!(exchanger, nm.clock.time + Δt)
+    time_step!(nm.child, Δt; callbacks)
 
     Δt_parent = nm.child.clock.time - nm.parent.clock.time
     Δt_parent > 0 && time_step!(nm.parent, Δt_parent)

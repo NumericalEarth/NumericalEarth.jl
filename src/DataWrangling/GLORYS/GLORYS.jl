@@ -32,6 +32,7 @@ end
 abstract type GLORYSDataset end
 
 default_download_directory(::GLORYSDataset) = download_GLORYS_cache
+DataWrangling.default_horizontal_padding(::GLORYSDataset) = 1/6  # two native (1/12°) cells
 
 # This contains "static" variables -- eg the grid
 struct GLORYSStatic <: GLORYSDataset end
@@ -54,6 +55,10 @@ DataWrangling.averaging_window(metadatum::Metadatum{<:GLORYSDaily}) =
     (metadatum.dates, metadatum.dates + Day(1))
 
 DataWrangling.averaging_window(metadatum::Metadatum{<:GLORYSMonthly}) = DataWrangling.calendar_month_window(metadatum)
+
+# The seafloor GLORYS was run over: its static sea floor depth, `deptho`
+DataWrangling.matching_bathymetry(::GLORYSDataset; region = nothing, dir = download_GLORYS_cache) =
+    Metadatum(:depth; dataset = GLORYSStatic(), region, dir)
 
 copernicusmarine_dataset_id(::GLORYSStatic) = "cmems_mod_glo_phy_my_0.083deg_static"
 copernicusmarine_dataset_id(::GLORYSDaily) = "cmems_mod_glo_phy_my_0.083deg_P1D-m"
@@ -132,7 +137,7 @@ end
 DataWrangling.inpainted_metadata_filename(metadata::GLORYSMetadatum) =
     string(metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.region), "_inpainted.jld2")
 
-const GLORYS_surface_variables = (:free_surface, :sea_ice_thickness, :sea_ice_concentration,
+const GLORYS_surface_variables = (:free_surface, :depth, :sea_ice_thickness, :sea_ice_concentration,
                                    :sea_ice_u_velocity, :sea_ice_v_velocity)
 
 function dataset_location(::GLORYSDataset, name)

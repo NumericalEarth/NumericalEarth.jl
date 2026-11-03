@@ -216,7 +216,7 @@ sst = FieldTimeSeries(sea_surface_temperature, surface_grid;
                       time_indices_in_memory = length(sea_surface_temperature.dates),
                       time_indexing = Clamp())
 
-ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
+ocean = PrescribedOcean(surface_grid, sst.times; temperature = sst)
 
 # ## Surface partition
 #
@@ -233,7 +233,7 @@ ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 # masking to þ > 1/2 shows the water the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
 
 Tᵒᶜ = Field{Center, Center, Nothing}(surface_grid)
-set!(Tᵒᶜ, ocean.sea_surface_temperature[1])
+set!(Tᵒᶜ, ocean.temperature[1])
 interior(Tᵒᶜ) .= ifelse.(interior(ocean_fraction) .> 1/2, interior(Tᵒᶜ) .- 273.15, NaN)
 
 fig_partition = Figure(size = (1320, 560))

@@ -12,16 +12,20 @@ using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
                     density = 1025,
                     heat_capacity = 4000,
                     clock = Clock{FT}(time=0),
-                    sea_surface_temperature = default_prescribed_sst(grid, times),
-                    sea_surface_salinity = default_prescribed_sss(grid, times),
-                    velocities = default_prescribed_velocities(grid, times))
+                    temperature = default_prescribed_temperature(grid, times),
+                    salinity = default_prescribed_salinity(grid, times),
+                    velocities = default_prescribed_velocities(grid, times),
+                    free_surface = default_prescribed_free_surface(grid, times))
 
-A prescribed ocean component for `EarthSystemModel` with sea surface
-temperature, salinity, and velocities prescribed as `FieldTimeSeries`.
+A prescribed ocean component with temperature, salinity, velocities and (optionally) free surface
+prescribed as `FieldTimeSeries`. By default these are surface fields on a single-level `grid` and
+volumetric fields (with a free surface) when `grid` resolves the vertical.
 
-The ocean state does not evolve in response to surface fluxes — it follows
-the prescribed data. Surface fluxes are still computed so the atmosphere
-feels the ocean.
+The ocean state does not evolve in response to surface fluxes — it follows the prescribed data.
+As an `EarthSystemModel` component, surface fluxes are still computed so the atmosphere feels the
+ocean; the surface of a volumetric series is its top level. A volumetric `PrescribedOcean` (see
+`PrescribedOcean(region, dates, dataset)`) can also drive a regional ocean as the parent of
+[`nested_ocean_model`](@ref).
 
 Arguments
 =========
@@ -35,55 +39,71 @@ Keyword Arguments
 - `density`: Seawater density in kg/m³. Default: 1025.
 - `heat_capacity`: Seawater specific heat capacity in J/(kg·K). Default: 4000.
 - `clock`: Clock for tracking ocean time. Default: `Clock{FT}(time=0)`.
-- `sea_surface_temperature`: `FieldTimeSeries` for SST.
-- `sea_surface_salinity`: `FieldTimeSeries` for SSS.
+- `temperature`: `FieldTimeSeries` for the (sea surface or volumetric) temperature.
+- `salinity`: `FieldTimeSeries` for the (sea surface or volumetric) salinity.
 - `velocities`: `NamedTuple` of `FieldTimeSeries` for `(u, v)`.
+- `free_surface`: `FieldTimeSeries` for the sea surface height, or `nothing`. Default: a series when
+  `grid` is volumetric, `nothing` otherwise.
 """
-mutable struct PrescribedOcean{FT, G, C, T, S, U, TI, R, HC} <: AbstractPrescribedComponent
+mutable struct PrescribedOcean{FT, G, C, T, S, U, E, TI, R, HC} <: AbstractPrescribedComponent
     grid :: G
     clock :: C
-    sea_surface_temperature :: T
-    sea_surface_salinity :: S
+    temperature :: T
+    salinity :: S
     velocities :: U
+    free_surface :: E
     times :: TI
     density :: R
     heat_capacity :: HC
 
-    function PrescribedOcean{FT}(grid::G, clock::C, sst::T, sss::S, u::U, times::TI, ρ::R, cp::HC) where {FT, G, C, T, S, U, TI, R, HC}
-        return new{FT, G, C, T, S, U, TI, R, HC}(grid, clock, sst, sss, u, times, ρ, cp)
+    function PrescribedOcean{FT}(grid::G, clock::C, T::TT, S::SS, u::U, η::E, times::TI, ρ::R, cp::HC) where {FT, G, C, TT, SS, U, E, TI, R, HC}
+        return new{FT, G, C, TT, SS, U, E, TI, R, HC}(grid, clock, T, S, u, η, times, ρ, cp)
     end
 end
 
-function default_prescribed_sst(grid, times)
-    return FieldTimeSeries{Center, Center, Nothing}(grid, times)
+# A single-level grid (even one with a `Bounded` z, like an ocean coupling grid) carries surface fields;
+# a resolved vertical carries volumetric ones, such as the parent of a nested ocean.
+prescribed_ocean_location(grid) = (Center, Center, size(grid, 3) > 1 ? Center : Nothing)
+
+function default_prescribed_temperature(grid, times)
+    LX, LY, LZ = prescribed_ocean_location(grid)
+    return FieldTimeSeries{LX, LY, LZ}(grid, times)
 end
 
-function default_prescribed_sss(grid, times)
-    sss = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    parent(sss) .= 35
-    return sss
+function default_prescribed_salinity(grid, times)
+    LX, LY, LZ = prescribed_ocean_location(grid)
+    S = FieldTimeSeries{LX, LY, LZ}(grid, times)
+    parent(S) .= 35
+    return S
 end
 
 function default_prescribed_velocities(grid, times)
-    u = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    v = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    LX, LY, LZ = prescribed_ocean_location(grid)
+    u = FieldTimeSeries{LX, LY, LZ}(grid, times)
+    v = FieldTimeSeries{LX, LY, LZ}(grid, times)
     return (; u, v)
 end
+
+# Only a volumetric ocean, which may parent a nest, needs its free surface.
+default_prescribed_free_surface(grid, times) =
+    size(grid, 3) > 1 ? FieldTimeSeries{Center, Center, Nothing}(grid, times) : nothing
 
 function PrescribedOcean(grid, times=[zero(grid)];
                          FT = eltype(grid),
                          density = 1025,
                          heat_capacity = 4000,
                          clock = Clock{FT}(time=0),
-                         sea_surface_temperature = default_prescribed_sst(grid, times),
-                         sea_surface_salinity = default_prescribed_sss(grid, times),
-                         velocities = default_prescribed_velocities(grid, times))
+                         temperature = default_prescribed_temperature(grid, times),
+                         salinity = default_prescribed_salinity(grid, times),
+                         velocities = default_prescribed_velocities(grid, times),
+                         free_surface = default_prescribed_free_surface(grid, times))
 
     ocean = PrescribedOcean{FT}(grid,
                                 clock,
-                                sea_surface_temperature,
-                                sea_surface_salinity,
+                                temperature,
+                                salinity,
                                 velocities,
+                                free_surface,
                                 times,
                                 convert(FT, density),
                                 convert(FT, heat_capacity))
@@ -95,11 +115,12 @@ end
 
 Grids.grid(ocean::PrescribedOcean) = ocean.grid
 
-function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
-    !isnothing(T) && set!(ocean.sea_surface_temperature, T)
-    !isnothing(S) && set!(ocean.sea_surface_salinity, S)
+function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing, η=nothing)
+    !isnothing(T) && set!(ocean.temperature, T)
+    !isnothing(S) && set!(ocean.salinity, S)
     !isnothing(u) && set!(ocean.velocities.u, u)
     !isnothing(v) && set!(ocean.velocities.v, v)
+    !isnothing(η) && set!(ocean.free_surface, η)
     fill_prescribed_halo_regions!(ocean)
     return nothing
 end
@@ -108,12 +129,16 @@ end
 # `interpolate_prescribed_state!`), so their halos must be valid. Fill them whenever the data is
 # set; a partly-in-memory series fills its own halos each time it loads a new window.
 function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
-    fill_halo_regions!(ocean.sea_surface_temperature)
-    fill_halo_regions!(ocean.sea_surface_salinity)
+    fill_halo_regions!(ocean.temperature)
+    fill_halo_regions!(ocean.salinity)
     fill_halo_regions!(ocean.velocities.u)
     fill_halo_regions!(ocean.velocities.v)
+    fill_prescribed_free_surface_halo_regions!(ocean.free_surface)
     return nothing
 end
+
+fill_prescribed_free_surface_halo_regions!(η) = fill_halo_regions!(η)
+fill_prescribed_free_surface_halo_regions!(::Nothing) = nothing
 
 function Base.summary(ocean::PrescribedOcean{FT}) where FT
     A = nameof(typeof(architecture(ocean.grid)))
@@ -145,9 +170,10 @@ function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where 
     EarthSystemModels.warn_clock_coercion(ocean, new_clock)
     return PrescribedOcean{FT}(ocean.grid,
                                new_clock,
-                               ocean.sea_surface_temperature,
-                               ocean.sea_surface_salinity,
+                               ocean.temperature,
+                               ocean.salinity,
                                ocean.velocities,
+                               ocean.free_surface,
                                ocean.times,
                                ocean.density,
                                ocean.heat_capacity)
@@ -157,10 +183,10 @@ EarthSystemModels.reference_density(ocean::PrescribedOcean) = ocean.density
 EarthSystemModels.heat_capacity(ocean::PrescribedOcean) = ocean.heat_capacity
 EarthSystemModels.temperature_units(::PrescribedOcean) = DegreesKelvin()
 
-EarthSystemModels.ocean_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
-EarthSystemModels.ocean_salinity(ocean::PrescribedOcean) = ocean.sea_surface_salinity
-EarthSystemModels.ocean_surface_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
-EarthSystemModels.ocean_surface_salinity(ocean::PrescribedOcean) = ocean.sea_surface_salinity
+EarthSystemModels.ocean_temperature(ocean::PrescribedOcean) = ocean.temperature
+EarthSystemModels.ocean_salinity(ocean::PrescribedOcean) = ocean.salinity
+EarthSystemModels.ocean_surface_temperature(ocean::PrescribedOcean) = ocean.temperature
+EarthSystemModels.ocean_surface_salinity(ocean::PrescribedOcean) = ocean.salinity
 EarthSystemModels.ocean_surface_velocities(ocean::PrescribedOcean) = ocean.velocities.u, ocean.velocities.v
 
 #####
@@ -191,8 +217,8 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, co
 # the atmosphere's face-centered momentum fluxes average them into the first interior face, so the
 # interpolation covers those columns rather than leaving them at zero (#754).
 function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
-    Tᵒ = ocean.sea_surface_temperature
-    Sᵒ = ocean.sea_surface_salinity
+    Tᵒ = ocean.temperature
+    Sᵒ = ocean.salinity
     uᵒ, vᵒ = ocean.velocities
 
     grid = ocean.grid
@@ -200,21 +226,24 @@ function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
     t = ocean.clock.time
     interpolator(fts) = cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t)
 
+    # The surface is the top level: the only level of a surface series, the last of a volumetric one
+    kᴺ = size(Tᵒ, 3)
+
     launch!(arch, grid, interface_kernel_parameters(grid), _interpolate_prescribed_ocean_state!,
             state.T, state.S, state.u, state.v,
-            Tᵒ, Sᵒ, uᵒ, vᵒ,
+            Tᵒ, Sᵒ, uᵒ, vᵒ, kᴺ,
             interpolator(Tᵒ), interpolator(Sᵒ), interpolator(uᵒ), interpolator(vᵒ))
 
     return nothing
 end
 
-@kernel function _interpolate_prescribed_ocean_state!(T, S, u, v, Tᵒ, Sᵒ, uᵒ, vᵒ, τT, τS, τu, τv)
+@kernel function _interpolate_prescribed_ocean_state!(T, S, u, v, Tᵒ, Sᵒ, uᵒ, vᵒ, kᴺ, τT, τS, τu, τv)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        T[i, j, 1] = Tᵒ[i, j, 1, τT]
-        S[i, j, 1] = Sᵒ[i, j, 1, τS]
-        u[i, j, 1] = uᵒ[i, j, 1, τu]
-        v[i, j, 1] = vᵒ[i, j, 1, τv]
+        T[i, j, 1] = Tᵒ[i, j, kᴺ, τT]
+        S[i, j, 1] = Sᵒ[i, j, kᴺ, τS]
+        u[i, j, 1] = uᵒ[i, j, kᴺ, τu]
+        v[i, j, 1] = vᵒ[i, j, kᴺ, τv]
     end
 end
 
@@ -229,10 +258,14 @@ function Oceananigans.TimeSteppers.time_step!(ocean::PrescribedOcean, Δt)
     tick!(ocean.clock, Δt)
     time = Time(ocean.clock.time)
 
-    update_field_time_series!(ocean.sea_surface_temperature, time)
-    update_field_time_series!(ocean.sea_surface_salinity, time)
+    update_field_time_series!(ocean.temperature, time)
+    update_field_time_series!(ocean.salinity, time)
     update_field_time_series!(ocean.velocities.u, time)
     update_field_time_series!(ocean.velocities.v, time)
+    update_prescribed_free_surface!(ocean.free_surface, time)
 
     return nothing
 end
+
+update_prescribed_free_surface!(η, time) = update_field_time_series!(η, time)
+update_prescribed_free_surface!(::Nothing, time) = nothing

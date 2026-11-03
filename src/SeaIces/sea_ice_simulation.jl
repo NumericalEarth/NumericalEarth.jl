@@ -7,7 +7,7 @@ using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIc
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 
-using ..EarthSystemModels: ocean_surface_salinity, surface_layer_velocities, reference_density
+using ..EarthSystemModels: ocean_surface_salinity, surface_layer_velocities, reference_density, prognostic_model
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -16,7 +16,7 @@ ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(o
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
 # typed so that no `Int` zero enters the Float sea-ice kernels
-ocean_surface_height(ocean::Simulation, grid) = ocean.model.free_surface.displacement
+ocean_surface_height(ocean::Simulation, grid) = prognostic_model(ocean).free_surface.displacement
 ocean_surface_height(::Nothing, grid) = ZeroField(eltype(grid))
 
 # No slip is a zero-value condition on the immersed boundary; free slip leaves the wall stress-free
@@ -196,7 +196,7 @@ function sea_ice_simulation(grid, ocean=nothing;
     return sea_ice
 end
 
-default_coriolis(ocean::Simulation) = ocean.model.coriolis
+default_coriolis(ocean::Simulation) = prognostic_model(ocean).coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
 function sea_ice_dynamics(grid, ocean=nothing;

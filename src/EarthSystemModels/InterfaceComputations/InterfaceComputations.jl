@@ -80,7 +80,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            thermodynamics_parameters,
                            molmass_dryair,
                            surface_layer_height,
-                           boundary_layer_height
+                           boundary_layer_height,
+                           prognostic_model
 
 using ...NumericalEarth: NumericalEarth, stateindex
 
