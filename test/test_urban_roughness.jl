@@ -374,7 +374,7 @@ end
 
 PrescribedBuildings(properties) = PrescribedBuildings(properties, Ref(0))
 
-function NumericalEarth.Lands.building_morphometry(grid, buildings::PrescribedBuildings)
+function NumericalEarth.DataWrangling.building_morphometry(grid, buildings::PrescribedBuildings)
     buildings.reads[] += 1
     return map(value -> set!(Field{Center, Center, Nothing}(grid), value), buildings.properties)
 end

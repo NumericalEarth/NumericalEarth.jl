@@ -1,6 +1,6 @@
 module GloBFP3D
 
-export GlobalBuildingFootprints3D, building_morphometry
+export GlobalBuildingFootprints3D
 
 using Downloads: Downloads
 using Oceananigans: Center, CPU, Face
@@ -10,7 +10,6 @@ using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.Lands: Lands, building_morphometry
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
                        BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
@@ -317,7 +316,7 @@ deleted once reduced (the downloaded footprint tiles stay cached).
 The default `dataset` is `GlobalBuildingFootprints3D()`.
 Downloading and rasterizing the footprints requires `using ArchGDAL`.
 """
-function Lands.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D = GlobalBuildingFootprints3D();
+function DataWrangling.building_morphometry(target_grid::LatitudeLongitudeGrid, dataset::GlobalBuildingFootprints3D = GlobalBuildingFootprints3D();
                                     region = BoundingBox(target_grid), maximum_raster_cells = 400_000_000)
     metadatum = Metadatum(:building_height; dataset, region)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)

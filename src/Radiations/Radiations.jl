@@ -7,7 +7,10 @@ export PrescribedRadiation,
        TabulatedAlbedo,
        SeaIceAlbedo,
        default_stefan_boltzmann_constant,
-       default_water_emissivity
+       default_water_emissivity,
+       ERA5PrescribedRadiation,
+       JRA55PrescribedRadiation,
+       ECCOPrescribedRadiation
 
 # CODATA 2018 value of the Stefan–Boltzmann constant, in W m⁻² K⁻⁴.
 const default_stefan_boltzmann_constant = 5.670374419e-8
@@ -28,7 +31,7 @@ using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, interpolator
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..DataWrangling: DataWrangling, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  _compute_fractional_indices!,
@@ -49,6 +52,7 @@ include("latitude_dependent_albedo.jl")
 include("tabulated_albedo.jl")
 include("sea_ice_albedo.jl")
 include("prescribed_radiation.jl")
+include("dataset_radiations.jl")
 include("prescribed_radiation_regridder.jl")
 include("interpolate_radiation_state.jl")
 include("air_sea_interface_radiation_state.jl")

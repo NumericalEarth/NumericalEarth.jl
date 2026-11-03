@@ -229,7 +229,7 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSLM
     return nothing
 end
 
-function NumericalEarth.Lands.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
+function NumericalEarth.DataWrangling.building_morphometry(grid::LatitudeLongitudeGrid, dataset::GHSBuilt; maximum_raster_cells = 100_000_000)
     arch = architecture(grid)
     longitude_faces = dimension_faces(grid, 1)
     latitude_faces  = dimension_faces(grid, 2)

@@ -1,9 +1,6 @@
 module JRA55
 
-export JRA55PrescribedAtmosphere,
-       JRA55PrescribedLand,
-       JRA55PrescribedRadiation,
-       RepeatYearJRA55,
+export RepeatYearJRA55,
        MultiYearJRA55
 
 using Adapt: Adapt
@@ -11,16 +8,14 @@ using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans: Oceananigans
-using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.DistributedComputations: DistributedComputations, @root, Distributed, child_architecture
+using Oceananigans.DistributedComputations: DistributedComputations, @root
 using Oceananigans.Grids: Center
-using Oceananigans.OutputReaders: Cyclical, time_indices, FieldTimeSeries, FlavorOfFTS
+using Oceananigans.OutputReaders: time_indices, FlavorOfFTS
 using Oceananigans.Units: Units
 using NCDatasets: NCDatasets, Dataset
 
-using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, all_dates, set_region_data!, prescribed_radiation
-using ...NumericalEarth: NumericalEarth
+using ..DataWrangling: DataWrangling, Metadatum, all_dates, set_region_data!
 
 download_JRA55_cache::String = ""
 
@@ -31,8 +26,5 @@ end
 
 include("JRA55_metadata.jl")
 include("JRA55_field_time_series.jl")
-include("JRA55_prescribed_atmosphere.jl")
-include("JRA55_prescribed_land.jl")
-include("JRA55_prescribed_radiation.jl")
 
 end # module

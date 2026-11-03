@@ -8,7 +8,6 @@ using NCDatasets: Dataset
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Center
 
-using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_filename, metadata_path,
                        dataset_variable_name, download_with_retries
 

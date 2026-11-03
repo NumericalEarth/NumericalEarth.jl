@@ -106,7 +106,7 @@ Base.show(io::IO, α::TabulatedAlbedo) = print(io, summary(α))
 @inline simulation_day(time::Time{<:Number})      = time.time ÷ 86400
 @inline seconds_in_day(time::Time{<:Number}, day) = time.time - day * 86400
 
-@inline function NumericalEarth.stateindex(α::TabulatedAlbedo, i, j, k, grid, time, loc, ℐꜜˢʷ)
+@inline function DataWrangling.stateindex(α::TabulatedAlbedo, i, j, k, grid, time, loc, ℐꜜˢʷ)
     FT = eltype(α)
     λ, φ, z = _node(i, j, k, grid, Center(), Center(), Center())
 

@@ -48,8 +48,8 @@ function Base.show(io::IO, atmos::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(atmos.boundary_layer_height))
 end
 
-NumericalEarth.Grids.surface_elevation(atmos::PrescribedAtmosphere) =
-    NumericalEarth.Grids.surface_elevation(atmos.grid)
+DataWrangling.surface_elevation(atmos::PrescribedAtmosphere) =
+    DataWrangling.surface_elevation(atmos.grid)
 
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
@@ -160,7 +160,7 @@ end
     end
 
     # A no-op unless the grid's vertical is a time-varying geopotential.
-    NumericalEarth.Grids.materialize_geopotential!(atmos.grid)
+    DataWrangling.materialize_geopotential!(atmos.grid)
 
     return nothing
 end
@@ -218,7 +218,7 @@ Pass any field explicitly to override; pass `precipitation_flux = nothing` to om
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
     component (see [`Radiations.PrescribedRadiation`](@ref NumericalEarth.Radiations.PrescribedRadiation),
-    [`DataWrangling.JRA55.JRA55PrescribedRadiation`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedRadiation)).
+    [`JRA55PrescribedRadiation`](@ref NumericalEarth.Radiations.JRA55PrescribedRadiation)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               source = nothing,

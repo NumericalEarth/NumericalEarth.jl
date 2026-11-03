@@ -27,3 +27,25 @@ end
 @testset "Self Qualified Accesses" begin
     @test ExplicitImports.check_no_self_qualified_accesses(NumericalEarth) === nothing
 end
+
+# DataWrangling sits at the bottom of NumericalEarth's module stack: it may import Oceananigans
+# and other packages, but nothing owned by another NumericalEarth module.
+function foreign_numericalearth_imports(mod, found = Tuple{Module, Symbol, Module}[])
+    for name in names(mod; all = true, imported = true)
+        isdefined(mod, name) || continue
+        owner = Base.which(mod, name)
+        value = getfield(mod, name)
+        if value isa Module && parentmodule(value) === mod && value !== mod
+            foreign_numericalearth_imports(value, found)
+        elseif Base.moduleroot(owner) === NumericalEarth && !is_within(owner, NumericalEarth.DataWrangling)
+            push!(found, (mod, name, owner))
+        end
+    end
+    return found
+end
+
+is_within(mod, ancestor) = mod === ancestor || (parentmodule(mod) !== mod && is_within(parentmodule(mod), ancestor))
+
+@testset "DataWrangling imports nothing else from NumericalEarth" begin
+    @test isempty(foreign_numericalearth_imports(NumericalEarth.DataWrangling))
+end

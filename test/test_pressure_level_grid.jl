@@ -8,7 +8,7 @@ using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.TimeSteppers: time_step!
 using Statistics
 
-using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization,
+using NumericalEarth.DataWrangling: PressureLevelGrid, PressureLevelVerticalDiscretization,
                             column_fractional_z_index, materialize_geopotential!,
                             surface_elevation
 

@@ -10,7 +10,7 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
     dataset_variable_name, validate_dataset_coverage, metadata_filename,
     is_three_dimensional, default_inpainting, native_grid, default_horizontal_padding,
     NearestNeighborInpainting, supported_datasets, retrieve_data
-using NumericalEarth: stateindex
+using NumericalEarth.DataWrangling: stateindex
 
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Fields: location

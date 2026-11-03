@@ -6,7 +6,6 @@ using Dates: Dates, DateTime, Day, Month
 using Oceananigans.Fields: Center
 using NCDatasets: Dataset
 
-using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, first_date
 
 download_AVISO_cache::String = ""

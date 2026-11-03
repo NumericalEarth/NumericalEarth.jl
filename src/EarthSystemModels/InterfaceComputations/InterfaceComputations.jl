@@ -82,7 +82,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            surface_layer_height,
                            boundary_layer_height
 
-using ...NumericalEarth: NumericalEarth, stateindex
+using ...DataWrangling: DataWrangling, stateindex
 
 #####
 ##### Functions extended by component models
@@ -184,7 +184,7 @@ end
     return ifelse(clamped, clamp(fractional_index, lowest, highest), fractional_index)
 end
 
-# 2-D (surface) specialization of `NumericalEarth.stateindex`, pinning k = 1
+# 2-D (surface) specialization of `DataWrangling.stateindex`, pinning k = 1
 @inline state2dindex(a, i, j) = stateindex(a, i, j, 1)
 @inline state2dindex(a, i, j, grid, time) = stateindex(a, i, j, 1, grid, time, (Center, Center, Nothing))
 

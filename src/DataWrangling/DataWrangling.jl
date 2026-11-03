@@ -19,6 +19,8 @@ export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fractions, valid_area_mean!
+export PressureLevelVerticalDiscretization, PressureLevelGrid, surface_elevation
+export building_morphometry
 
 using Adapt: Adapt
 using Downloads: Downloads
@@ -35,9 +37,10 @@ using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, OrthogonalSphericalShellGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
 using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, regrid!, set!
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, _node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
-                                  FieldTimeSeries, FlavorOfFTS, time_indices
+                                  FieldTimeSeries, FlavorOfFTS, time_indices,
+                                  GPUAdaptedFieldTimeSeries, TimeInterpolator
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES
@@ -46,7 +49,6 @@ using Printf: Printf, @sprintf
 using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
-using ..NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Downloading utilities
@@ -326,6 +328,9 @@ z_interfaces(::AbstractStaticBathymetry) = (0, 1)
 Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 
 # Fundamentals
+include("stateindex.jl")
+include("pressure_level_grid.jl")
+include("building_morphometry.jl")
 include("metadata.jl")
 include("set_region_data.jl")
 include("field_cache.jl")
@@ -420,8 +425,6 @@ function default_inpainting(metadata)
     end
 end
 
-include("prescribed_radiation.jl")
-include("boundary_prescribed_component.jl")
 
 # Datasets
 include("ETOPO/ETOPO.jl")

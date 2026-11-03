@@ -394,7 +394,7 @@ end
     return mask_value
 end
 
-@inline function NumericalEarth.stateindex(mask::LinearlyTaperedPolarMask, i, j, k, grid, time, loc)
+@inline function stateindex(mask::LinearlyTaperedPolarMask, i, j, k, grid, time, loc)
     LX, LY, LZ = loc
     λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
     return mask(φ, z)

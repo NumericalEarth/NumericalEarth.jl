@@ -3,15 +3,10 @@ module GloFAS
 # Datasets
 export GloFASReanalysis
 
-# Prescribed components
-export GloFASPrescribedLand
 
 using Dates: Dates, DateTime, Day
-using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum,
-                       available_variables, first_date, last_date
-using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices, routable_grid
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, available_variables
 
 download_GloFAS_cache::String = ""
 
@@ -77,6 +72,5 @@ function DataWrangling.metadata_filename(dataset::GloFASDataset, name, date, reg
 end
 
 include("glofas_reanalysis.jl")
-include("glofas_prescribed_land.jl")
 
 end # module GloFAS

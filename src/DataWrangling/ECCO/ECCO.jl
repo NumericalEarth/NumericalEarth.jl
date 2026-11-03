@@ -2,7 +2,6 @@ module ECCO
 
 export ECCOMetadatum, adjusted_ECCO_tracers, initialize!
 export ECCO2Monthly, ECCO4Monthly, ECCO2Daily
-export ECCOPrescribedAtmosphere, ECCOPrescribedRadiation
 
 export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
@@ -11,18 +10,16 @@ using Adapt: Adapt
 using Dates: Dates, DateTime, Day, Month
 using Downloads: Downloads
 using Oceananigans: Oceananigans
-using Oceananigans.Architectures: CPU
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: Face, Center
-using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
+using Oceananigans.OutputReaders: OutputReaders
 using NCDatasets: NCDatasets
 
-using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
-                       dataset_variable_name, default_download_directory, longitude_interfaces,
+                       dataset_variable_name, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
                        GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
-                       metadata_url, first_date, last_date, all_dates, download_with_retries
+                       metadata_url, first_date, all_dates, download_with_retries
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -378,7 +375,5 @@ function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
     return lon, lat
 end
 
-include("ECCO_atmosphere.jl")
-include("ECCO_radiation.jl")
 
 end # Module
