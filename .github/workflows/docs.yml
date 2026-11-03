@@ -39,6 +39,8 @@ env:
   COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+  EARTHDATA_USERNAME: ${{ secrets.EARTHDATA_USERNAME }}
+  EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
   JULIA_CUDA_USE_COMPAT: false
 
 jobs:
@@ -72,16 +74,7 @@ jobs:
   build-docs:
     name: Build documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
     needs: plan
-    # The tartarus gpu-3 runner is offline; build on the AWS L4 fleet (same
-    # container pattern as the CI GPU tests) until it returns.
-    runs-on: aws-linux-nvidia-gpu-l4
-    container:
-      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
-      options: --gpus=all
-      volumes:
-        # Mount host directories so that we can delete some stuff to free disk
-        - /opt:/host-opt
-        - /usr/local:/host-usr-local
+    runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440
     strategy:
       fail-fast: false
@@ -94,31 +87,16 @@ jobs:
       pull-requests: read
       statuses: write
     env:
-      # Redirect temp and the depot to the workspace volume (bind-mounted from
-      # the host's EBS disk) to avoid filling the container's overlay
-      # filesystem with large dataset downloads and compiled artifacts.
-      TMPDIR: /__w/_temp
-      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
+      JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
+      # CondaPkg resolves against every environment on the load path, and the depot of this runner is shared.
+      JULIA_LOAD_PATH: "@:@stdlib"
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ matrix.ref }}
-      - name: Create workspace temp directories
-        run: mkdir -p "${TMPDIR}"
-      - name: Configure git safe directory
-        run: git config --global --add safe.directory ${PWD}
-      - name: Clean up space on host device
-        # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
-        run: |
-          rm -rf /host-opt/nvidia/ /host-usr-local/cuda*
-          df -hT
-      - name: Update registry
-        shell: julia --color=yes {0}
-        run: |
-          using Pkg
-          Pkg.Registry.rm("General")
-          Pkg.Registry.add("General")
-          Pkg.Registry.update()
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.5'
       - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
         shell: bash
         run: |
@@ -128,17 +106,19 @@ jobs:
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
           fi
           echo "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=${NUMERICAL_EARTH_BUILD_ALL_EXAMPLES}" | tee "${GITHUB_ENV}"
+      # The Python extensions resolve their CondaPkg environment while precompiling, which only works in docs.
       - name: Instantiate and precompile
-        shell: julia --project --color=yes {0}
+        shell: julia --project=docs --color=yes {0}
         run: |
           using Pkg
+          # The runner's depot is persistent, so its registry falls behind newly registered versions
+          Pkg.Registry.update()
+          Pkg.resolve()
           Pkg.instantiate(verbose=true)
           Pkg.precompile(strict=true)
 
           using CUDA
           CUDA.precompile_runtime()
-      - name: Instantiate docs folder
-        run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
       - name: Install Veros in docs CondaPkg environment
         run: |
           julia --project=docs --color=yes -e '

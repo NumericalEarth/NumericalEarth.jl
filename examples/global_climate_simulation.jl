@@ -98,8 +98,8 @@ Oceananigans.set!(sea_ice.model, ecco_set)   # h, ℵ
 nlayers = 4
 output_interval = 3hours
 stop_time = 30days
-spectral_grid = SpeedyWeather.SpectralGrid(; NF=Float64, trunc=63, nlayers, Grid=FullClenshawGrid, architecture=SpeedyWeather.GPU())
-time_stepping = SpeedyWeather.Leapfrog(spectral_grid; Δt_at_T31=Minute(40)) # gives Δt_sec = 20 min at trunc=63
+spectral_grid = SpeedyWeather.SpectralGrid(; NF=Float64, truncation=64, nlayers, Grid=FullClenshawGrid, architecture=SpeedyWeather.GPU())
+time_stepping = SpeedyWeather.Leapfrog(spectral_grid; Δt_at_T32=Minute(40)) # gives Δt = 20 min at truncation=64
 atmosphere = atmosphere_simulation(spectral_grid; output_interval, time_stepping, stop_time)
 atmosphere.model.feedback.verbose = false  # disable SpeedyWeather's progress bar in favor of the callback defined below
 nothing #hide
@@ -112,7 +112,7 @@ atmosphere.model.initial_conditions
 # We are now ready to blend everything together.
 # Here we set the timestep to be the same across all models.
 
-Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
+Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt)
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
@@ -134,18 +134,18 @@ sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliar
                        (; h=sea_ice.model.ice_thickness, ℵ=sea_ice.model.ice_concentration))
 
 ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
-                                              overwrite_existing=true,
+                                              overwrite_files=true,
                                               schedule=TimeInterval(output_interval),
                                               filename="ocean_free_surface.jld2")
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
-                                            overwrite_existing=true,
+                                            overwrite_files=true,
                                             schedule=TimeInterval(output_interval),
                                             filename="ocean_surface_fields.jld2",
                                             indices=(:, :, grid.Nz))
 
 sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
-                                             overwrite_existing=true,
+                                             overwrite_files=true,
                                              schedule=TimeInterval(output_interval),
                                              filename="sea_ice_fields.jld2")
 
@@ -162,7 +162,7 @@ Jˢⁱᵒ  = earth.model.interfaces.sea_ice_ocean_interface.fluxes.salt
 fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ, 𝒬ᵛᵃⁱ, τˣᵃⁱ, τʸᵃⁱ, 𝒬ⁱᵒ, Jˢⁱᵒ)
 
 ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
-                                           overwrite_existing=true,
+                                           overwrite_files=true,
                                            schedule=TimeInterval(output_interval),
                                            filename="intercomponent_fluxes.jld2")
 

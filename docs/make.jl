@@ -38,27 +38,32 @@ mkpath(OUTPUT_DIR)
 
 # Examples from examples/ directory.
 # Set `build_always = false` for long-running examples that should only be built
-# on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
+# by the scheduled build, or when the `build all examples` label is added to a PR.
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false),
     Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
-    # Near-global is the heaviest example; disabled while docs build on the L4 runner
+    Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
+    # Near-global is the heaviest example (¼°, ~35M cells) and stays disabled.
     # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
-    # One-degree and global-climate initialize from ECCO; disabled while
-    # ecco.jpl.nasa.gov/drive returns 503 (down since at least 2026-08-10)
-    # Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
-    # Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
-    Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
+    Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
+    # Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
     Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
     Example("Breeze over slab land", "breeze_over_slab_land"; build_always=true, gpu=false),
-    Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
+    # Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
+    Example("ERA5-forced Terrarium land", "era5_forced_terrarium_land"; build_always=false, gpu=false),
     Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true),
+    # The MODIS examples need NASA Earthdata credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD),
+    # which the docs workflow does not have yet.
+    # Example("MODIS leaf area index", "modis_leaf_area_index"; build_always=false, gpu=false),
+    # Example("MODIS land cover and gap filling", "modis_landcover_gap_fill"; build_always=false, gpu=false),
+    Example("Tiled land column", "tiled_land_column"; build_always=false, gpu=false),
 ]
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
-    # Example("EarthSystemModel interface", "slab_ocean", false),
+    Example("Implementing a new dataset", "implement_a_dataset"; build_always=true, gpu=false),
+    # Example("EarthSystemModel interface", "slab_ocean"; build_always=false, gpu=false),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
@@ -207,7 +212,7 @@ pages = [
 
     "Examples" => examples_pages,
 
-    # "Developers" => developer_pages,
+    "Developers" => developer_pages,
 
     "Vertical grids" => "vertical_grids.md",
 
@@ -216,6 +221,7 @@ pages = [
         "Supported variables" => "Metadata/supported_variables.md",
     ],
     "Interface fluxes" => "interface_fluxes.md",
+    "Urban roughness" => "urban_roughness.md",
 
     "Appendix" => [
         "Notation" => "appendix/notation.md",
@@ -236,11 +242,7 @@ makedocs(; sitename = "NumericalEarth.jl",
          pages,
          modules,
          plugins = [bib],
-         # TEMPORARY, revert when ecco.jpl.nasa.gov recovers: ECCO-downloading
-         # doctests fail during the outage, and Documenter's recursive
-         # TextDiff.makediff! then overflows the stack rendering the enormous
-         # failure diff, crashing the whole build.
-         doctest = false,
+         doctest = true,
          draft = false,
          doctestfilters = [
              r"┌ Warning:.*",  # remove standard warning lines
@@ -249,7 +251,11 @@ makedocs(; sitename = "NumericalEarth.jl",
              r"(?s)(└── dir:).*" => s"\1",
          ],
          clean = true,
-         warnonly = [:cross_references, :missing_docs],
+         # `:linkcheck` warns rather than errors: the nightly build reaches
+         # dozens of external hosts, and one of them moving a page or rate
+         # limiting should not throw away hours of example builds. Broken
+         # links still show up as warnings in the build log.
+         warnonly = [:cross_references, :missing_docs, :linkcheck],
          checkdocs = :exports,
          linkcheck = true,
          linkcheck_timeout = 30, # some hosts (e.g. JMA JRA-55) are slow; the default 10s times out

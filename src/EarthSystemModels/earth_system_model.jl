@@ -1,6 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.Grids: znode, Center
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
@@ -55,7 +56,6 @@ Oceananigans.Simulations.iteration(model::ESM) = model.clock.iteration
 Oceananigans.Simulations.timestepper(::ESM) = nothing
 Oceananigans.OutputWriters.default_included_properties(::ESM) = tuple()
 Oceananigans.Utils.prettytime(model::ESM) = prettytime(model.clock.time)
-default_clock(TT) = Clock{TT}(0, 0, 1)
 
 Oceananigans.Simulations.reset_clock!(::Nothing) = nothing
 Oceananigans.TimeSteppers.update_state!(::Nothing) = nothing
@@ -84,7 +84,7 @@ function Oceananigans.initialize!(model::ESM)
 end
 
 function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
-    initialize!(model.interfaces.exchanger, model)
+    initialize!(model)
     update_state!(model)
     return nothing
 end
@@ -124,10 +124,34 @@ alias their internal flux divergence onto `radiation.flux_divergence`, so the
 atmosphere's tendency machinery reads from the same field the coupled
 `radiation` writes. Default: no-op, returning `atmosphere` unchanged.
 
-Called from inside the [`EarthSystemModel`](@ref) constructor before
-`ComponentInterfaces` is built.
+Called from inside the [`EarthSystemModel`](@ref) constructor, after
+`ComponentInterfaces` is built (so the radiation has already been bound to the
+interfaces' surface temperature — see
+[`materialize_earth_system_surface_properties`](@ref)).
 """
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
+
+"""
+$(TYPEDSIGNATURES)
+
+Return `radiation` with the surface properties it reads bound to the coupled interfaces:
+the radiating temperature, and any optics the surface computes for itself rather than
+takes as configuration. Radiation components that read surface properties (e.g. Breeze's
+`RadiativeTransferModel`) overload this. Default: no-op, returning `radiation` unchanged.
+"""
+materialize_earth_system_surface_properties(radiation, interfaces) = radiation
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
+by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
+atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
+prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
+authoritative model clock rather than the other way around.
+"""
+default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
+default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
 
 """
     materialize_sea_ice(sea_ice, ocean)
@@ -141,7 +165,7 @@ materialize_sea_ice!(sea_ice, ocean) = sea_ice
 
 """
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
-                     clock = Clock{Float64}(time=0),
+                     clock = default_earth_system_clock(atmosphere),
                      ocean_reference_density = reference_density(ocean),
                      ocean_heat_capacity = heat_capacity(ocean),
                      sea_ice_reference_density = reference_density(sea_ice),
@@ -174,7 +198,8 @@ Arguments
 Keyword Arguments
 ==================
 
-- `clock`: Keeps track of time.
+- `clock`: Keeps track of time. Defaults to a clock whose time type matches the
+  atmosphere's (`Float64` without an atmosphere).
 - `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model.
 - `ocean_heat_capacity`: Heat capacity for the ocean. Defaults to value from ocean model.
 - `sea_ice_reference_density`: Reference density for sea ice. Defaults to value from sea ice model.
@@ -183,13 +208,13 @@ Keyword Arguments
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
 """
 function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
-                          clock = Clock{Float64}(time=0),
+                          clock = default_earth_system_clock(atmosphere),
                           ocean_reference_density = reference_density(ocean),
                           ocean_heat_capacity = heat_capacity(ocean),
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
-                          interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+                          interface_kw...) # e.g. `atmosphere_land_interface_state`
 
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
@@ -200,7 +225,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
 
             If you previously relied on `Radiation()` defaults: pass \
             `radiation = JRA55PrescribedRadiation(arch; kwargs...)` (or \
-            `ECCOPrescribedRadiation` / `OSPapaPrescribedRadiation`) to restore \
+            `ECCOPrescribedRadiation`) to restore \
             radiative forcing. Pass `radiation = PrescribedRadiation(grid)` for \
             emission-only mode. To suppress this warning, build the model \
             without a `PrescribedAtmosphere` (radiatively decoupled is the \
@@ -227,11 +252,6 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
         end
     end
 
-    # Materialize any radiation skeletons in the atmosphere against the
-    # coupled-model radiation. No-op by default; Breeze (or any other
-    # atmosphere with an internal radiation handle) overloads this.
-    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
-
     sea_ice = materialize_sea_ice!(sea_ice, ocean)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
@@ -245,6 +265,12 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                          sea_ice_heat_capacity,
                                          interface_kw...)
     end
+
+    # Bind the interfaces' skin temperature into the radiation, then materialize the
+    # atmosphere's radiation skeletons against it — in that order, so the atmosphere's
+    # proxy aliases the bound radiation. Both are no-ops by default.
+    radiation  = materialize_earth_system_surface_properties(radiation, interfaces)
+    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     arch = architecture(interfaces.exchanger.grid)
 
@@ -351,7 +377,7 @@ grid = LatitudeLongitudeGrid(GPU();
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -363,7 +389,7 @@ EarthSystemModel{GPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CUDAGPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -393,7 +419,7 @@ grid = LatitudeLongitudeGrid(size = (20, 20, 4),
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
-                             halo = (6, 6, 3))
+                             halo = (6, 6, 4))
 
 ocean = ocean_simulation(grid, closure=nothing)
 set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
@@ -444,7 +470,7 @@ land but no ocean or sea ice. All keyword arguments are forwarded to
 
 The atmosphere--land turbulent fluxes are computed via
 `SimilarityTheoryFluxes` using land-side roughness and a β-reduced surface
-specific humidity (`qᵃᵗ + β·[qₛ - qᵃᵗ]`).
+specific humidity (`qᵃᵗ + β·[qⁱⁿ - qᵃᵗ]`).
 """
 AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, nothing, nothing; kw...)
@@ -472,7 +498,8 @@ end
 
     @inbounds begin
         for k in 1:Nz
-            Tm = melting_temperature(liquidus, S[i, j, k])
+            z  = znode(i, j, k, grid, Center(), Center(), Center())
+            Tm = melting_temperature(liquidus, S[i, j, k], z)
             T[i, j, k] = max(T[i, j, k], Tm)
         end
     end
@@ -513,11 +540,12 @@ function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
     if hasproperty(state, :radiation)
         restore_prognostic_state!(esm.radiation, state.radiation)
     end
+    restore_prognostic_state!(esm.interfaces, state.interfaces)
     restore_prognostic_state!(esm.ocean, state.ocean)
     restore_prognostic_state!(esm.atmosphere, state.atmosphere)
     restore_prognostic_state!(esm.land, state.land)
     restore_prognostic_state!(esm.sea_ice, state.sea_ice)
-    restore_prognostic_state!(esm.interfaces, state.interfaces)
+    update_state!(esm)
     return esm
 end
 
