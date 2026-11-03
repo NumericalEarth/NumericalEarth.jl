@@ -61,8 +61,8 @@ $(TYPEDSIGNATURES)
 
 @inline function pressure_head(i, j, grid, r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    αᵃᵉ  = convert(FT, property_value(r.inverse_air_entry_head, i, j))
-    𝓃  = convert(FT, property_value(r.pore_size_uniformity, i, j))
+    αᵃᵉ  = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃  = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 
@@ -70,6 +70,14 @@ $(TYPEDSIGNATURES)
     logΠᵐᵃˣ = log(floatmax(FT)) / 2
     logΠ    = logexpm1(-log(𝒮c) / 𝓂) / 𝓃 - log(αᵃᵉ)
     return ifelse(𝒮c >= 1, zero(FT), -exp(min(logΠ, logΠᵐᵃˣ)))
+end
+
+# Effective saturation at the `suction_head` (m), for the interface's plant-stress endpoints.
+@inline function effective_saturation(i, j, k, grid, r::VanGenuchtenRetention, suction_head)
+    FT = typeof(suction_head)
+    αᵃᵉ = convert(FT, stateindex(r.inverse_air_entry_head, i, j, 1))
+    𝓃   = convert(FT, stateindex(r.pore_size_uniformity, i, j, 1))
+    return van_genuchten_saturation(αᵃᵉ * suction_head, 𝓃)
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -130,9 +138,9 @@ Darcy hydraulic conductivity (m s⁻¹) of closure `c` at saturation `𝒮` and 
 """
 @inline function hydraulic_conductivity(i, j, grid, c::VanGenuchtenConductivity, 𝒮, T)
     FT = typeof(𝒮)
-    K₀ = convert(FT, property_value(c.matching_point_conductivity, i, j))
-    𝓃  = convert(FT, property_value(c.pore_size_uniformity, i, j))
-    ηᴷ = convert(FT, property_value(c.pore_connectivity_exponent, i, j))
+    K₀ = convert(FT, stateindex(c.matching_point_conductivity, i, j, 1))
+    𝓃  = convert(FT, stateindex(c.pore_size_uniformity, i, j, 1))
+    ηᴷ = convert(FT, stateindex(c.pore_connectivity_exponent, i, j, 1))
     𝓂  = van_genuchten_m(𝓃)
     𝒮c = clamp(𝒮, 0, 1)
 

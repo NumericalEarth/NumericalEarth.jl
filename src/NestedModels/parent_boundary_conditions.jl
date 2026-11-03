@@ -30,7 +30,9 @@ Arguments
 
 - `variables`: a `NamedTuple` mapping child field names to the parent
   `FieldTimeSeries` that should drive them, e.g.
-  `(u = parent.velocities.u, v = parent.velocities.v)`.
+  `(u = parent.velocities.u, v = parent.velocities.v)`. An entry may instead be a
+  per-side `NamedTuple` of sources (keyed by `:west/:east/:south/:north`), as for
+  the strips of a [`BoundaryPrescribedComponent`](@ref).
 
 - `sides`: a tuple of `Symbol`s naming which boundaries to drive. Choices are
   `:west, :east, :south, :north, :bottom, :top`.
@@ -57,16 +59,16 @@ function parent_boundary_conditions(grid;
                                     bc_types = NamedTuple())
 
     field_pairs = []
-    for (child_name, fts) in pairs(variables)
+    for (child_name, source) in pairs(variables)
         spec      = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : NormalFlowBoundaryCondition
         scheme    = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
-        condition = Interpolated(fts)
+        condition(side) = Interpolated(source isa NamedTuple ? getproperty(source, side) : source)
 
         # `spec` is either one BC constructor for all sides or a per-side NamedTuple; `scheme`
         # (e.g. PerturbationAdvection) is consulted only where the chosen type is NormalFlow.
         bc_type(side) = spec isa NamedTuple ? getproperty(spec, side) : spec
         bc_at(side)   = bc_type(side) === NormalFlowBoundaryCondition ?
-                            NormalFlowBoundaryCondition(condition; scheme) : bc_type(side)(condition)
+                            NormalFlowBoundaryCondition(condition(side); scheme) : bc_type(side)(condition(side))
 
         # A `scheme` only takes effect on NormalFlow sides; requesting one for a field that is
         # NormalFlow on no side means it would be silently ignored — flag that as a user error.

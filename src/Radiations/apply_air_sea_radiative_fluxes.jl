@@ -57,8 +57,14 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
             interface_temperature,
             ocean_properties)
 
+    apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean)
+
     return nothing
 end
+
+apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, biogeochemistry) = nothing
+apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean::Simulation) =
+    apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean.model.biogeochemistry)
 
 @kernel function _apply_air_sea_radiative_fluxes!(net_ocean_fluxes,
                                                   interface_radiative_flux,
@@ -77,13 +83,13 @@ end
 
     @inbounds begin
         ℵᵢ = ice_concentration[i, j, 1]
-        Tₛ = ocean_surface_temperature[i, j, 1]
+        Tⁱⁿ = ocean_surface_temperature[i, j, 1]
     end
-    Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
+    Tⁱⁿ = convert_to_kelvin(ocean_properties.temperature_units, Tⁱⁿ)
 
     rs = air_sea_interface_radiation_state(rk, radiation_state, i, j, kᴺ, grid, time)
 
-    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ, rs.σ, rs.ϵ)
+    ℐꜛˡʷ = emitted_longwave_radiation(Tⁱⁿ, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
@@ -106,7 +112,7 @@ end
     @inbounds begin
         net_ocean_fluxes.T[i, j, 1] += ifelse(inactive, zero(grid), Jᵀ_rad)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end

@@ -121,6 +121,15 @@ end
 ##### NetCDF splitting utilities
 #####
 
+# A file takes its final name only once it is complete, so an interrupted split leaves a `.partial`
+# file that `skip_existing` does not mistake for a finished download.
+function create_nc(f, dst_path)
+    partial_path = dst_path * ".partial"
+    NCDatasets.Dataset(f, partial_path, "c")
+    mv(partial_path, dst_path; force=true)
+    return nothing
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -131,7 +140,7 @@ function split_era5_nc(src_path, nc_name_path_pairs, coordinate_vars)
         src_varnames = Set(keys(src))
         for (nc_varname, dst_path) in nc_name_path_pairs
             nc_varname in src_varnames || continue
-            NCDatasets.Dataset(dst_path, "c") do dst
+            create_nc(dst_path) do dst
                 unlimited = NCDatasets.unlimited(src)
                 for (dname, dlen) in src.dim
                     NCDatasets.defDim(dst, dname, dname in unlimited ? Inf : dlen)
@@ -165,9 +174,18 @@ function split_era5_nc_multistep(src::NCDatasets.NCDataset, nc_varname_tidx_path
     src_varnames = Set(keys(src))
     unlimited = NCDatasets.unlimited(src)
 
-    for (nc_varname, tidx, dst_path) in nc_varname_tidx_path_triples
+    # CDS chunks span many time steps, so reading one time step decompresses all of them, and the
+    # default chunk cache cannot hold a whole time slab: each variable is read once, in full, instead.
+    loaded_varname = nothing
+    loaded_data = nothing
+
+    for (nc_varname, tidx, dst_path) in sort(nc_varname_tidx_path_triples, by=first)
         nc_varname in src_varnames || continue
-        NCDatasets.Dataset(dst_path, "c") do dst
+        if nc_varname != loaded_varname
+            var = src[nc_varname].var
+            loaded_varname, loaded_data = nc_varname, var[ntuple(_ -> Colon(), ndims(var))...]
+        end
+        create_nc(dst_path) do dst
             for (dname, dlen) in src.dim
                 out_len = dname in time_dimnames ? 1 :
                           dname in unlimited     ? Inf : dlen
@@ -180,7 +198,8 @@ function split_era5_nc_multistep(src::NCDatasets.NCDataset, nc_varname_tidx_path
 
             for (vname, var) in src
                 (vname in coordinate_vars || vname == nc_varname) || continue
-                ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames)
+                data = vname == nc_varname ? loaded_data : var.var
+                ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames, data)
             end
         end
     end
@@ -236,7 +255,7 @@ function ncvar_copy!(dst, src_var, vname)
     return nothing
 end
 
-function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
+function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames, data=src_var.var)
     dims     = NCDatasets.dimnames(src_var)
     T        = eltype(src_var.var)
     attribs  = src_var.attrib
@@ -256,7 +275,7 @@ function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
         idx = ntuple(ndims(src_var.var)) do i
             dims[i] in time_dimnames ? (tidx:tidx) : Colon()
         end
-        dst_var.var[:] = src_var.var[idx...]
+        dst_var.var[:] = data[idx...]
     else
         dst_var.var[:] = src_var.var[:]
     end

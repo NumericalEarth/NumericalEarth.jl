@@ -115,7 +115,7 @@ synthetic_field_time_series(name, arch; dates = all_dates(SyntheticAtmosphere(),
     FieldTimeSeries(Metadata(name; dataset = SyntheticAtmosphere(), dates), arch;
                     time_indices_in_memory, inpainting = nothing)
 
-function synthetic_prescribed_atmosphere(arch = CPU(); kw...)
+function synthetic_prescribed_atmosphere(arch = CPU(); tracers = NamedTuple(), kw...)
     u  = synthetic_field_time_series(:eastward_velocity, arch; kw...)
     v  = synthetic_field_time_series(:northward_velocity, arch; kw...)
     T  = synthetic_field_time_series(:temperature, arch; kw...)
@@ -131,6 +131,7 @@ function synthetic_prescribed_atmosphere(arch = CPU(); kw...)
                                 temperature = T,
                                 specific_humidity = qᵛ,
                                 pressure = p,
+                                tracers,
                                 precipitation_flux)
 end
 

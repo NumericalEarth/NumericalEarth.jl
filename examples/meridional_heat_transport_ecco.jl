@@ -80,7 +80,7 @@ mht = Field(meridional_heat_transport(esm))
 ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
-                                        overwrite_existing = true)
+                                        overwrite_files = true)
 
 run!(simulation)
 

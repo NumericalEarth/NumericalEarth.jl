@@ -2,6 +2,7 @@ using Adapt: Adapt
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Grids: inactive_cell
 using Oceananigans.Operators: ∂zᶜᶜᶜ
+using Oceananigans.OutputReaders: update_field_time_series!
 
 
 """
@@ -209,6 +210,7 @@ compute_absorption_coefficient!(radiation, time) = nothing
 function compute_absorption_coefficient!(R::TwoColorRadiation{<:Any, <:Field}, time)
     κ₂ = R.second_absorption_coefficient
     grid = κ₂.grid
+    update_field_time_series!(R.chlorophyll, time)
     launch!(architecture(grid), grid, :xy, _compute_absorption_coefficient!,
             κ₂, grid, R.chlorophyll, R.chlorophyll_optics, time)
     return nothing

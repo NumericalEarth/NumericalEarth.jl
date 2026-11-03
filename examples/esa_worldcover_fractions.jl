@@ -13,7 +13,7 @@
 # The 10 m `Map` band is *categorical*: its byte value is a class code, not a
 # quantity, so it is never averaged. The ingest counts codes over each aggregated
 # cell to form area fractions. Onto the model grid the fractions are regridded
-# conservatively (area-weighted, so they still sum to one), and the categorical
+# conservatively (area-weighted, so they still sum to the mapped share), and the categorical
 # majority class is the argmax of those fractions — the class covering the most
 # area of each cell, never a blend, so no intermediate code is ever invented.
 
@@ -74,7 +74,7 @@ class_model  = Field(Metadatum(:landcover_class; dataset, region), grid)
 fraction_fields = NamedTuple(name => Field(Metadatum(Symbol(name, :_fraction); dataset, region), grid)
                              for name in class_names)
 
-# Sum of the eleven per-class fractions — a wiring check that must be ≈ 1 over
+# Sum of the eleven per-class fractions — a wiring check that must be ≈ 1 over land
 # every valid cell.
 fraction_sum = sum(interior(f) for f in fraction_fields)
 
@@ -177,7 +177,8 @@ fig
 
 # ## Sum of fractions (wiring check) and native-vs-model comparison
 #
-# The eleven per-class fractions sum to ≈ 1 over every valid cell (left). The
+# The eleven per-class fractions sum to ≈ 1 over land cells and to the mapped share
+# along the coast (left). The
 # aggregated pattern is preserved from the native ~110 m grid to the model grid
 # (right two panels): the conservative regrid area-averages but does not move the
 # forest, cities, or lakes.
