@@ -227,6 +227,11 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = no
 
 function Oceananigans.TimeSteppers.time_step!(ocean::PrescribedOcean, Δt)
     tick!(ocean.clock, Δt)
+    update_prescribed_time_series!(ocean)
+    return nothing
+end
+
+function update_prescribed_time_series!(ocean::PrescribedOcean)
     time = Time(ocean.clock.time)
 
     update_field_time_series!(ocean.sea_surface_temperature, time)
@@ -236,3 +241,17 @@ function Oceananigans.TimeSteppers.time_step!(ocean::PrescribedOcean, Δt)
 
     return nothing
 end
+
+#####
+##### Checkpointing
+#####
+
+Oceananigans.prognostic_state(ocean::PrescribedOcean) = (; clock = Oceananigans.prognostic_state(ocean.clock))
+
+function Oceananigans.restore_prognostic_state!(ocean::PrescribedOcean, state)
+    Oceananigans.restore_prognostic_state!(ocean.clock, state.clock)
+    update_prescribed_time_series!(ocean)
+    return ocean
+end
+
+Oceananigans.restore_prognostic_state!(ocean::PrescribedOcean, ::Nothing) = ocean
