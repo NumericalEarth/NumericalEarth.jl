@@ -72,7 +72,7 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
 
     ℵ = sea_ice_concentration(coupled_model.sea_ice)
     ai_interface = interfaces.atmosphere_sea_ice_interface
-    Tᵃⁱ = isnothing(ai_interface) ? ZeroField(eltype(grid)) : ai_interface.temperature
+    Tᵃⁱ = isnothing(ai_interface) ? ZeroField(eltype(grid)) : ai_interface.state.temperature
     sea_ice_properties = interfaces.sea_ice_properties
     sea_ice_units = isnothing(sea_ice_properties) ? DegreesCelsius() : sea_ice_properties.temperature_units
 
@@ -80,7 +80,7 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
             partition.surface_temperature,
             partition.ocean_fraction,
             ℵ,
-            interfaces.atmosphere_ocean_interface.temperature,
+            interfaces.atmosphere_ocean_interface.state.temperature,
             Tᵃⁱ,
             EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface),
             interfaces.ocean_properties.temperature_units,

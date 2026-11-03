@@ -324,8 +324,8 @@ end
 
             ## The blended skin temperature interpolates the warm land and the cool ocean
             ## (PrescribedOcean temperatures are already Kelvin).
-            Tˡ = Array(interior(interfaces.atmosphere_land_interface.temperature))
-            Tᵒ = Array(interior(interfaces.atmosphere_ocean_interface.temperature))
+            Tˡ = Array(interior(interfaces.atmosphere_land_interface.state.temperature))
+            Tᵒ = Array(interior(interfaces.atmosphere_ocean_interface.state.temperature))
             Tⁱⁿ = Array(interior(partition.surface_temperature))
             @test Tⁱⁿ ≈ fractions .* Tᵒ .+ (1 .- fractions) .* Tˡ
             @test surface_temperature(interfaces) === partition.surface_temperature
@@ -444,10 +444,10 @@ end
             @test maximum(Array(interior(Jʳⁿ))) > 0
             rain = Array(interior(Jʳⁿ))
             water_before = Array(interior(model.land.water_storage))
-            time_step!(model, 1)
             precipitation = Array(interior(model.land.fluxes.precipitation))
-            @test all(precipitation .>= rain)
             evaporation = Array(interior(model.land.fluxes.evaporation))
+            time_step!(model, 1)
+            @test all(precipitation .>= rain)
             @test Array(interior(model.land.water_storage)) ≈ water_before .+ precipitation .- evaporation
 
             dry = build_nested_land_test_model(arch)

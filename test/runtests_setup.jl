@@ -72,7 +72,7 @@ function coupled_land_components(arch, FT = Float64;
                                                               z = (-1, 0), topology = (Flat, Flat, Bounded)),
                                  air_temperature = 300.0, air_specific_humidity = 0.008, wind = 3.0, pressure = 101325.0,
                                  rain = nothing, hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
-                                 land_temperature = 298.0, water = 45.0, surface_storage = nothing,
+                                 land_temperature = 298.0, water = 45.0,
                                  shortwave = 600.0, longwave = 350.0, α = 0.2, ϵ = 0.95,
                                  radiation = PrescribedRadiation(grid; ocean_surface = nothing, sea_ice_surface = nothing,
                                                                  land_surface = SurfaceRadiationProperties(α, ϵ)))
@@ -82,7 +82,7 @@ function coupled_land_components(arch, FT = Float64;
     fill!(parent(atmosphere.velocities.u), wind)
     fill!(parent(atmosphere.pressure), pressure)
     isnothing(rain) || (fill!(parent(atmosphere.precipitation_flux.rain), rain); update_state!(atmosphere))
-    land = SlabLand(grid; hydrology, energy = SlabEnergy(FT), surface_storage)
+    land = SlabLand(grid; hydrology, energy = SlabEnergy(FT))
     set!(land; T = land_temperature)
     isnothing(water) || fill!(parent(land.water_storage), water)
 
@@ -95,7 +95,7 @@ function coupled_land_components(arch, FT = Float64;
 end
 
 const coupled_land_component_keys = (:grid, :air_temperature, :air_specific_humidity, :wind, :pressure, :rain,
-                                     :hydrology, :land_temperature, :water, :surface_storage, :shortwave, :longwave,
+                                     :hydrology, :land_temperature, :water, :shortwave, :longwave,
                                      :α, :ϵ, :radiation)
 
 # Component keywords go to `coupled_land_components`, the rest to `AtmosphereLandModel`.

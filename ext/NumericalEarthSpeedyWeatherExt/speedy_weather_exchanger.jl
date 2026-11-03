@@ -142,8 +142,8 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     𝒬ᵀ_speedy = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
     Jᵛ_speedy = atmos.variables.parameterizations.ocean.surface_humidity_flux.data
     sst = atmos.variables.prognostic.ocean.sea_surface_temperature.data
-    To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
-    Ti  = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
+    To  = coupled_model.interfaces.atmosphere_ocean_interface.state.temperature
+    Ti  = coupled_model.interfaces.atmosphere_sea_ice_interface.state.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation
     # TODO: regrid longwave rather than a mixed surface temperature
@@ -169,7 +169,7 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model::Spee
     𝒬ᵀ_speedy = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
     Jᵛ_speedy = atmos.variables.parameterizations.ocean.surface_humidity_flux.data
     sst = atmos.variables.prognostic.ocean.sea_surface_temperature.data
-    To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
+    To  = coupled_model.interfaces.atmosphere_ocean_interface.state.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation
     regrid!(𝒬ᵀ_speedy, to_atmosphere, 𝒬ᵀᵃᵒ)

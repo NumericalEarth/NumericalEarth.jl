@@ -117,8 +117,8 @@ using NumericalEarth.SeaIces: default_snow_thermodynamics
             time_step!(bare,  1)
             time_step!(snowy, 1)
 
-            Ts_bare  = bare.interfaces.atmosphere_sea_ice_interface.temperature
-            Ts_snowy = snowy.interfaces.atmosphere_sea_ice_interface.temperature
+            Ts_bare  = bare.interfaces.atmosphere_sea_ice_interface.state.temperature
+            Ts_snowy = snowy.interfaces.atmosphere_sea_ice_interface.state.temperature
 
             @allowscalar begin
                 # Snow insulation → warmer (or equal) surface temperature

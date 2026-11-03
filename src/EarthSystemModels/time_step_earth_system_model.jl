@@ -4,7 +4,10 @@ using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
                               compute_atmosphere_land_fluxes!,
                               compute_sea_ice_ocean_fluxes!,
-                              update_surface_temperature!
+                              update_surface_temperature!,
+                              step_atmosphere_land_interface!,
+                              initialize_atmosphere_land_state!,
+                              has_prognostic_state
 
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
@@ -21,7 +24,7 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     sea_ice    = coupled_model.sea_ice
     ocean      = coupled_model.ocean
 
-    compute_land_fluxes!(coupled_model, Δt)
+    step_interface!(coupled_model.interfaces, coupled_model, Δt)
 
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
@@ -39,13 +42,20 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     return nothing
 end
 
-initialize_land_surface!(land) = nothing
+"""
+$(TYPEDSIGNATURES)
 
-function compute_land_fluxes!(coupled_model, Δt)
-    compute_atmosphere_land_fluxes!(coupled_model, Δt)
-    update_net_fluxes!(coupled_model, coupled_model.land)
-    update_net_fluxes!(coupled_model, coupled_model.atmosphere)
-    apply_air_land_radiative_fluxes!(coupled_model)
+Advance the prognostic state of the `interfaces` over `Δt`, and assemble the step-mean land and
+atmosphere fluxes the components are stepped with. A diagnostic interface has no state to
+advance, so the components step with the fluxes assembled by `update_state!`.
+"""
+function step_interface!(interfaces, coupled_model, Δt)
+    if has_prognostic_state(interfaces.atmosphere_land_interface)
+        step_atmosphere_land_interface!(coupled_model, interfaces.atmosphere_land_interface, Δt)
+        update_net_fluxes!(coupled_model, coupled_model.land)
+        update_net_fluxes!(coupled_model, coupled_model.atmosphere)
+        apply_air_land_radiative_fluxes!(coupled_model)
+    end
     return nothing
 end
 
@@ -79,6 +89,8 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     compute_atmosphere_ocean_fluxes!(coupled_model)
     compute_atmosphere_sea_ice_fluxes!(coupled_model)
     compute_sea_ice_ocean_fluxes!(coupled_model)
+    maybe_initialize_interface_state!(coupled_model)
+    compute_atmosphere_land_fluxes!(coupled_model)
 
     # Phase 2.5: blend the per-surface skin temperatures over the surface partition
     # (no-op unless the model has both land and ocean interfaces)
@@ -87,22 +99,29 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     # Phase 3: assemble net component fluxes (turbulent only)
     update_net_fluxes!(coupled_model, radiation)
     update_net_fluxes!(coupled_model, atmosphere)
+    update_net_fluxes!(coupled_model, land)
     update_net_fluxes!(coupled_model, sea_ice)
     update_net_fluxes!(coupled_model, ocean)
 
     # Phase 4: add radiative contributions on top
     apply_air_sea_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
-
-    maybe_initialize_land_surface!(coupled_model)
+    apply_air_land_radiative_fluxes!(coupled_model)
 
     return nothing
 end
 
-function maybe_initialize_land_surface!(coupled_model)
-    if coupled_model.clock.iteration == 0
-        compute_land_fluxes!(coupled_model, 0)
-        initialize_land_surface!(coupled_model.land)
+# Prognostic interface state starts from the solution of a massless interface, unless it was set.
+function maybe_initialize_interface_state!(coupled_model)
+    if coupled_model.clock.iteration == 0 && !coupled_model.interfaces.state_is_set
+        initialize_interface_state!(coupled_model)
+    end
+    return nothing
+end
+
+function initialize_interface_state!(coupled_model)
+    if has_prognostic_state(coupled_model.interfaces.atmosphere_land_interface)
+        initialize_atmosphere_land_state!(coupled_model, coupled_model.interfaces.atmosphere_land_interface)
     end
     return nothing
 end

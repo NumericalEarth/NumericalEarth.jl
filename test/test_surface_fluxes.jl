@@ -140,7 +140,7 @@ end
             @test all(Array(interior(assessed_diffusivity)) .≈ 3e-3)
 
             # The skin temperature solve runs with the assessed diffusivity
-            Tⁱⁿ = interfaces.atmosphere_ocean_interface.temperature
+            Tⁱⁿ = interfaces.atmosphere_ocean_interface.state.temperature
             @test all(isfinite, Array(interior(Tⁱⁿ)))
 
             # The diffusivity operation is stripped from the kernel arguments

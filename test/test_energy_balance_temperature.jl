@@ -15,7 +15,7 @@ function skin_column(arch, temperature; air_temperature = 290.0, efficiency = 1.
     model = coupled_land_model(arch; air_temperature, land_temperature=300.0, air_specific_humidity=0.006, wind=5.0,
                                water=90.0, radiation=nothing, atmosphere_land_interface_state=(; temperature, specific_humidity=humidity))
     interface = model.interfaces.atmosphere_land_interface
-    T = scalar(interface.temperature)
+    T = scalar(interface.state.temperature)
     return T, scalar(interface.fluxes.sensible_heat) + scalar(interface.fluxes.latent_heat), 1.5 / 0.05 * (300 - T)
 end
 
@@ -37,7 +37,7 @@ end
         Ψⁱⁿ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0.1), FT(-2e-4)), InterfaceVelocities(FT(0), FT(0)),
                                    FT(300), FT(8e-3))
         Ψₐ = (T=FT(290), p=FT(1e5), q=FT(6e-3), z=FT(10))
-        Ψˡᵃ = (T=FT(300), 𝒮=FT(0.6), surface_storage=nothing)
+        Ψˡᵃ = (T=FT(300), 𝒮=FT(0.6))
         Ψᵣ = (σ=FT(0), α=FT(0), ϵ=FT(0), ℐꜜˢʷ=FT(0), ℐꜜˡʷ=FT(0))
         ℙⁱⁿ = (; state = (; specific_humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency=FT(1))))
         ℙₐ = (thermodynamics_parameters=AtmosphereThermodynamicsParameters(FT), gravitational_acceleration=FT(9.81))

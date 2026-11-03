@@ -72,9 +72,9 @@ end
         f, Λ = 0.6, 1.5 / 0.05
         model = tiled_canopy_model(arch; cover_fraction = f)
         tiled = model.interfaces.atmosphere_land_interface
-        T, veg, bare = tiled.temperature, tiled.vegetated, tiled.bare
+        T, veg, bare = tiled.state, tiled.vegetated, tiled.bare
         @test all(isfinite, scalar.((tiled.fluxes.sensible_heat, tiled.fluxes.latent_heat, T.ground_heat_flux, T.effective)))
-        @test 285 < scalar(T.interface) < 320
+        @test 285 < scalar(T.temperature) < 320
         # Radiation is internalized per tile, so the slab receives only the conduction.
         @test scalar(model.land.fluxes.surface_energy_flux) ≈ -scalar(T.ground_heat_flux) atol = 1e-10
 
@@ -82,24 +82,24 @@ end
             @test scalar(getproperty(tiled.fluxes, name)) ≈
                   f * scalar(getproperty(veg.fluxes, name)) + (1 - f) * scalar(getproperty(bare.fluxes, name)) rtol = 1e-12
         end
-        Tᵇ = scalar(bare.temperature)
-        blend(name, bare_value) = f * scalar(getproperty(veg.temperature, name)) + (1 - f) * bare_value
-        @test scalar(T.interface) ≈ blend(:interface, Tᵇ) rtol = 1e-12
+        Tᵇ = scalar(bare.state.temperature)
+        blend(name, bare_value) = f * scalar(getproperty(veg.state, name)) + (1 - f) * bare_value
+        @test scalar(T.temperature) ≈ blend(:temperature, Tᵇ) rtol = 1e-12
         @test scalar(T.ground) ≈ blend(:ground, Tᵇ) rtol = 1e-12
         @test scalar(T.ground_heat_flux) ≈ blend(:ground_heat_flux, Λ * (Tᵇ - scalar(model.land.temperature))) rtol = 1e-12
         @test scalar(T.ground_latent_heat) ≈ blend(:ground_latent_heat, scalar(bare.fluxes.latent_heat)) rtol = 1e-12
-        @test scalar(T.canopy_latent_heat) == scalar(veg.temperature.canopy_latent_heat)
-        @test scalar(T.canopy) == scalar(veg.temperature.canopy)
+        @test scalar(T.canopy_latent_heat) == scalar(veg.state.canopy_latent_heat)
+        @test scalar(T.canopy) == scalar(veg.state.canopy)
         σ = model.radiation.stefan_boltzmann_constant
         ϵ = model.radiation.surface_properties.land.emissivity
         ℐꜜˡʷ = scalar(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ)
         @test σ * scalar(T.effective)^4 ≈
-              f * σ * scalar(veg.temperature.effective)^4 + (1 - f) * (ϵ * σ * Tᵇ^4 - (1 - ϵ) * ℐꜜˡʷ) rtol = 1e-12
+              f * σ * scalar(veg.state.effective)^4 + (1 - f) * (ϵ * σ * Tᵇ^4 - (1 - ϵ) * ℐꜜˡʷ) rtol = 1e-12
         @test scalar(T.effective_albedo) ≈ blend(:effective_albedo, model.radiation.surface_properties.land.albedo)
 
-        @test scalar(veg.temperature.ground) < scalar(veg.temperature.canopy)
-        @test scalar(veg.temperature.canopy_latent_heat) > scalar(veg.temperature.ground_latent_heat)
-        @test scalar(veg.temperature.ground_latent_heat) < scalar(bare.fluxes.latent_heat)
+        @test scalar(veg.state.ground) < scalar(veg.state.canopy)
+        @test scalar(veg.state.canopy_latent_heat) > scalar(veg.state.ground_latent_heat)
+        @test scalar(veg.state.ground_latent_heat) < scalar(bare.fluxes.latent_heat)
 
         # Endpoints reduce bit-for-bit to one tile, and f = 1 to a standalone CanopyInterface.
         m1, m0 = tiled_canopy_model(arch; cover_fraction = 1.0), tiled_canopy_model(arch; cover_fraction = 0.0)
@@ -108,15 +108,15 @@ end
             @test scalar(getproperty(t1.fluxes, name)) == scalar(getproperty(t1.vegetated.fluxes, name))
             @test scalar(getproperty(t0.fluxes, name)) == scalar(getproperty(t0.bare.fluxes, name))
         end
-        @test scalar(t1.temperature.ground_heat_flux) == scalar(t1.vegetated.temperature.ground_heat_flux)
-        @test scalar(t0.temperature.ground) == scalar(t0.bare.temperature)
-        @test scalar(m0.land.fluxes.surface_energy_flux) ≈ -Λ * (scalar(t0.bare.temperature) - scalar(m0.land.temperature)) atol = 1e-10
+        @test scalar(t1.state.ground_heat_flux) == scalar(t1.vegetated.state.ground_heat_flux)
+        @test scalar(t0.state.ground) == scalar(t0.bare.state.temperature)
+        @test scalar(m0.land.fluxes.surface_energy_flux) ≈ -Λ * (scalar(t0.bare.state.temperature) - scalar(m0.land.temperature)) atol = 1e-10
 
         standalone = coupled_land_model(arch; atmosphere_land_interface_state = tiled_canopy(Float64))
         s = standalone.interfaces.atmosphere_land_interface
         @test scalar(t1.fluxes.sensible_heat) == scalar(s.fluxes.sensible_heat)
         @test scalar(t1.fluxes.latent_heat) == scalar(s.fluxes.latent_heat)
-        @test scalar(t1.temperature.ground_heat_flux) == scalar(s.temperature.ground_heat_flux)
+        @test scalar(t1.state.ground_heat_flux) == scalar(s.state.ground_heat_flux)
 
         rough = tiled_canopy_model(arch; cover_fraction = 0.5, wind = 6.0,
                                  vegetated_fluxes = land_roughness(1.0, 0.1), bare_fluxes = land_roughness(1e-3, 1e-4))
