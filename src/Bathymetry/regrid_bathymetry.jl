@@ -4,13 +4,14 @@ using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
 # The bathymetry cache shares DataWrangling's keyed field cache, carrying the
 # processing parameters in the key's keyword slot. Parameters are normalized so
-# that, e.g., `minimum_depth = 0` and `minimum_depth = 0.0` key identically.
+# that, e.g., `minimum_depth = 0` and `minimum_depth = 0.0` key identically, and
+# `method` prints the same whether or not the caller imported its type.
 function bathymetry_regridding_key(grid, metadata;
                                    height_above_water, minimum_depth,
                                    method, major_basins, connections = ())
     parameters = (; height_above_water = isnothing(height_above_water) ? nothing : Float64(height_above_water),
                     minimum_depth = Float64(minimum_depth),
-                    method,
+                    method = sprint(show, method; context = :module => @__MODULE__),
                     major_basins = Float64(major_basins),
                     connections = map(c -> (from = Float64.(c.from), to = Float64.(c.to), depth = Float64(c.depth)), connections))
     return FieldRegridding(grid, metadata, parameters)
