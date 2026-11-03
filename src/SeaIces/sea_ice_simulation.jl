@@ -12,12 +12,12 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemp
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
-ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
+ocean_reference_density(ocean, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
 # typed so that no `Int` zero enters the Float sea-ice kernels
 ocean_surface_height(ocean::Simulation, grid) = ocean.model.free_surface.displacement
-ocean_surface_height(::Nothing, grid) = ZeroField(eltype(grid))
+ocean_surface_height(ocean, grid) = ZeroField(eltype(grid))
 
 # No slip is a zero-value condition on the immersed boundary; free slip leaves the wall stress-free
 velocity_boundary_conditions(grid, location, ::Val{:no_slip})   = velocity_boundary_conditions(grid, location, Val(:free_slip))
@@ -197,7 +197,7 @@ function sea_ice_simulation(grid, ocean=nothing;
 end
 
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
-default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
+default_coriolis(ocean) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
@@ -240,26 +240,24 @@ end
 ##### Extending EarthSystemModels interface
 #####
 
-EarthSystemModels.sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness
-EarthSystemModels.sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_concentration
 EarthSystemModels.intercepted_snowfall(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.mass_fluxes.intercepted_snowfall
 
 EarthSystemModels.heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.heat_capacity
 EarthSystemModels.reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.density
 
-function InterfaceComputations.net_fluxes(sea_ice::Simulation{<:SeaIceModel})
-    net_momentum_fluxes = if isnothing(sea_ice.model.dynamics)
-        u = Field{Face, Center, Nothing}(sea_ice.model.grid)
-        v = Field{Center, Face, Nothing}(sea_ice.model.grid)
+function InterfaceComputations.net_fluxes(model::SeaIceModel)
+    net_momentum_fluxes = if isnothing(model.dynamics)
+        u = Field{Face, Center, Nothing}(Grids.grid(model))
+        v = Field{Center, Face, Nothing}(Grids.grid(model))
         (; u, v)
     else
-        u = sea_ice.model.dynamics.external_momentum_stresses.top.u
-        v = sea_ice.model.dynamics.external_momentum_stresses.top.v
+        u = model.dynamics.external_momentum_stresses.top.u
+        v = model.dynamics.external_momentum_stresses.top.v
         (; u, v)
     end
 
-    net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top, snowfall=sea_ice.model.snowfall), net_momentum_fluxes)
-    net_bottom_sea_ice_fluxes = (; heat=sea_ice.model.external_heat_fluxes.bottom)
+    net_top_sea_ice_fluxes = merge((; heat=model.external_heat_fluxes.top, snowfall=model.snowfall), net_momentum_fluxes)
+    net_bottom_sea_ice_fluxes = (; heat=model.external_heat_fluxes.bottom)
 
     return (; bottom = net_bottom_sea_ice_fluxes, top = net_top_sea_ice_fluxes)
 end

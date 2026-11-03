@@ -1,5 +1,3 @@
-using ClimaSeaIce: SeaIceModel
-
 """
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
 
@@ -7,25 +5,20 @@ Add the radiative contribution to the net sea-ice top heat flux and write
 the diagnostic radiative fluxes (upwelling LW, absorbed LW, transmitted SW)
 into `coupled_model.radiation.interface_fluxes.sea_ice`.
 
-When `coupled_model.radiation === nothing`, this is a no-op.
-Also a no-op when sea-ice is not a `Simulation{<:SeaIceModel}`.
+When `coupled_model.radiation === nothing`, or sea ice receives no fluxes, this is a no-op.
 """
 EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel) =
-    _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, coupled_model.sea_ice)
+function EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel)
+    isnothing(coupled_model.interfaces.net_fluxes.sea_ice) && return nothing
 
-# No sea-ice or non-prognostic sea-ice: nothing to do.
-_apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, ::Any) = nothing
-
-function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSystemModel,
-                                                       sea_ice::Simulation{<:SeaIceModel})
+    sea_ice = coupled_model.sea_ice
     radiation = coupled_model.radiation
     interface_fluxes = radiation.interface_fluxes
     isnothing(interface_fluxes) && return nothing
     haskey(interface_fluxes, :sea_ice) || return nothing
 
-    grid = sea_ice.model.grid
+    grid = Oceananigans.Grids.grid(sea_ice)
     arch = architecture(grid)
     clock = coupled_model.clock
 

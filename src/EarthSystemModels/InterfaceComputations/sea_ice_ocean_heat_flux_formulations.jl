@@ -159,7 +159,7 @@ function ThreeEquationHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
 end
 
 # Constructor that accepts the sea-ice model
-ThreeEquationHeatFlux(::Nothing, FT::DataType = Oceananigans.defaults.FloatType; kwargs...) = ThreeEquationHeatFlux(FT; kwargs...)
+ThreeEquationHeatFlux(sea_ice, FT::DataType = Oceananigans.defaults.FloatType; kwargs...) = ThreeEquationHeatFlux(FT; kwargs...)
 
 #####
 ##### Interface heat flux computation

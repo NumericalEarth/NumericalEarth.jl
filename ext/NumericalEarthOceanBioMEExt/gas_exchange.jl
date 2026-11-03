@@ -9,6 +9,7 @@ using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, OxygenSolubility,
 using OceanBioME.Models.CarbonChemistryModel: CarbonChemistry, FF
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
+using NumericalEarth.EarthSystemModels: sea_ice_concentration
 import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
 
 biogeochemistry_surface_exchanged_tracers(biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
@@ -78,7 +79,7 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
 
     exchangers = gas_transfer_parametrisations(biogeochemistry, coupled_model.interfaces.properties)
 
-    ℵ = coupled_model.sea_ice.model.ice_concentration
+    ℵ = sea_ice_concentration(coupled_model.sea_ice)
 
     required_ocean_tracers = (:T, :S,
                               if_phosphate_available(ocean.model.tracers)...,

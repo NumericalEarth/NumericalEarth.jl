@@ -52,12 +52,6 @@ InterfaceComputations.ComponentExchanger(sim::NestedModelSimulation, exchange_gr
 EarthSystemModels.interpolate_state!(exchanger, exchange_grid, sim::NestedModelSimulation, coupled_model) =
     EarthSystemModels.interpolate_state!(exchanger, exchange_grid, component_model(sim), coupled_model)
 
-InterfaceComputations.net_fluxes(sim::NestedModelSimulation) =
-    InterfaceComputations.net_fluxes(component_model(sim))
-
-EarthSystemModels.update_net_fluxes!(coupled_model, sim::NestedModelSimulation) =
-    EarthSystemModels.update_net_fluxes!(coupled_model, component_model(sim))
-
 # The advective CFL belongs to the innermost prognostic model (the child).
 Oceananigans.Advection.cell_advection_timescale(esm::EarthSystemModels.EarthSystemModel{<:Any, <:NestedModelSimulation}) =
     Oceananigans.Advection.cell_advection_timescale(component_model(esm.atmosphere))

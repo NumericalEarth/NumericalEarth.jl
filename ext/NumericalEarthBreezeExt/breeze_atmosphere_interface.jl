@@ -1,13 +1,13 @@
 using Oceananigans.Grids: Center
-using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Fields: compute!
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
+using Oceananigans.Fields: Field, compute!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
                                specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, vector_component_boundary_conditions
 
 const BreezeAtmosphere    = Breeze.AtmosphereModel
 const BreezeAtmosphereSim = Simulation{<:Breeze.AtmosphereModel}
@@ -73,45 +73,35 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSi
 ##### ComponentExchanger: state fields for flux computations
 #####
 
-function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
-                                                                                   correction = nothing)
-    # Surface fields are copied index for index from the atmosphere grid.
-    atmosphere_size = (size(atmosphere.grid, 1), size(atmosphere.grid, 2))
-    exchange_size = (size(exchange_grid, 1), size(exchange_grid, 2))
-    atmosphere_size == exchange_size ||
-        throw(ArgumentError("The Breeze atmosphere's horizontal size $atmosphere_size must match the exchange grid's $exchange_size."))
+function NumericalEarth.EarthSystemModels.surface_state(atmosphere::BreezeAtmosphere)
+    grid = Oceananigans.Grids.grid(atmosphere)
+    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
 
     # Breeze's bottom flux of every sedimenting condensate, liquid and frozen (positive down,
     # kg m⁻² s⁻¹), enters as rain; Jˢⁿ stays zero.
-    Jʳⁿ = bottom_precipitation_flux(atmosphere)
+    state = (; u    = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
+               v    = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
+               T    = Field{Center, Center, Nothing}(grid),
+               p    = Field{Center, Center, Nothing}(grid),
+               q    = Field{Center, Center, Nothing}(grid),
+               ℐꜜˢʷ = Field{Center, Center, Nothing}(grid),
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(grid),
+               Jʳⁿ  = bottom_precipitation_flux(atmosphere),
+               Jˢⁿ  = Field{Center, Center, Nothing}(grid))
 
-    state = (; u    = Oceananigans.CenterField(exchange_grid),
-               v    = Oceananigans.CenterField(exchange_grid),
-               T    = Oceananigans.CenterField(exchange_grid),
-               p    = Oceananigans.CenterField(exchange_grid),
-               q    = Oceananigans.CenterField(exchange_grid),
-               ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
-               ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
-               Jʳⁿ  = Jʳⁿ,
-               Jˢⁿ  = Oceananigans.CenterField(exchange_grid))
-
-    correction = NumericalEarth.EarthSystemModels.InterfaceComputations.materialize_correction(correction, exchange_grid, atmosphere)
-    return ComponentExchanger(state, nothing, correction)
+    return state
 end
-
-NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos::BreezeAtmosphereSim, exchange_grid; kw...) =
-    NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(component_model(atmos), exchange_grid; kw...)
 
 #####
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
-@kernel function _interpolate_breeze_state!(state, u, v, T, qᵛ, p)
+@kernel function _interpolate_breeze_state!(state, grid, u, v, T, qᵛ, p)
     i, j = @index(Global, NTuple)
 
     @inbounds begin
-        state.u[i, j, 1]    = u[i, j, 1]
-        state.v[i, j, 1]    = v[i, j, 1]
+        state.u[i, j, 1]    = ℑxᶜᵃᵃ(i, j, 1, grid, u)
+        state.v[i, j, 1]    = ℑyᵃᶜᵃ(i, j, 1, grid, v)
         state.T[i, j, 1]    = T[i, j, 1]
         state.q[i, j, 1]    = qᵛ[i, j, 1]
         state.p[i, j, 1]    = p[i, j, 1]
@@ -121,8 +111,7 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos:
     end
 end
 
-function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphere, coupled_model)
-    state = exchanger.state
+function NumericalEarth.EarthSystemModels.update_surface_state!(state, atmosphere::BreezeAtmosphere)
     u, v, w = atmosphere.velocities
     T = atmosphere.temperature
     qᵛ = specific_humidity(atmosphere)
@@ -132,19 +121,15 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     # would bias fluxes over terrain).
     p = dynamics_pressure(atmosphere.dynamics)
 
-    arch = architecture(exchange_grid)
-    kernel_parameters = interface_kernel_parameters(exchange_grid)
-    launch!(arch, exchange_grid, kernel_parameters,
+    grid = Oceananigans.Grids.grid(atmosphere)
+    launch!(architecture(grid), grid, interface_kernel_parameters(grid),
             _interpolate_breeze_state!,
-            state, u, v, T, qᵛ, p)
+            state, grid, u, v, T, qᵛ, p)
 
     compute!(state.Jʳⁿ)   # refresh the precipitation diagnostic
 
     return nothing
 end
-
-NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::BreezeAtmosphereSim, coupled_model) =
-    NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, component_model(atmos), coupled_model)
 
 #####
 ##### Net fluxes: extract coupling flux fields from Breeze boundary conditions
@@ -169,61 +154,29 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
     return (; ρu, ρv, ρE, ρqᵛᵉ)
 end
 
-NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeAtmosphereSim) =
-    NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(component_model(atmos))
-
 #####
-##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs,
-##### weighting each surface's contribution by the surface partition:
-##### open ocean þ (1 - ℵ), sea ice þ ℵ, land (1 - þ).
+##### Assemble the partition-weighted surface fluxes into Breeze bottom BCs
 #####
 
-# Center-located partition-weighted stress, interpolated to the face-located ρu/ρv
-# only after weighting.
-@inline function ρτᶜᶜᶜ(i, j, k, grid, ρτᵃᵒ, ρτᵃⁱ, ρτᵃˡ, þ, ℵ)
-    @inbounds begin
-        þᵢ = þ[i, j, k]
-        ℵᵢ = ℵ[i, j, k]
-        return þᵢ * ((1 - ℵᵢ) * ρτᵃᵒ[i, j, k] + ℵᵢ * ρτᵃⁱ[i, j, k]) + (1 - þᵢ) * ρτᵃˡ[i, j, k]
-    end
-end
-
-@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, ai_fluxes, al_fluxes, þ, ℵ, grid)
+@kernel function _assemble_net_atmosphere_fluxes!(net, surface_fluxes, grid)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        þᵢ = þ[i, j, 1]
-        ℵᵢ = ℵ[i, j, 1]
-
-        Qc = þᵢ * ((1 - ℵᵢ) * ao_fluxes.sensible_heat[i, j, 1] + ℵᵢ * ai_fluxes.sensible_heat[i, j, 1]) + (1 - þᵢ) * al_fluxes.sensible_heat[i, j, 1]
-        Fv = þᵢ * ((1 - ℵᵢ) * ao_fluxes.water_vapor[i, j, 1]   + ℵᵢ * ai_fluxes.water_vapor[i, j, 1])   + (1 - þᵢ) * al_fluxes.water_vapor[i, j, 1]
-
-        net.ρu[i, j, 1] = ℑxᶠᵃᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.x_momentum, ai_fluxes.x_momentum, al_fluxes.x_momentum, þ, ℵ)
-        net.ρv[i, j, 1] = ℑyᵃᶠᵃ(i, j, 1, grid, ρτᶜᶜᶜ, ao_fluxes.y_momentum, ai_fluxes.y_momentum, al_fluxes.y_momentum, þ, ℵ)
-        net.ρE[i, j, 1] = Qc   # sensible heat only; latent heat handled by moisture flux
-        net.ρqᵛᵉ[i, j, 1] = Fv
+        net.ρu[i, j, 1] = ℑxᶠᵃᵃ(i, j, 1, grid, surface_fluxes.x_momentum)
+        net.ρv[i, j, 1] = ℑyᵃᶠᵃ(i, j, 1, grid, surface_fluxes.y_momentum)
+        net.ρE[i, j, 1] = surface_fluxes.sensible_heat[i, j, 1] # latent heat is handled by the moisture flux
+        net.ρqᵛᵉ[i, j, 1] = surface_fluxes.water_vapor[i, j, 1]
     end
 end
-
-NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::BreezeAtmosphereSim) =
-    NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, component_model(atmos))
 
 function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
     net = coupled_model.interfaces.net_fluxes.atmosphere
     isnothing(net) && return nothing
 
-    grid = atmosphere.grid
-    arch = architecture(grid)
-    params = interface_kernel_parameters(grid)
+    grid = Oceananigans.Grids.grid(atmosphere)
+    surface_fluxes = coupled_model.interfaces.surface_partition.fluxes
 
-    interfaces = coupled_model.interfaces
-    ao_fluxes = computed_fluxes(interfaces.atmosphere_ocean_interface)
-    ai_fluxes = computed_fluxes(interfaces.atmosphere_sea_ice_interface)
-    al_fluxes = computed_fluxes(interfaces.atmosphere_land_interface)
-    þ = interfaces.surface_partition.ocean_fraction
-    ℵ = sea_ice_concentration(coupled_model.sea_ice)
-
-    launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!,
-            net, ao_fluxes, ai_fluxes, al_fluxes, þ, ℵ, grid)
+    launch!(architecture(grid), grid, interface_kernel_parameters(grid), _assemble_net_atmosphere_fluxes!,
+            net, surface_fluxes, grid)
 
     return nothing
 end

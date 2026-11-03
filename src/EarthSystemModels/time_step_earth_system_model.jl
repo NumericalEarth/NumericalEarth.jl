@@ -4,7 +4,11 @@ using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
                               compute_atmosphere_land_fluxes!,
                               compute_sea_ice_ocean_fluxes!,
-                              update_surface_temperature!
+                              update_surface_temperature!,
+                              update_surface_fluxes!
+
+function assemble_net_ocean_fluxes! end
+function assemble_net_sea_ice_fluxes! end
 
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
@@ -42,9 +46,11 @@ end
 initialize_land_surface!(land) = nothing
 
 function compute_land_fluxes!(coupled_model, Δt)
+    isnothing(coupled_model.land) && return nothing
     compute_atmosphere_land_fluxes!(coupled_model, Δt)
-    update_net_fluxes!(coupled_model, coupled_model.land)
-    update_net_fluxes!(coupled_model, coupled_model.atmosphere)
+    update_net_fluxes!(coupled_model, component_model(coupled_model.land))
+    update_surface_fluxes!(coupled_model)
+    update_net_fluxes!(coupled_model, component_model(coupled_model.atmosphere))
     apply_air_land_radiative_fluxes!(coupled_model)
     return nothing
 end
@@ -81,18 +87,22 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     compute_sea_ice_ocean_fluxes!(coupled_model)
 
     # Phase 2.5: blend the per-surface skin temperatures over the surface partition
-    # (no-op unless the model has both land and ocean interfaces)
     update_surface_temperature!(coupled_model)
 
-    # Phase 3: assemble net component fluxes (turbulent only)
-    update_net_fluxes!(coupled_model, radiation)
-    update_net_fluxes!(coupled_model, atmosphere)
-    update_net_fluxes!(coupled_model, sea_ice)
-    update_net_fluxes!(coupled_model, ocean)
+    # Phase 3: assemble the net fluxes of each surface (turbulent only)
+    update_surface_fluxes!(coupled_model)
+    assemble_net_sea_ice_fluxes!(coupled_model)
+    assemble_net_ocean_fluxes!(coupled_model)
 
     # Phase 4: add radiative contributions on top
     apply_air_sea_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
+
+    # Phase 5: hand each component its fluxes
+    update_net_fluxes!(coupled_model, component_model(radiation))
+    update_net_fluxes!(coupled_model, component_model(atmosphere))
+    update_net_fluxes!(coupled_model, component_model(sea_ice))
+    update_net_fluxes!(coupled_model, component_model(ocean))
 
     maybe_initialize_land_surface!(coupled_model)
 

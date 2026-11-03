@@ -5,7 +5,7 @@
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Fields: ConstantField, Field
 using Oceananigans.Grids: Center
-using NumericalEarth.EarthSystemModels.InterfaceComputations: radiative_surface
+using NumericalEarth.EarthSystemModels.InterfaceComputations: radiative_surface, validate_exchange_grid
 using NumericalEarth: stateindex
 using NumericalEarth.Radiations: SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
@@ -35,6 +35,7 @@ end
 # The RTM's configured surface optics, which the land kernels read as the ground's. The blue-sky
 # albedo is captured here, before the land's radiating surface replaces the RTM's albedos.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
+    validate_exchange_grid("Breeze radiative transfer model", rtm.downwelling_shortwave_flux.grid, exchange_grid)
     ϵ = rtm.surface_radiation.surface_emissivity
     α = Field{Center, Center, Nothing}(exchange_grid)
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),

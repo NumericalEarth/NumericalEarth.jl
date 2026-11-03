@@ -10,6 +10,7 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
 end
 
 NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
+NumericalEarth.EarthSystemModels.ocean_surface_temperature(::VerosOceanSimulation) = Oceananigans.Fields.ZeroField()
 
 @inline function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean::VerosOceanSimulation)
     grid = surface_grid(ocean)
@@ -43,8 +44,6 @@ NumericalEarth.Oceans.get_radiative_forcing(ocean::VerosOceanSimulation) = nothi
 
 function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
 
-    # Update the flux containers
-    NumericalEarth.Oceans.update_net_ocean_fluxes!(coupled_model, ocean, coupled_model.interfaces.exchanger.grid)
     net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
 
     # Pass the flux values to the python ocean

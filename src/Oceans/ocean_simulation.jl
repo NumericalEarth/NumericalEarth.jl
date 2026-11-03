@@ -597,12 +597,8 @@ end
 hasclosure(closure, ClosureType) = closure isa ClosureType
 hasclosure(closure_tuple::Tuple, ClosureType) = any(hasclosure(c, ClosureType) for c in closure_tuple)
 
-const OceananigansModelSimulations = Union{
-    Simulation{<:HydrostaticFreeSurfaceModel},
-    Simulation{<:NonhydrostaticModel}
-}
-
-Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
+const OceananigansModels = Union{HydrostaticFreeSurfaceModel, NonhydrostaticModel}
+const OceananigansModelSimulations = Simulation{<:OceananigansModels}
 
 #####
 ##### Extending NumericalEarth interface

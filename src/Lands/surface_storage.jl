@@ -119,7 +119,7 @@ soil_hydrology(hydrology::InterceptingHydrology) = hydrology.soil
 
 # The plant-stress endpoints are fixed by the soil's retention curve, so they are evaluated once.
 (s::InterfaceComputations.SaturationAtSuction)(land::SlabLand) =
-    saturation_at_suction(soil_hydrology(land.hydrology), s.suction_head, land.grid)
+    saturation_at_suction(soil_hydrology(land.hydrology), s.suction_head, Grids.grid(land))
 
 function saturation_at_suction(hydrology::VariablySaturatedHydrology, suction_head, grid)
     saturation = KernelFunctionOperation{Center, Center, Nothing}(effective_saturation, grid, hydrology.retention_curve,
@@ -132,7 +132,7 @@ saturation_at_suction(hydrology, suction_head, grid) =
 
 function (d::InterfaceComputations.SoilVaporDiffusivity)(land::SlabLand)
     vapor = d.vapor_exchange
-    return soil_vapor_diffusivity(soil_hydrology(land.hydrology), vapor.tortuosity, vapor, land.saturation, land.grid)
+    return soil_vapor_diffusivity(soil_hydrology(land.hydrology), vapor.tortuosity, vapor, land.saturation, Grids.grid(land))
 end
 
 soil_vapor_diffusivity(hydrology, ::ConstantTortuosity, vapor, saturation, grid) = vapor.molecular_diffusivity

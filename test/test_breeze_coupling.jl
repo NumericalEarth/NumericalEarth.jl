@@ -554,6 +554,19 @@ end
     end
 end
 
+@testset "The surface state takes the velocities at cell centers" begin
+    for arch in test_architectures
+        model = build_test_model(arch)
+        L = 20kilometers
+        set!(model.atmosphere.model; u = (x, z) -> 5 + cos(2π * x / L))
+        update_state!(model)
+
+        uᶠ = Array(interior(model.atmosphere.model.velocities.u))[1:end, 1, 1]
+        uᶜ = Array(interior(model.interfaces.exchanger.atmosphere.state.u))[:, 1, 1]
+        @test uᶜ ≈ (uᶠ .+ circshift(uᶠ, -1)) ./ 2
+    end
+end
+
 @testset "Interface stresses at periodic u/v faces (3D Breeze + PrescribedOcean)" begin
     for arch in test_architectures
         A = typeof(arch)

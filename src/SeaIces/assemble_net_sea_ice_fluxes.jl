@@ -3,19 +3,20 @@ using Oceananigans.Fields: ZeroField
 using ..EarthSystemModels: sea_ice_concentration, NoAtmosInterfaceModel
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
-EarthSystemModels.update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
-
 snowfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
-function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
-    ocean = coupled_model.ocean
-    grid  = sea_ice.model.grid
+function EarthSystemModels.assemble_net_sea_ice_fluxes!(coupled_model)
+    net_sea_ice_fluxes = coupled_model.interfaces.net_fluxes.sea_ice
+    isnothing(net_sea_ice_fluxes) && return nothing
+
+    sea_ice = coupled_model.sea_ice
+    grid  = Grids.grid(sea_ice)
     arch  = architecture(grid)
     clock = coupled_model.clock
 
-    top_fluxes = coupled_model.interfaces.net_fluxes.sea_ice.top
-    bottom_heat_flux = coupled_model.interfaces.net_fluxes.sea_ice.bottom.heat
+    top_fluxes = net_sea_ice_fluxes.top
+    bottom_heat_flux = net_sea_ice_fluxes.bottom.heat
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
     atmosphere_sea_ice_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_sea_ice_interface)
 

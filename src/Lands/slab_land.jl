@@ -175,8 +175,8 @@ end
 Base.eltype(::SlabLand{FT}) where FT = FT
 
 function Base.summary(land::SlabLand{FT}) where FT
-    A = nameof(typeof(architecture(land.grid)))
-    G = nameof(typeof(land.grid))
+    A = nameof(typeof(architecture(Grids.grid(land))))
+    G = nameof(typeof(Grids.grid(land)))
     return string("SlabLand{$FT, $A, $G}",
                   "(time = ", prettytime(land.clock.time),
                   ", iteration = ", land.clock.iteration, ")")
@@ -184,7 +184,7 @@ end
 
 function Base.show(io::IO, land::SlabLand)
     print(io, summary(land), '\n',
-              "├── grid:                  ", summary(land.grid), '\n',
+              "├── grid:                  ", summary(Grids.grid(land)), '\n',
               "├── energy:                ", summary(land.energy), '\n',
               "├── hydrology:             ", summary(land.hydrology), '\n',
               "├── surface_storage:       ", summary(land.surface_storage), '\n',
@@ -360,7 +360,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
 
     interface_fluxes = land_surface_fluxes(atmosphere_land_interface, land.temperature)
     fluxes = land.fluxes
-    grid = land.grid
+    grid = Grids.grid(land)
     arch = architecture(grid)
 
     P                  = get(fluxes, :precipitation, nothing)
@@ -402,8 +402,6 @@ end
     maybe_write!(Pl,                 i, j, rain)
 end
 
-EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
-
 EarthSystemModels.InterfaceComputations.land_temperature(land::SlabLand) = surface_temperature(land)
 EarthSystemModels.InterfaceComputations.land_saturation(land::SlabLand) = surface_saturation(land)
 EarthSystemModels.InterfaceComputations.land_canopy_water_storage(land::SlabLand) =
@@ -411,17 +409,7 @@ EarthSystemModels.InterfaceComputations.land_canopy_water_storage(land::SlabLand
 EarthSystemModels.InterfaceComputations.land_canopy_water_capacity(land::SlabLand) =
     canopy_water_capacity(land.hydrology, land)
 
-"""
-    ComponentExchanger(land::SlabLand, grid; state_accessors)
+Grids.grid(land::SlabLand) = land.grid
 
-Publish the land state returned by `state_accessors` (declared by the atmosphere--land
-interface) as a `NamedTuple` of the slab's own fields. Aerodynamic roughness lengths
-belong to the atmosphere-land flux closure (`atmosphere_land_fluxes`), not the land state.
-"""
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid; state_accessors)
-    # TODO: regrid onto `grid` when it differs from `land.grid`; currently it is assumed that the two coincide
-    state = map(accessor -> accessor(land), state_accessors)
-    return ComponentExchanger(state, nothing)
-end
-
-EarthSystemModels.InterfaceComputations.initialize!(::ComponentExchanger, grid, ::SlabLand) = nothing
+# The land state selected by `state_accessors`, declared by the atmosphere--land interface, as the slab's own fields.
+EarthSystemModels.surface_state(land::SlabLand; state_accessors) = map(accessor -> accessor(land), state_accessors)

@@ -3,7 +3,6 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions, fill_halo_regions!
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Utils: launch!
-using NumericalEarth.EarthSystemModels: sea_ice_concentration
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 # We do not need this...
@@ -44,9 +43,7 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
                ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
                Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
-               Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid),
-               tmp  = Field{Center, Center, Nothing}(exchange_grid),  # allocate scratch space
-            )
+               Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
 
 
     correction = NumericalEarth.EarthSystemModels.InterfaceComputations.materialize_correction(correction, exchange_grid, atmosphere)
@@ -123,59 +120,14 @@ end
     @inbounds v[i, j, kᴺ] = vₑ
 end
 
-# TODO: Fix the coupling with the sea ice model and make sure that
-# this function works also for sea_ice=nothing
 function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
     to_atmosphere = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
-    tmp = coupled_model.interfaces.exchanger.atmosphere.state.tmp
-    ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-    ai_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
-
-    𝒬ᵀᵃᵒ = ao_fluxes.sensible_heat
-    𝒬ᵀᵃⁱ = ai_fluxes.sensible_heat
-    Jᵛᵃᵒ = ao_fluxes.water_vapor
-    Jᵛᵃⁱ = ai_fluxes.water_vapor
-    ℵ    = sea_ice_concentration(coupled_model.sea_ice)
-
-
-    # All the location of these fluxes will change
-    𝒬ᵀ_speedy = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
-    Jᵛ_speedy = atmos.variables.parameterizations.ocean.surface_humidity_flux.data
-    sst = atmos.variables.prognostic.ocean.sea_surface_temperature.data
-    To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
-    Ti  = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
+    partition = coupled_model.interfaces.surface_partition
 
     # TODO: Figure out how we are going to deal with upwelling radiation
-    # TODO: regrid longwave rather than a mixed surface temperature
-    tmp .= 𝒬ᵀᵃᵒ * (1 - ℵ) + ℵ * 𝒬ᵀᵃⁱ
-    regrid!(𝒬ᵀ_speedy, to_atmosphere, tmp)
-    tmp .= Jᵛᵃᵒ * (1 - ℵ) + ℵ * Jᵛᵃⁱ
-    regrid!(Jᵛ_speedy, to_atmosphere, tmp)
-    tmp .= To * (1 - ℵ) + ℵ * Ti + 273.15
-    regrid!(sst, to_atmosphere, tmp)
-
-    return nothing
-end
-
-# Simple case -> there is no sea ice!
-function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos::SpeedySimulation)
-    to_atmosphere = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
-    tmp       = coupled_model.interfaces.exchanger.atmosphere.state.tmp
-    ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-    𝒬ᵀᵃᵒ = ao_fluxes.sensible_heat
-    Jᵛᵃᵒ = ao_fluxes.water_vapor
-
-    # All the location of these fluxes will change
-    𝒬ᵀ_speedy = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
-    Jᵛ_speedy = atmos.variables.parameterizations.ocean.surface_humidity_flux.data
-    sst = atmos.variables.prognostic.ocean.sea_surface_temperature.data
-    To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
-
-    # TODO: Figure out how we are going to deal with upwelling radiation
-    regrid!(𝒬ᵀ_speedy, to_atmosphere, 𝒬ᵀᵃᵒ)
-    regrid!(Jᵛ_speedy, to_atmosphere, Jᵛᵃᵒ)
-    tmp .= To .+ 273.15
-    regrid!(sst, to_atmosphere, tmp)
+    regrid!(atmos.variables.parameterizations.ocean.sensible_heat_flux.data, to_atmosphere, partition.fluxes.sensible_heat)
+    regrid!(atmos.variables.parameterizations.ocean.surface_humidity_flux.data, to_atmosphere, partition.fluxes.water_vapor)
+    regrid!(atmos.variables.prognostic.ocean.sea_surface_temperature.data, to_atmosphere, partition.surface_temperature)
 
     return nothing
 end

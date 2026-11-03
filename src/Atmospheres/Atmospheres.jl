@@ -10,7 +10,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Fields: Field, Face, Center
-using Oceananigans.Grids: grid_name, topology, Bounded, Flat, LatitudeLongitudeGrid, λnodes, φnodes,
+using Oceananigans.Grids: Grids, grid_name, topology, Bounded, Flat, LatitudeLongitudeGrid, λnodes, φnodes,
                           minimum_xspacing, minimum_yspacing
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!

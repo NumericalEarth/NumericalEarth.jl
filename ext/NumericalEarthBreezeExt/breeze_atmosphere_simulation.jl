@@ -189,7 +189,7 @@ end
 end
 
 function NumericalEarth.Atmospheres.bulk_drag(model::AtmosphereModel; roughness_length = 0.1, von_karman_constant = 0.4)
-    grid = model.grid
+    grid = Oceananigans.Grids.grid(model)
     FT = eltype(grid)
     Cᵈ = Field{Center, Center, Nothing}(grid)
     launch!(architecture(grid), grid, :xy, _drag_coefficient!,

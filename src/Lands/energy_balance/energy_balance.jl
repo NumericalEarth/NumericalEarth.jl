@@ -86,7 +86,7 @@ end
 # Forward-Euler advance of `land.temperature` shared by the slab-temperature
 # energy closures; the physics lives in their `temperature_tendency` methods.
 function step_land_temperature!(energy, land, Δt, time)
-    grid = land.grid
+    grid = Grids.grid(land)
     launch!(architecture(grid), grid, :xy, _step_land_temperature!,
             Oceananigans.prognostic_fields(land), land.fluxes, land.diagnostics,
             energy, grid, Δt, time)
