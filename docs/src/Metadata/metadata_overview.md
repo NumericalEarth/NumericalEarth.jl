@@ -120,7 +120,7 @@ specialize `NumericalEarth.DataWrangling.dataset_region(dataset, box)`.
 
 ```@docs
 ConformalConicBox
-ConformalConicGrid
+NumericalEarth.DataWrangling.ConformalConicGrid(::ConformalConicBox)
 ```
 
 ## Where data is cached

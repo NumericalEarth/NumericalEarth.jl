@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: native_grid
-using Oceananigans.OrthogonalSphericalShellGrids: lcc_forward, lcc_inverse
+using Oceananigans.OrthogonalSphericalShellGrids: geographic_to_conformal_conic, conformal_conic_to_geographic
 
 @testset "Conformal conic box geometry" begin
     for latitude in (-40, 40), orientation in (-20, 0, 20)
@@ -12,7 +12,7 @@ using Oceananigans.OrthogonalSphericalShellGrids: lcc_forward, lcc_inverse
 
         grid = ConformalConicGrid(box; size=(12, 10, 1), z=(0, 1))
         projection = grid.conformal_mapping
-        center_x, center_y = lcc_forward(projection, box.origin...)
+        center_x, center_y = geographic_to_conformal_conic(projection, box.origin...)
         @test projection.x₁ ≈ center_x - box.extent[1] / 2
         @test projection.y₁ ≈ center_y - box.extent[2] / 2
 
@@ -22,7 +22,7 @@ using Oceananigans.OrthogonalSphericalShellGrids: lcc_forward, lcc_inverse
                            (fraction * box.extent[1],  box.extent[2] / 2),
                            (-box.extent[1] / 2, fraction * box.extent[2]),
                            ( box.extent[1] / 2, fraction * box.extent[2]))
-                longitude, query_latitude = lcc_inverse(projection, center_x + x, center_y + y)
+                longitude, query_latitude = conformal_conic_to_geographic(projection, center_x + x, center_y + y)
                 longitude = box.origin[1] + mod(longitude - box.origin[1] + 180, 360) - 180
                 @test bounds.longitude[1] - 1e-10 <= longitude <= bounds.longitude[2] + 1e-10
                 @test south - 1e-10 <= query_latitude <= north + 1e-10
@@ -40,8 +40,8 @@ using Oceananigans.OrthogonalSphericalShellGrids: lcc_forward, lcc_inverse
     grid = ConformalConicGrid(box; size=(8, 6, 1), z=(0, 1))
     projection = grid.conformal_mapping
     north_y = projection.y₁ + box.extent[2]
-    _, north = lcc_inverse(projection, 0, north_y)
-    _, corner_latitude = lcc_inverse(projection, box.extent[1] / 2, north_y)
+    _, north = conformal_conic_to_geographic(projection, 0, north_y)
+    _, corner_latitude = conformal_conic_to_geographic(projection, box.extent[1] / 2, north_y)
     @test BoundingBox(box).latitude[2] ≈ north
     @test north > corner_latitude + 1
     @test box.standard_parallels == (30, 60)
@@ -72,7 +72,7 @@ for arch in test_architectures
 
             projection = grid.conformal_mapping
             projected_x = CenterField(grid)
-            set!(projected_x, (λ, φ, z) -> first(lcc_forward(projection, λ, φ)))
+            set!(projected_x, (λ, φ, z) -> first(geographic_to_conformal_conic(projection, λ, φ)))
             x = Array(interior(projected_x))[:, :, 1]
             expected = projection.x₁ .+ ((1:size(grid, 1)) .- 1/2) .* projection.Δx
             @test x ≈ repeat(expected, 1, size(grid, 2)) atol=1e-7

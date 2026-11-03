@@ -6,7 +6,7 @@ module DataWrangling
 
 export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
 export validate_dataset_coverage, metadata_filename
-export BoundingBox, ConformalConicBox, ConformalConicGrid, Column, Linear, Nearest
+export BoundingBox, ConformalConicBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch

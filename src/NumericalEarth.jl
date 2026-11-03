@@ -136,7 +136,7 @@ export
     smooth_topography!,
     connect_basins!,
     Metadata, Metadatum, MetadataSet,
-    BoundingBox, ConformalConicBox, ConformalConicGrid,
+    BoundingBox, ConformalConicBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,

@@ -1,5 +1,6 @@
-using Oceananigans.OrthogonalSphericalShellGrids: LambertConformalConic, LambertConformalConicGrid,
-                                                 lcc_forward, lcc_inverse, lcc_cone_constant
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, ConformalConic, ConformalConicGrid,
+                                                 geographic_to_conformal_conic, conformal_conic_to_geographic,
+                                                 conformal_conic_cone_constant
 
 struct ConformalConicBox{FT}
     origin :: NTuple{2, FT}
@@ -68,15 +69,15 @@ Base.summary(box::ConformalConicBox) = string("ConformalConicBox(origin=", box.o
 Base.show(io::IO, box::ConformalConicBox) = print(io, summary(box))
 
 function conic_mapping(box::ConformalConicBox{FT}) where FT
-    cone_constant = lcc_cone_constant(FT, deg2rad(box.standard_parallels[1]), deg2rad(box.standard_parallels[2]))
+    cone_constant = conformal_conic_cone_constant(FT, deg2rad(box.standard_parallels[1]), deg2rad(box.standard_parallels[2]))
     # Meridian convergence at the origin is minus the requested grid orientation.
     central_longitude = box.origin[1] + box.orientation / cone_constant
-    return LambertConformalConic(FT;
-                                 central_longitude,
-                                 latitude_of_origin = box.origin[2],
-                                 standard_parallels = box.standard_parallels,
-                                 radius = box.radius,
-                                 x₁ = 0, y₁ = 0, Δx = 1, Δy = 1)
+    return ConformalConic(FT;
+                          central_longitude,
+                          latitude_of_origin = box.origin[2],
+                          standard_parallels = box.standard_parallels,
+                          radius = box.radius,
+                          x₁ = 0, y₁ = 0, Δx = 1, Δy = 1)
 end
 
 """
@@ -88,7 +89,7 @@ Latitude extrema include points along edges, not just the four corners.
 """
 function BoundingBox(box::ConformalConicBox; padding = 0)
     projection = conic_mapping(box)
-    center_x, center_y = lcc_forward(projection, box.origin...)
+    center_x, center_y = geographic_to_conformal_conic(projection, box.origin...)
     lower_x, upper_x = center_x .+ (-box.extent[1] / 2, box.extent[1] / 2)
     lower_y, upper_y = center_y .+ (-box.extent[2] / 2, box.extent[2] / 2)
     corners = ((lower_x, lower_y), (upper_x, lower_y), (upper_x, upper_y), (lower_x, upper_y))
@@ -106,11 +107,11 @@ function BoundingBox(box::ConformalConicBox; padding = 0)
 
     longitudes = map(angle -> rad2deg(projection.central_longitude + angle / cone_constant), angles)
     latitudes = map(corners) do corner
-        _, latitude = lcc_inverse(projection, corner...)
+        _, latitude = conformal_conic_to_geographic(projection, corner...)
         latitude
     end
     # Latitude is monotone in distance from the cone apex.
-    _, closest_latitude = lcc_inverse(projection, clamp(0, lower_x, upper_x), clamp(apex_y, lower_y, upper_y))
+    _, closest_latitude = conformal_conic_to_geographic(projection, clamp(0, lower_x, upper_x), clamp(apex_y, lower_y, upper_y))
     return BoundingBox(longitude = (minimum(longitudes) - padding, maximum(longitudes) + padding),
                        latitude = (max(-90, min(minimum(latitudes), closest_latitude) - padding),
                                    min(90, max(maximum(latitudes), closest_latitude) + padding)))
@@ -120,19 +121,19 @@ end
 $(TYPEDSIGNATURES)
 
 Discretize `box` with horizontal dimensions `size[1:2]` and vertical coordinate `z`.
-The returned grid is an Oceananigans `LambertConformalConicGrid`; additional keyword
+The returned grid is an Oceananigans `ConformalConicGrid`; additional keyword
 arguments such as `halo` are passed to its constructor.
 """
-function ConformalConicGrid(box::ConformalConicBox{FT}, arch::AbstractArchitecture = CPU(); kwargs...) where FT
+function OrthogonalSphericalShellGrids.ConformalConicGrid(box::ConformalConicBox{FT}, arch::AbstractArchitecture = CPU(); kwargs...) where FT
     projection = conic_mapping(box)
-    return LambertConformalConicGrid(arch, FT;
-                                     center = box.origin,
-                                     extent = box.extent,
-                                     standard_parallels = box.standard_parallels,
-                                     central_longitude = rad2deg(projection.central_longitude),
-                                     latitude_of_origin = box.origin[2],
-                                     radius = box.radius,
-                                     kwargs...)
+    return ConformalConicGrid(arch, FT;
+                              center = box.origin,
+                              extent = box.extent,
+                              standard_parallels = box.standard_parallels,
+                              central_longitude = rad2deg(projection.central_longitude),
+                              latitude_of_origin = box.origin[2],
+                              radius = box.radius,
+                              kwargs...)
 end
 
 dataset_region(dataset, box::ConformalConicBox) = BoundingBox(box)
