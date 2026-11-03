@@ -326,12 +326,18 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
     @test abs(ΔC + ∫Jˢ) / (Sᵣ * Vᶜ) < 1e-12
 
     # --- Sanity checks on the physics ---
+    # Pre-fix, the double-counted conduction starved the ocean-ice bottom flux by ~50x
+    # (an unrealistic implied friction velocity), leaving atmospheric cooling almost
+    # entirely unopposed and producing artificial bottom growth. Post-fix, the ocean's
+    # correctly-sized turbulent heat flux nearly cancels the atmospheric conductive loss
+    # (the ocean sits only ~0.3°C above freezing), so net freeze-phase growth is
+    # realistically ~flat rather than strictly increasing or exactly fully consolidated.
 
     nᶠ = findlast(p -> p == 1, history.phase)
 
-    @test history.h[nᶠ] > history.h[1]   # ice grew during freeze
-    @test history.h[end] < history.h[nᶠ] # ice shrank during melt
-    @test history.ℵ[nᶠ] ≈ 1.0            # stays fully ice-covered through freeze
+    @test history.h[nᶠ] > history.h[1] - 1e-3   # ice held/grew during freeze
+    @test history.h[end] < history.h[nᶠ]        # ice shrank during melt
+    @test history.ℵ[nᶠ] ≈ 1.0 atol=1e-3         # stays fully ice-covered through freeze
 
     return nothing
 end
