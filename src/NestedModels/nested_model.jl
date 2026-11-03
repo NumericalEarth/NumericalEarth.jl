@@ -113,6 +113,8 @@ function advance_parent!(parent, clock)
     return nothing
 end
 
+# Rebinding the fields is for host clocks; a traced clock (NumericalEarthReactantExt) writes through its
+# own numbers instead, so the two clocks stay distinct program results.
 function copy_clock!(clock, source)
     clock.time = source.time
     clock.iteration = source.iteration
