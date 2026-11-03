@@ -13,19 +13,15 @@
 # - Evolving temperature based on net heat fluxes from the atmosphere and sea ice
 # - Having no ocean dynamics (no velocities)
 #
-# To integrate a slab ocean into `EarthSystemModel`, we need to extend several methods from NumericalEarth's `EarthSystemModels.jl` and
-# `InterfaceComputations.jl` modules as well as Oceananigans' TimeSteppers.jl module
+# To integrate a slab ocean into `EarthSystemModel`, we implement the contract in
+# [Coupling a new component](@ref):
 #
-# 1. `ComponentExchanger`: Defines how to extract state from the component for flux computations
-# 2. `interpolate_state!`: Interpolates component state onto the exchange grid
-# 3. `update_net_fluxes!`: Computes net fluxes and applies them to the component
+# 1. `grid`: the grid of the ocean component
+# 2. `surface_state`: the fields that the coupler reads
+# 3. `net_fluxes`: the fields that the coupler writes
 # 4. `reference_density`: of the ocean component
 # 5. `heat_capacity`: of the ocean component
-# 6. `ocean_salinity`: returns the entire salinity field of the ocean component
-# 7. `ocean_temperature`: returns the entire temperature field of the ocean component
-# 8. `ocean_surface_salinity`: returns the salinity at the surface of the ocean component
-# 8. `net_fluxes`: Returns the flux fields that will be updated by the coupling system
-# 6. `time_step!`: Advances the component forward in time
+# 6. `time_step!`: advances the component forward in time
 #
 # ## Define the Slab Ocean Type
 #
@@ -49,56 +45,41 @@ end
 Base.summary(slab_ocean::SlabOcean) = "SlabOcean with Depth=$(slab_ocean.grid.Lz)"
 Base.show(io::IO, slab_ocean::SlabOcean) = print(io, Base.summary(slab_ocean))
 
-# ## Extend the InterfaceComputations.jl module
+# ## Implement the contract
 #
-# The `ComponentExchanger` type contains the state variables needed for flux computations.
-# These are the ocean surface state on the `exchange_grid` and the "regridder" to interpolate data from the ocean onto the `exchange_grid`.
-# Here, we assume that the ocean is on the same grid as the exchange grid, so that the regridder is "nothing" and the state variables are the same as the ocean surface state.
-# The flux computation requires also ocean surface salinity and velocities to compute the turbulent fluxes.
+# `surface_state` returns the fields that the coupler reads to compute the turbulent fluxes.
+# A slab ocean has no velocities and a constant salinity.
 
+using NumericalEarth.EarthSystemModels
 using NumericalEarth.EarthSystemModels.InterfaceComputations
-using NumericalEarth.EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
 
-function InterfaceComputations.ComponentExchanger(slab_ocean::SlabOcean, exchange_grid)
-    T = slab_ocean.temperature
-    S = ocean_surface_salinity(slab_ocean)
-    u, v = ocean_surface_velocities(slab_ocean)
-    return InterfaceComputations.ComponentExchanger((; u, v, T, S), nothing)
-end
+Oceananigans.Grids.grid(slab_ocean::SlabOcean) = slab_ocean.grid
 
-# The `net_fluxes` function returns the flux fields that will be updated by the coupling system.
-# For a slab ocean, we need to return the container for the temperature flux stored in the `slab_ocean` as well as
-# dummy salinity flux and dummy stress fields which will be unused since the slab ocean has no dynamics and a constant salinity.
+EarthSystemModels.surface_state(slab_ocean::SlabOcean) = (; u =Oceananigans.Fields.ZeroField(Float64),
+                                                            v = Oceananigans.Fields.ZeroField(Float64),
+                                                            T = slab_ocean.temperature,
+                                                            S = Oceananigans.Fields.ConstantField(35.0))
+
+# The `net_fluxes` function returns the fields that the coupler writes. For a slab ocean, we return the
+# temperature flux stored in the `slab_ocean` and fields for the other fluxes, which go unused because
+# the slab ocean has no dynamics and a constant salinity.
 
 function InterfaceComputations.net_fluxes(slab_ocean::SlabOcean)
     grid = slab_ocean.grid
-    Jˢ = Field{Center, Center, Nothing}(grid)
-    τˣ = Field{Center, Center, Nothing}(grid)
-    τʸ = Field{Center, Center, Nothing}(grid)
-    return (T=slab_ocean.temperature_flux, S=Jˢ, u=τˣ, v=τʸ)
+    return (; T = slab_ocean.temperature_flux,
+              S = CenterField(grid),
+              u = CenterField(grid),
+              v = CenterField(grid),
+              η = CenterField(grid),
+              freshwater_heat_content = CenterField(grid),
+              u_coefficient = nothing,
+              v_coefficient = nothing)
 end
 
-# ##  Extend the EarthSystemModels.jl module
-#
-# In the EarthSystemModels.jl module, we define the thermodynamic properties of the ocean component as well as all the helper functions
-# needed to retrieve the ocean state and surface state.
-
-using NumericalEarth.EarthSystemModels
+# We also define the thermodynamic properties of the ocean component.
 
 EarthSystemModels.reference_density(::SlabOcean) = 1025.0
 EarthSystemModels.heat_capacity(::SlabOcean) = 3990.0
-EarthSystemModels.ocean_surface_salinity(slab_ocean::SlabOcean) = Oceananigans.Fields.ConstantField(35.0)
-EarthSystemModels.ocean_salinity(slab_ocean::SlabOcean) = Oceananigans.Fields.ConstantField(35.0)
-EarthSystemModels.ocean_temperature(slab_ocean::SlabOcean) = slab_ocean.temperature
-
-# The `update_net_fluxes!` function computes net fluxes and applies them to previously defined `net_fluxes` containers.
-# These will be used to update the ocean state in the `time_step!` method. In this case, we can use the
-# `update_net_ocean_fluxes!` function from the Oceans.jl module.
-
-using NumericalEarth.Oceans
-
-EarthSystemModels.update_net_fluxes!(coupled_model, slab_ocean::SlabOcean) =
-    Oceans.update_net_ocean_fluxes!(coupled_model, slab_ocean, slab_ocean.grid)
 
 # ## Extend the TimeSteppers.jl module
 #

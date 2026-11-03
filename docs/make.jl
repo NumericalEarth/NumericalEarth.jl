@@ -48,6 +48,7 @@ examples = [
     Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
     Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
+    Example("Coupling across horizontal grids", "coupling_across_horizontal_grids"; build_always=true, gpu=false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
     Example("Breeze over slab land", "breeze_over_slab_land"; build_always=true, gpu=false),
     # Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
@@ -199,7 +200,8 @@ write_api_md("private_api.md"; public = false)
 #####
 
 examples_pages  = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
-developer_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in developer_examples]
+developer_pages = ["Coupling a new component" => "developers/coupling_a_new_component.md";
+                   [ex.title => joinpath("literated", ex.basename * ".md") for ex in developer_examples]]
 
 format = Documenter.HTML(collapselevel = 3,
                          size_threshold = nothing,
