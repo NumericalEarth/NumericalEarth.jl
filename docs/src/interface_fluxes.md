@@ -53,6 +53,12 @@ step applies each candidate update once. Canopy-air and ground heat storage
 are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
 partitions from the completed step so diagnostics remain consistent immediately after pickup.
 
+For vegetated and bare tiles, pass
+`atmosphere_land_interface = TiledLandInterface(grid, atmosphere, land; vegetated = canopy, cover_fraction = 0.6)`.
+The bare tile defaults to a soil skin sharing the canopy's ground heat flux and soil humidity.
+Pass the same `cover_fraction` to `InterceptingHydrology`. Separate tile roughnesses can be
+supplied through the `vegetated_fluxes` and `bare_fluxes` keywords.
+
 Soil retention curves, porosity, and water storage remain in land hydrology. The interface
 receives saturation, derived moisture-stress endpoints, and vapor diffusivity from land.
 The interface's `SoilConductiveFlux` specifies the conductivity and exchange distance of the
@@ -875,13 +881,13 @@ the ocean warms the ice). The formulation used to compute this heat flux can sig
 ### Frazil ice formation
 
 Both formulations handle frazil ice formation identically. When ocean temperature drops below the local freezing point
-``T_m(S)`` at any depth, the temperature is reset to the freezing point and the corresponding heat is extracted:
+``T_m(S, z)``, which decreases with salinity and depth, the temperature is reset to the freezing point and the corresponding heat is extracted:
 
 ```math
-Q_f = -\sum_{k=1}^{N_z} \rho_o c_o (T_m(S_k) - T_k) \frac{\Delta z_k}{\Delta t}
+Q_f = -\sum_{k=1}^{N_z} \rho_o c_o (T_m(S_k, z_k) - T_k) \frac{\Delta z_k}{\Delta t}
 ```
 
-where the sum is over all vertical levels where ``T_k < T_m(S_k)``. This heat flux (negative, indicating heat transfer
+where the sum is over all vertical levels where ``T_k < T_m(S_k, z_k)``. This heat flux (negative, indicating heat transfer
 from ice to ocean) represents the latent heat released during frazil ice formation.
 
 ### Bulk heat flux formulation (`IceBathHeatFlux`)

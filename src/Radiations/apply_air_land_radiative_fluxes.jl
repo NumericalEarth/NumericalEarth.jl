@@ -29,8 +29,8 @@ land_interface_radiation_flux(radiation::PrescribedRadiation) = radiation.interf
 
 function apply_air_land_radiative_fluxes!(coupled_model, land)
     # No atmosphere--land interface (no atmosphere): nothing to do.
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    isnothing(al_interface) && return nothing
+    atmosphere_land_interface = coupled_model.interfaces.atmosphere_land_interface
+    isnothing(atmosphere_land_interface) && return nothing
 
     # Skip when the radiation was not configured with a land surface.
     radiation = coupled_model.radiation
@@ -45,7 +45,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
 
     # A skin that closes its own energy balance absorbs the radiation and drives the slab by
     # conduction, so nothing is added to the slab's flux.
-    land_energy_flux = isnothing(ground_conductance(al_interface)) ? land_surface_energy_flux(land) : nothing
+    land_energy_flux = isnothing(ground_conductance(atmosphere_land_interface)) ? land_surface_energy_flux(land) : nothing
 
     # `nothing` for components that diagnose their own upwelling radiation.
     land_shortwave_upwelling_flux = land_surface_shortwave_up(land)
@@ -59,7 +59,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
             clock,
             rk,
             radiation_state,
-            radiative_surface(al_interface, nothing, nothing),
+            radiative_surface(atmosphere_land_interface, nothing, nothing),
             land_shortwave_upwelling_flux,
             land_longwave_upwelling_flux)
 

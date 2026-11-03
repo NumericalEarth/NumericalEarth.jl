@@ -36,9 +36,9 @@ atmosphere at all does not: its surfaces only receive fluxes, each per unit of i
 atmosphere_feels_surface(atmosphere) = true
 atmosphere_feels_surface(::Nothing) = false
 
-function SurfacePartition(grid, atmosphere, ocean_fraction, ao_interface, al_interface)
+function SurfacePartition(grid, atmosphere, ocean_fraction, ao_interface, atmosphere_land_interface)
     isnothing(ao_interface) && return SurfacePartition(ZeroField(), nothing)
-    isnothing(al_interface) && return SurfacePartition(OneField(), nothing)
+    isnothing(atmosphere_land_interface) && return SurfacePartition(OneField(), nothing)
 
     feels_surface = atmosphere_feels_surface(atmosphere)
 

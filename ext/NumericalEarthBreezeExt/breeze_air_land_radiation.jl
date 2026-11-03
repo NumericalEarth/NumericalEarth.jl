@@ -32,13 +32,15 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_prope
     return @set rtm.surface_radiation.surface_temperature = Tˢ
 end
 
-# The RTM's configured surface optics, which the land kernels read as the ground's.
+# The RTM's configured surface optics, which the land kernels read as the ground's. The blue-sky
+# albedo is captured here, before the land's radiating surface replaces the RTM's albedos.
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(rtm::BreezeRTM, exchange_grid; kw...)
     ϵ = rtm.surface_radiation.surface_emissivity
     α = Field{Center, Center, Nothing}(exchange_grid)
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
-               surface_properties = (; land = SurfaceRadiationProperties(α, ϵ)))
+               surface_properties = (; land = SurfaceRadiationProperties(α, ϵ)),
+               configured_albedo = blue_sky_albedo(rtm))
 
     return ComponentExchanger(state, nothing)
 end
@@ -61,7 +63,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             state,
             rtm.downwelling_shortwave_flux,
             rtm.downwelling_longwave_flux,
-            blue_sky_albedo(rtm))
+            state.configured_albedo)
 
     return nothing
 end

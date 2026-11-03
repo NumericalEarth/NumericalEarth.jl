@@ -557,14 +557,14 @@ atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0
                                                 temperature_roughness_length = 0.01,
                                                 water_vapor_roughness_length = 0.01)
 
-al_interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
-                                         fluxes = atmosphere_land_fluxes,
-                                         state = (temperature = BulkTemperature(),
-                                                  specific_humidity = make_dry_layer_humidity()))
+interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
+                                      fluxes = atmosphere_land_fluxes,
+                                      state = (temperature = BulkTemperature(),
+                                               specific_humidity = make_dry_layer_humidity()))
 
 model = AtmosphereLandModel(atmosphere, slab_land;
                             radiation,
-                            atmosphere_land_interface = al_interface,
+                            atmosphere_land_interface = interface,
                             exchanger_correction = correction)
 
 simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600)
@@ -758,6 +758,7 @@ function map_forcing_slices!(op!, times, dst_atmos, dst_rad, src_atmos, src_rad)
         op!(dst_atmos.specific_humidity[n],       src_atmos.specific_humidity[n])
         op!(dst_atmos.pressure[n],                src_atmos.pressure[n])
         op!(dst_atmos.precipitation_flux.rain[n], src_atmos.precipitation_flux.rain[n])
+        op!(dst_atmos.precipitation_flux.snow[n], src_atmos.precipitation_flux.snow[n])
         op!(dst_rad.downwelling_shortwave[n],     src_rad.downwelling_shortwave[n])
         op!(dst_rad.downwelling_longwave[n],      src_rad.downwelling_longwave[n])
     end

@@ -60,6 +60,7 @@ export
     FrictionVelocityUndercanopyVelocity,
     ExponentialSoilResistance,
     GroundSurfaceResistance,
+    TiledLandInterface,
     JarvisConductance,
     AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
@@ -217,6 +218,7 @@ include("atmosphere_interface_kernels.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
+include("tiled_land_interface.jl")
 include("sea_ice_ocean_fluxes.jl")
 include("surface_layer_diagnostics.jl")
 include("checkpointing.jl")

@@ -1,4 +1,5 @@
 using ClimaSeaIce: ClimaSeaIce
+using ClimaSeaIce.SeaIceThermodynamics: thermal_resistance
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
@@ -605,16 +606,14 @@ end
 # Bare ice: R = hᵢ / kᵢ
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
                                           Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    k  = st.internal_flux.conductivity
-    R  = Ψᵢ.hi / k
+    R  = thermal_resistance(st.internal_flux, Ψᵢ.hi)
     return conductive_flux_balance_temperature(st, R, Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 # Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
                                           Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    F  = st.internal_flux
-    R  = Ψᵢ.hs / F.snow_conductivity + Ψᵢ.hi / F.ice_conductivity
+    R  = thermal_resistance(st.internal_flux, Ψᵢ.hi, Ψᵢ.hs)
     return conductive_flux_balance_temperature(st, R, Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 

@@ -8,7 +8,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity,
     CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation, SoilConductiveFlux, land_canopy_water_capacity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, VariablySaturatedHydrology, InterceptingHydrology,
-    VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update
+    VanGenuchtenRetention, VanGenuchtenConductivity, canopy_store_update, cover_change_update
 
 soil_hydrology(FT) = VariablySaturatedHydrology(FT;
     slab_depth = 1.0, porosity = 0.4, storage_height = 0.1,
@@ -20,22 +20,66 @@ intercepting_land(grid; kw...) = SlabLand(grid; energy = SlabEnergy(Float64), hy
 canopy_storage(land) = scalar(land.prognostic.canopy_water_storage)
 vapor_flux(model) = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
 
-function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3, interception = true)
-    hydrology = interception ? InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index, capacity_per_leaf_area = capacity) : soil_hydrology(FT)
+function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rain = 1e-3, interception = true,
+                            cover_fraction = nothing)
+    hydrology = interception ? InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index, capacity_per_leaf_area = capacity,
+                                                    cover_fraction = something(cover_fraction, 1)) : soil_hydrology(FT)
     canopy_humidity = CanopyConductanceHumidity(FT; leaf_area_index, moisture_stress = CriticalSaturation(0.5), absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(FT))
     surface = CanopyInterface(FT; soil_humidity = bare_soil_humidity(FT), canopy_humidity, ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
-    return coupled_land_model(arch, FT; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain,
-                              hydrology, atmosphere_land_interface_state=surface, land_temperature = 298, water = 300.0, shortwave = 400)
+    kw = (; air_temperature = 298, air_specific_humidity = 0.010, wind = 3, rain, hydrology,
+            land_temperature = 298, water = 300.0, shortwave = 400)
+    isnothing(cover_fraction) && return coupled_land_model(arch, FT; atmosphere_land_interface_state = surface, kw...)
+    return tiled_land_model(arch, FT; vegetated = surface, cover_fraction, kw...)
 end
 
-@testset "Interception conserves canopy and soil water" begin
+@testset "Interception keeps the cover fraction it is given" begin
     for arch in test_architectures
-        model = interception_model(arch, Float64)
+        grid = column_grid(arch)
+        field = Field{Center, Center, Nothing}(grid)
+        set!(field, 0.4)
+        series = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 60.0])
+        foreach(n -> set!(series[n], 0.4), 1:2)
+        for cover_fraction in (field, series)
+            @test interception_model(arch, Float64; cover_fraction).land.hydrology.cover_fraction === cover_fraction
+        end
+        @test interception_model(arch, Float32; cover_fraction = 0.4).land.hydrology.cover_fraction == Float32(0.4)
+    end
+end
+
+@testset "Tiled interception shares vegetation and conserves water" begin
+    for arch in test_architectures
+        model = interception_model(arch, Float64; cover_fraction = 0.4)
         land = model.land
-        before = scalar(land.water_storage) + canopy_storage(land)
+        before = scalar(land.water_storage) + 0.4 * canopy_storage(land)
         time_step!(model, 60.0)
-        @test scalar(land.water_storage) + canopy_storage(land) - before ≈ 60 * (1e-3 - vapor_flux(model)) atol = 1e-10
+        @test scalar(land.water_storage) + 0.4 * canopy_storage(land) - before ≈ 60 * (1e-3 - vapor_flux(model)) atol = 1e-10
         @test land.hydrology.leaf_area_index == 3.0
+        @test land.hydrology.cover_fraction == 0.4
+    end
+end
+
+@testset "Removed leaves shed their water and new leaves start dry" begin
+    @test all(cover_change_update(0.2, 0.8, 0.5, 60.0) .≈ (0.2, 0.3 * 0.2 / 60))
+    @test all(cover_change_update(0.2, 0.4, 0.8, 60.0) .≈ (0.1, 0))
+    @test all(cover_change_update(0.2, 0.4, 0.0, 60.0) .≈ (0, 0.4 * 0.2 / 60))
+end
+
+@testset "Changing vegetation cover conserves total water" begin
+    covers = (0.2, 0.8, 0.2, 0.0, 0.8)
+    for rain in (0.0, 1e-3)
+        cover_fraction = FieldTimeSeries{Center, Center, Nothing}(column_grid(), 0.0:60.0:240.0)
+        foreach(n -> set!(cover_fraction[n], covers[n]), eachindex(covers))
+        model = interception_model(CPU(), Float64; cover_fraction, rain)
+        land = model.land
+        set!(land; canopy_water_storage = 0.5 * 0.1 * 3)
+        update_state!(model)
+        for n in 1:4
+            before = scalar(land.water_storage) + covers[n] * canopy_storage(land)
+            time_step!(model, 60.0)
+            after = scalar(land.water_storage) + covers[n+1] * canopy_storage(land)
+            @test after - before ≈ 60 * (rain - vapor_flux(model)) atol = 1e-10
+            @test 0 ≤ canopy_storage(land) ≤ 0.1 * 3
+        end
     end
 end
 
@@ -49,22 +93,23 @@ end
 end
 
 @testset "Buffered canopy properties conserve water across time windows" begin
-    grid, times = column_grid(), 0.0:1.0:4.0
+    grid, times, covers = column_grid(), 0.0:1.0:4.0, (0.2, 0.8, 0.2, 0.0, 0.8)
     path = joinpath(mktempdir(), "lai.jld2")
     on_disk(name) = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = OnDisk(), path, name)
-    lai = on_disk("lai")
+    lai, fraction = on_disk("lai"), on_disk("fraction")
     field = Field{Center, Center, Nothing}(grid)
     for n in eachindex(times)
         set!(lai, set!(field, 1 + times[n]), n)
+        set!(fraction, set!(field, covers[n]), n)
     end
 
     in_memory(name) = FieldTimeSeries(path, name; backend = InMemory(2), architecture = CPU())
-    land = intercepting_land(grid; leaf_area_index = in_memory("lai"), capacity_per_leaf_area = 0.1)
+    land = intercepting_land(grid; leaf_area_index = in_memory("lai"), cover_fraction = in_memory("fraction"), capacity_per_leaf_area = 0.1)
     set!(land; M = 300, canopy_water_storage = 0.05)
-    before = scalar(land.water_storage) + canopy_storage(land)
+    before = scalar(land.water_storage) + covers[1] * canopy_storage(land)
     for n in 1:3
         time_step!(land, 1.0)
-        @test scalar(land.water_storage) + canopy_storage(land) ≈ before atol = 1e-10
+        @test scalar(land.water_storage) + covers[n+1] * canopy_storage(land) ≈ before atol = 1e-10
     end
 
     # λˡᵉᵃᶠ(t = 3) = 4 lies beyond the two snapshots loaded when the series was opened

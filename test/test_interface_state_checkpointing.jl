@@ -83,3 +83,13 @@ end
         @test arrays(state) == candidate
     end
 end
+
+@testset "Tiled canopy storage restarts" begin
+    for arch in test_architectures
+        m1, m2 = ntuple(_ -> tiled_land_model(arch; vegetated = checkpoint_canopy(), cover_fraction = 0.6,
+                                              surface_storage = PrognosticCanopyAir()), 2)
+        fluxes1, fluxes2 = roundtrip!(m1, m2)
+        @test fluxes1 == fluxes2
+        @test prognostic_state(m2.land.surface_storage) == prognostic_state(m1.land.surface_storage)
+    end
+end
