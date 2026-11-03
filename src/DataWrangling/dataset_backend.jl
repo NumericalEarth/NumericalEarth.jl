@@ -17,7 +17,7 @@ backend carries
 - `inpainting`: inpainting algorithm used when reading per-file datasets
   (e.g. `NearestNeighborInpainting`); `nothing` for datasets whose native
   NetCDF already covers the whole target grid (e.g. JRA55).
-- `metadata`: the dataset metadata — its dataset type parameterises `set!`
+- `metadata`: the dataset metadata — its dataset type parameterizes `set!`
   dispatch, so per-file and chunked (multi-time-per-file) datasets can
   coexist under the same backend.
 

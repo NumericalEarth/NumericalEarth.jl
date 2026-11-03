@@ -1,7 +1,7 @@
 """
     InterfaceRadiationFlux{F}
 
-Container for the diagnostic radiative fluxes at an air–surface interface.
+Container for diagnostic radiative fluxes (W m⁻², positive upward) at an air–surface interface.
 The same struct type is instantiated per surface (ocean, sea ice, snow, ...).
 
 Fields

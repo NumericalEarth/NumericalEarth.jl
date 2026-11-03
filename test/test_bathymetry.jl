@@ -2,13 +2,49 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using JLD2
-using NumericalEarth.Bathymetry: remove_minor_basins!,
-                                 BathymetryRegridding,
-                                 cache_filename,
-                                 load_bathymetry_cache,
-                                 save_bathymetry_cache
+using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key, meridional_barrier,
+                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
+using NumericalEarth.Bathymetry.ImageMorphology: label_components
+using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
+
+@testset "Topography smoothing preserves bounded constants" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, Float32;
+                               size = (8, 8),
+                               extent = (1, 1),
+                               topology = (Bounded, Bounded, Flat))
+
+        elevation = Field{Center, Center, Nothing}(grid)
+        set!(elevation, 1000)
+        smooth_topography!(elevation; passes = 2)
+
+        @test all(==(1000), Array(interior(elevation)))
+    end
+end
+
+@testset "Connecting basins" begin
+    grid = LatitudeLongitudeGrid(size = (8, 6), longitude = (0, 8), latitude = (0, 6), topology = (Bounded, Bounded, Flat))
+    bottom_height = Field{Center, Center, Nothing}(grid)
+    west, east = (1.5, 2.5), (6.5, 2.5)
+
+    # Two basins separated by a meridional wall one cell wide
+    set!(bottom_height, (λ, φ) -> 3 < λ < 4 ? 10 : -500)
+    original = Array(interior(bottom_height, :, :, 1))
+    deepened = connect_basins!(bottom_height, west, east; depth = 300)
+    connected = Array(interior(bottom_height, :, :, 1))
+    @test deepened == count(connected .!= original)
+    @test all(==(-300), connected[connected .!= original])
+    @test maximum(label_components(connected .< 0)) == 1
+
+    @test connect_basins!(bottom_height, west, east; depth = 300) == 0
+    @test Array(interior(bottom_height, :, :, 1)) == connected
+
+    # Basins that touch only at a corner share no face
+    set!(bottom_height, (λ, φ) -> (λ < 3 && φ < 3) || (3 < λ < 6 && 3 < φ < 6) ? -500 : 10)
+    @test connect_basins!(bottom_height, (1.5, 1.5), (4.5, 4.5); depth = 300) == 1
+end
 
 @testset "Bathymetry construction and smoothing" begin
     @info "Testing Bathymetry construction and smoothing..."
@@ -28,7 +64,6 @@ using Statistics
                                      latitude = (0, 50),
                                      z = (-6000, 0))
 
-        # Test that remove_minor_basins!(Z, Inf) does nothing
         control_bottom_height = regrid_bathymetry(grid, ETOPOmetadata)
         bottom_height = deepcopy(control_bottom_height)
         @test_throws ArgumentError remove_minor_basins!(bottom_height, Inf)
@@ -76,8 +111,8 @@ using Statistics
     end
 end
 
-@testset "BathymetryRegridding configuration" begin
-    @info "Testing BathymetryRegridding configuration..."
+@testset "Bathymetry cache key" begin
+    @info "Testing bathymetry cache keys..."
 
     grid = LatitudeLongitudeGrid(CPU();
                                  size = (100, 100, 10),
@@ -87,26 +122,34 @@ end
 
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
+    key(; height_above_water = nothing, minimum_depth = 0, interpolation_passes = 1, major_basins = 1, connections = ()) =
+        bathymetry_regridding_key(grid, metadata; height_above_water, minimum_depth,
+                                  interpolation_passes, major_basins, connections)
+
     # Test construction and equality
-    config1 = BathymetryRegridding(grid, metadata)
-    config2 = BathymetryRegridding(grid, metadata)
+    config1 = key()
+    config2 = key()
     @test config1 == config2
     @test hash(config1) == hash(config2)
 
     # Test that different parameters produce different configs
-    config3 = BathymetryRegridding(grid, metadata; interpolation_passes=5)
+    config3 = key(interpolation_passes = 5)
     @test config1 != config3
     @test hash(config1) != hash(config3)
 
-    config4 = BathymetryRegridding(grid, metadata; minimum_depth=10)
+    config4 = key(minimum_depth = 10)
     @test config1 != config4
 
-    # Test cache filename: same config → same filename
-    @test cache_filename(config1) == cache_filename(config2)
-    # Different config → different filename
-    @test cache_filename(config1) != cache_filename(config3)
+    gibraltar = (; from = (-6.8, 35.9), to = (-4.6, 36.0), depth = 280)
+    @test config1 != key(connections = (gibraltar,))
 
-    # Test JLD2 round-trip of BathymetryRegridding
+    # Integer and float parameter values key identically
+    @test key(minimum_depth = 10) == key(minimum_depth = 10.0)
+
+    @test field_cache_filename(config1) == field_cache_filename(config2)
+    @test field_cache_filename(config1) != field_cache_filename(config3)
+
+    # Test JLD2 round-trip of the key
     tmpfile = tempname() * ".jld2"
     jldopen(tmpfile, "w") do file
         file["config"] = config1
@@ -143,4 +186,79 @@ end
     # cache=false should still produce correct results
     result4 = regrid_bathymetry(grid; cache=false)
     @test parent(result1) == parent(result4)
+
+    # overwrite_cache=true skips the lookup and refreshes the entry
+    metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
+    config = bathymetry_regridding_key(grid, metadata;
+                                       height_above_water = nothing, minimum_depth = 0,
+                                       interpolation_passes = 1, major_basins = 1)
+    save_field_cache(config, zeros(size(grid, 1), size(grid, 2)))
+    poisoned = regrid_bathymetry(grid; cache=true)
+    @test all(iszero, interior(poisoned))
+
+    result5 = regrid_bathymetry(grid; cache=true, overwrite_cache=true)
+    @test parent(result1) == parent(result5)
+
+    result6 = regrid_bathymetry(grid; cache=true)
+    @test parent(result1) == parent(result6)
+end
+
+@testset "Barrier geometry" begin
+    @info "Testing barrier geometry utilities..."
+
+    meridional = meridional_barrier(20, -36, -30)
+    @test meridional.longitude == (19, 21)   # 20 ± width/2
+    @test meridional.latitude  == (-36, -30)
+    @test meridional_barrier(20, -36, -30; width=4).longitude == (18, 22)
+end
+
+@testset "Ocean basin labeling with barriers" begin
+    @info "Testing ocean basin labeling with barriers..."
+
+    for arch in test_architectures
+        # Create a global grid
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (90, 45, 10),
+                                     longitude = (-180, 180),
+                                     latitude = (-90, 90),
+                                     z = (-6000, 0))
+
+        bottom_height = regrid_bathymetry(grid)
+        ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
+        cpu_ibg = on_architecture(CPU(), ibg)
+
+        # Unbarriered, the Atlantic and Pacific are one basin: they connect via the Southern Ocean.
+        labels = label_ocean_basins(ibg)
+        atlantic_label = find_label_at_point(labels, cpu_ibg, -30.0, 0.0)
+        @test atlantic_label > 0
+        @test atlantic_label == find_label_at_point(labels, cpu_ibg, -170.0, 0.0)
+
+        barriered = label_ocean_basins(ibg; barriers=atlantic_ocean_barriers)
+        @test find_label_at_point(barriered, cpu_ibg, -30.0, 0.0) > 0
+    end
+end
+
+@testset "Basin creation" begin
+    @info "Testing Basin creation..."
+
+    for arch in test_architectures
+        # Create a global grid at 1° resolution (needed to properly resolve
+        # Central America and separate Atlantic from Pacific)
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (360, 180, 10),
+                                     longitude = (-180, 180),
+                                     latitude = (-90, 90),
+                                     z = (-6000, 0))
+
+        bottom_height = regrid_bathymetry(grid)
+        ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
+
+        atlantic = atlantic_ocean_basin(ibg)
+        @test sum(interior(atlantic.mask)) > 0
+
+        # The Atlantic mask must exclude the Pacific.
+        mask = on_architecture(CPU(), atlantic.mask)
+        pacific_i = findfirst(λ -> -175 < λ < -165, λnodes(grid, Center()))
+        @test mask[pacific_i, 90, 1] == 0
+    end
 end

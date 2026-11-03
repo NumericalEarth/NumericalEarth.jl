@@ -24,6 +24,71 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
+"""
+    BoundingBox(grid; padding = 0)
+
+Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
+side by `padding` (degrees), a number or a `(longitude, latitude)` pair. For a
+distributed grid the box spans the *global* domain, identically on every rank.
+"""
+function BoundingBox(grid::AbstractGrid; padding = 0)
+    # Domain endpoints, not node extrema: distributed grids window their node arrays
+    # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
+    # identity on serial architectures).
+    δλ, δφ = axis_padding(padding)
+    arch = architecture(grid)
+    λ₁, λ₂ = x_domain(grid)
+    φ₁, φ₂ = y_domain(grid)
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - δλ, all_reduce(max, λ₂, arch) + δλ),
+                       latitude  = (all_reduce(min, φ₁, arch) - δφ, all_reduce(max, φ₂, arch) + δφ))
+end
+
+function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
+    δλ, δφ = axis_padding(padding)
+    Nx, Ny, _ = size(grid)
+    λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    return BoundingBox(longitude = (minimum(λ) - δλ, maximum(λ) + δλ),
+                       latitude  = (minimum(φ) - δφ, maximum(φ) + δφ))
+end
+
+axis_padding(padding::Number) = (padding, padding)
+axis_padding(padding::Tuple{Any, Any}) = padding
+
+"""
+    bounding_box_intersects(bounds, bbox::BoundingBox)
+
+Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
+Used to select the files of a tiled dataset that cover a region.
+
+Both boxes must label longitudes in the same convention, with `west < east`; a box folded across
+the antimeridian is not supported.
+"""
+function bounding_box_intersects(bounds, bbox::BoundingBox)
+    λ₁, λ₂ = bbox.longitude
+    φ₁, φ₂ = bbox.latitude
+    return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
+end
+
+"""
+    bounding_box_suffix(region)
+
+Filename suffix identifying the window a regionally-downloaded dataset was cached for:
+`"global"` for `nothing`, and `"lon_<west>_<east>_lat_<south>_<north>"` for a `BoundingBox`,
+so windows of one dataset never collide on disk. Datasets whose products follow a different
+filename convention define their own suffix instead.
+"""
+bounding_box_suffix(::Nothing) = "global"
+
+function bounding_box_suffix(region::BoundingBox)
+    λ = region.longitude
+    φ = region.latitude
+    return string("lon_", bounds_string(λ), "_lat_", bounds_string(φ))
+end
+
+bounds_string(::Nothing) = "nothing"
+bounds_string(bounds) = string(bounds[1], "_", bounds[2])
+
 #####
 ##### Column region and interpolation types
 #####
@@ -98,7 +163,7 @@ latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
              dataset,
              dates = all_dates(dataset, variable_name),
              dir = default_download_directory(dataset),
-             region = nothing,
+             region = default_region(dataset),
              filename = nothing,
              start_date = nothing,
              end_date = nothing)
@@ -116,8 +181,9 @@ Keyword Arguments
 - `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
-           Note that `dates` can either be a range or a vector of dates, representing a time-series.
-           For a single date, use [`Metadatum`](@ref).
+           Note that `dates` can either be a range or a vector of dates, representing a time-series,
+           or a `(start_date, end_date)` tuple, which expands to the dataset's native dates in that
+           window (the cadence is the dataset's own). For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
                 (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
@@ -141,10 +207,12 @@ function Metadata(variable_name;
                   dataset,
                   dates = all_dates(dataset, variable_name),
                   dir = default_download_directory(dataset),
-                  region = nothing,
+                  region = default_region(dataset),
                   filename = nothing,
                   start_date = nothing,
                   end_date = nothing)
+
+    dates = expand_dates(dataset, variable_name, dates)
 
     # crop dates if _either_ a start date or an end date is provided
     if !isnothing(start_date) || !isnothing(end_date)
@@ -167,6 +235,32 @@ end
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
 
+"""
+$(TYPEDSIGNATURES)
+
+Name of the file holding the inpainted version of `metadata`. Defaults to the metadatum's own filename
+with its extension replaced by `_inpainted.jld2`; datasets whose inpainted products are named differently
+override this.
+"""
+inpainted_metadata_filename(metadata::Metadatum) = metadata.filename[1:end-3] * "_inpainted.jld2"
+
+"""
+$(TYPEDSIGNATURES)
+
+Path to the inpainted version of `metadata`, alongside the raw file in `metadata.dir`.
+"""
+inpainted_metadata_path(metadata::Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+
+"""
+    expand_dates(dataset, variable_name, dates)
+
+Return `dates`, expanding a `(start_date, end_date)` tuple to the dataset's native dates
+in that window — the cadence is the dataset's own.
+"""
+expand_dates(dataset, variable_name, dates) = dates
+expand_dates(dataset, variable_name, dates::Tuple{<:AnyDateTime, <:AnyDateTime}) =
+    compute_native_date_range(all_dates(dataset, variable_name), first(dates), last(dates))
+
 function Base.size(metadata::Metadata)
     Nx, Ny, Nz = size(metadata.dataset, metadata.name)
 
@@ -181,7 +275,7 @@ end
 """
     Metadatum(variable_name;
               dataset,
-              region = nothing,
+              region = default_region(dataset),
               date = first_date(dataset, variable_name),
               filename = nothing,
               dir = default_download_directory(dataset))
@@ -190,7 +284,7 @@ A specialized constructor for a [`Metadata`](@ref) object with a single date, re
 """
 function Metadatum(variable_name;
                    dataset,
-                   region = nothing,
+                   region = default_region(dataset),
                    date = first_date(dataset, variable_name),
                    filename = nothing,
                    dir = default_download_directory(dataset))
@@ -250,8 +344,16 @@ Base.summary(md::Metadata) = string(metaprefix(md),
                                     "{", datasetstr(md), "} of ",
                                     md.name, " for ", datestr(md))
 
-# If only one date, it's a single element array
+# A Metadatum holds a single date, so it acts as a length-1 collection whose sole element is
+# itself; the generic Metadata methods below index `dates`, which a scalar date cannot support.
 Base.length(metadata::Metadatum) = 1
+@propagate_inbounds function Base.getindex(m::Metadatum, i::Int)
+    @boundscheck i == 1 || throw(BoundsError(m, i))
+    return m
+end
+Base.first(m::Metadatum) = m
+Base.last(m::Metadatum) = m
+Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
 
 @propagate_inbounds Base.getindex(m::Metadata, i::Int) =
     Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i))
@@ -269,13 +371,6 @@ Base.length(metadata::Metadatum) = 1
         return nothing
     end
 end
-
-# Implementation for 1 date
-Base.axes(metadata::Metadatum)    = 1
-Base.first(metadata::Metadatum)   = metadata
-Base.last(metadata::Metadatum)    = metadata
-Base.iterate(metadata::Metadatum) = (metadata, nothing)
-Base.iterate(::Metadatum, ::Any)  = nothing
 
 metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
 
@@ -314,7 +409,7 @@ end
                 dates = all_dates(dataset, first(variable_names)),
                 date = nothing,
                 dir = default_download_directory(dataset),
-                region = nothing,
+                region = default_region(dataset),
                 filenames = nothing,
                 start_date = nothing,
                 end_date = nothing)
@@ -380,7 +475,7 @@ function MetadataSet(variable_names::Symbol...;
                      dates = nothing,
                      date = nothing,
                      dir = default_download_directory(dataset),
-                     region = nothing,
+                     region = default_region(dataset),
                      filenames = nothing,
                      start_date = nothing,
                      end_date = nothing)
@@ -625,17 +720,148 @@ Keyword Argument
 ================
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
+
+Times are measured to each sample's [`window_center`](@ref), which for a time average is the
+midpoint of its [`averaging_window`](@ref) rather than the date its file is stamped with.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
+    reference = comparable_datetime(start_time)
+
     for (t, data) in enumerate(metadata)
-        date = data.dates
-        delta = date - start_time
-        delta = Second(delta).value
-        times[t] = delta
+        delta = window_center(data) - reference
+        times[t] = Dates.value(Dates.Millisecond(delta)) / 1000
     end
 
     return times
+end
+
+"""
+    averaging_window(metadatum)
+
+The `(start, stop)` dates of the interval of time the value in `metadatum` represents, its
+`time_bnds` in CF terms. Defaults to a zero-width window at the stamp itself, which is a value
+at an instant; a product whose files hold time averages extends this with the interval each
+average is taken over. Whether the dates label the start of that interval, its end, or its
+middle varies from product to product. See [`calendar_month_window`](@ref) for the
+calendar-month case, whose length varies with the month.
+"""
+averaging_window(metadatum) = (metadatum.dates, metadatum.dates)
+
+"""
+    calendar_month_window(metadatum)
+
+The [`averaging_window`](@ref) of a product whose files hold calendar-month means: the month
+containing the date `metadatum` is stamped with. Independent of where in the month the stamp
+falls, so it also covers products stamped at, say, noon on the first.
+"""
+function calendar_month_window(metadatum)
+    month_start = floor(comparable_datetime(metadatum.dates), Dates.Month)
+    return (month_start, month_start + Dates.Month(1))
+end
+
+"""
+    window_center(metadatum)
+
+The date at the middle of the [`averaging_window`](@ref) of `metadatum`, where a time average
+equals the value of the field itself and so where a linearly interpolating `FieldTimeSeries`
+has to place it. The stamp itself for a value at an instant.
+"""
+function window_center(metadatum)
+    window_start, window_stop = averaging_window(metadatum)
+    start_datetime = comparable_datetime(window_start)
+    stop_datetime = comparable_datetime(window_stop)
+    half_window = Dates.value(Dates.Millisecond(stop_datetime - start_datetime)) ÷ 2
+    return start_datetime + Dates.Millisecond(half_window)
+end
+
+"""
+    window_span(metadata)
+
+The span in seconds from the start of the first [`averaging_window`](@ref) in `metadata` to the
+end of the last, which is the period over which a window-averaged series repeats: its windows
+tile that span without gaps or overlaps. `nothing` for a product of values at an instant, whose
+samples are points and so leave the period to be inferred from the node spacing.
+"""
+function window_span(metadata)
+    window_start, window_stop = averaging_window(first(metadata))
+    window_start == window_stop && return nothing
+    span = comparable_datetime(last(averaging_window(last(metadata)))) - comparable_datetime(window_start)
+    return Dates.value(Dates.Millisecond(span)) / 1000
+end
+
+"""
+    uncovered_time_gaps(metadata)
+
+The `(head, tail)` durations in seconds that the [`averaging_window`](@ref)s of `metadata` span
+but its nodes do not: from the start of the first window to the first [`window_center`](@ref),
+and from the last center to the end of the last window. A `FieldTimeSeries` extrapolates over
+both. Zero for a product of values at an instant, whose nodes span exactly its samples.
+"""
+function uncovered_time_gaps(metadata)
+    first_metadatum = first(metadata)
+    last_metadatum = last(metadata)
+
+    head = window_center(first_metadatum) - comparable_datetime(first(averaging_window(first_metadatum)))
+    tail = comparable_datetime(last(averaging_window(last_metadatum))) - window_center(last_metadatum)
+
+    return Dates.value(Dates.Millisecond(head)) / 1000, Dates.value(Dates.Millisecond(tail)) / 1000
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Whether `dataset`'s whole record is one period of the seasonal cycle, so that `Cyclical`
+wrapping across its ends continues the cycle rather than splicing two unrelated dates.
+`false` by default; climatology datasets extend this.
+"""
+is_seasonal_climatology(dataset) = false
+
+"""
+    $(TYPEDSIGNATURES)
+
+Whether `metadata` covers every period of a seasonal climatology, in which case the half
+window `Cyclical` fills beyond each end node comes from the adjacent phase of the same
+cycle, and wrapping is exact.
+"""
+spans_whole_cycle(metadata) =
+    is_seasonal_climatology(metadata.dataset) &&
+    metadata.dates == all_dates(metadata.dataset, metadata.name)
+
+"""
+    $(TYPEDSIGNATURES)
+
+The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
+[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. They are the
+[`averaging_window`](@ref) edges, so they do not depend on where in its window a product
+places its stamp. Throws for a product of values at an instant, and for dates that skip
+the cadence.
+"""
+function window_bounds(metadata::Metadata)
+    Nt = length(metadata)
+    bounds = Vector{DateTime}(undef, Nt + 1)
+    previous_stop = nothing
+
+    for (n, metadatum) in enumerate(metadata)
+        window_start, window_stop = averaging_window(metadatum)
+        start = comparable_datetime(window_start)
+        stop = comparable_datetime(window_stop)
+
+        start < stop ||
+            throw(ArgumentError("window_bounds needs samples that span time, but " *
+                                "$(metadata.dataset) reports instantaneous samples."))
+
+        isnothing(previous_stop) || previous_stop == start ||
+            throw(ArgumentError("window_bounds needs samples that tile time, but the " *
+                                "$(metadata.dataset) sample ending $previous_stop is " *
+                                "followed by one starting $start."))
+
+        bounds[n] = start
+        previous_stop = stop
+    end
+
+    bounds[Nt + 1] = previous_stop
+    return bounds
 end
 
 ####
@@ -648,6 +874,22 @@ end
 Return the default directory to which `dataset` is downloaded.
 """
 function default_download_directory end
+
+"""
+    default_horizontal_padding(dataset)
+
+Return the default horizontal padding (degrees) added around a bounding box requested
+from `dataset`, providing margin for interpolation stencils at the boundary.
+"""
+function default_horizontal_padding end
+
+"""
+    matching_single_level_dataset(dataset)
+
+Return the single-level (surface) dataset sharing `dataset`'s product family and temporal
+cadence — e.g. the surface companion of a pressure-level reanalysis product.
+"""
+function matching_single_level_dataset end
 
 """
     dataset_variable_name(metadata)
@@ -674,6 +916,16 @@ Return the native field location `(LX, LY, LZ)` for `variable_name` in
 staggered variables (e.g., ECCO velocity fields) need to extend this.
 """
 dataset_location(dataset, variable_name) = (Center, Center, Center)
+
+"""
+    default_region(dataset)
+
+Return the default `region` used when constructing `Metadata`/`Metadatum` for
+`dataset`. Defaults to `nothing` (full domain). Single-location datasets (e.g. a
+moored buoy) can override this to embed their fixed [`Column`](@ref) so callers
+need not repeat the coordinates.
+"""
+default_region(dataset) = nothing
 
 # Note: all_dates needs to be extended for any new dataset.
 """
@@ -746,9 +998,11 @@ struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
 struct CentigramPerCubicCentimeter end
+struct GramPerCubicCentimeter end
 struct HectogramPerCubicMeter end
 struct GramPerKilogram end
 struct DecigramPerKilogram end
+struct WeightPercent end            # mass fraction in % → kg/kg (soil texture)
 
 struct InverseSign end
 struct InverseGravity end
@@ -787,6 +1041,7 @@ Compute the range of `native_dates` that fall within the specified `start_date` 
 """
 comparable_datetime(date::Dates.AbstractDateTime) = DateTime(date)
 comparable_datetime(date::AbstractCFDateTime) = DateTime(date)
+comparable_datetime(date::Date) = DateTime(date)
 
 function compute_native_date_range(native_dates, start_date, end_date)
     start_datetime = comparable_datetime(start_date)

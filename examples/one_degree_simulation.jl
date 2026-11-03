@@ -100,7 +100,7 @@ set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentr
 # In the radiation component we prescribed a latitude-dependent ocean albedo due to
 # Large & Yeager 2009.
 
-land = JRA55PrescribedLand(arch)
+land = JRA55PrescribedLand(grid)
 atmosphere = JRA55PrescribedAtmosphere(arch)
 
 ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo())
@@ -167,17 +167,17 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             schedule = TimeInterval(1days),
                                             filename = "ocean_one_degree_surface_fields",
                                             indices = (:, :, grid.Nz),
-                                            overwrite_existing = true)
+                                            overwrite_files = true)
 
 ocean.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η = free_surface);
                                                  schedule = TimeInterval(1days),
                                                  filename = "ocean_one_degree_free_surface",
-                                                 overwrite_existing = true)
+                                                 overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               schedule = TimeInterval(1days),
                                               filename = "sea_ice_one_degree_surface_fields",
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ### Ready to run
 
@@ -208,7 +208,9 @@ Nt = length(times)
 n = Observable(Nt)
 
 # We create a land mask and use it to fill land points with `NaN`s.
-land = interior(To.grid.immersed_boundary.bottom_height) .≥ 0
+# The grid's `bottom_height` is stored as a halo-padded `OffsetArray`,
+# so we take a view of its interior to build the mask.
+land = view(To.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
 
 Toₙ = @lift begin
     Tₙ = interior(To[$n])
@@ -270,7 +272,7 @@ end
 # Finally, we plot a snapshot of the surface speed, temperature, and the turbulent
 # eddy kinetic energy from the CATKE vertical mixing parameterization as well as the
 # sea ice speed and the effective sea ice thickness.
-fig = Figure(size=(1200, 1000))
+fig = Figure(size=(900, 750))
 
 title = @lift string("Global 1ᵒ ocean simulation after ", prettytime(times[$n] - times[1]))
 

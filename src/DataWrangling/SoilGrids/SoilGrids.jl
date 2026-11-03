@@ -5,12 +5,11 @@ export SoilGrids2
 using Downloads: Downloads
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling,
     Dataset, DownloadProgress, AbstractStaticDataset, Metadatum,
     GramPerKilogram, CentigramPerCubicCentimeter, HectogramPerCubicMeter, DecigramPerKilogram,
-    metadata_path, metadata_url, dataset_variable_name
+    metadata_path, metadata_url, dataset_variable_name, download_with_retries
 
 import Oceananigans
 
@@ -30,7 +29,8 @@ remote islands, deserts, and the Arctic.
 
 download_SoilGrids2_cache::String = ""
 function __init__()
-    return global download_SoilGrids2_cache = @get_scratch!("SoilGrids2")
+    global download_SoilGrids2_cache = DataWrangling.download_cache("SoilGrids2")
+    return nothing
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
@@ -96,7 +96,7 @@ function Downloads.download(metadatum::SoilGrids2Metadatum)
 
     @root if !isfile(filepath)
         @info "Downloading SoilGrids2 (~10 km) data: $(metadatum.name) in $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress = DownloadProgress())
+        download_with_retries(fileurl, filepath; progress = DownloadProgress())
     end
     return filepath
 end

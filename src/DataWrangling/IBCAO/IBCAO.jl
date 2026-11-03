@@ -5,9 +5,9 @@ export IBCAOv5
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                       download_with_retries
 
 import ..DataWrangling:
     metadata_filename,
@@ -18,10 +18,10 @@ import ..DataWrangling:
     reversed_vertical_axis,
     validate_dataset_coverage
 
-
 download_IBCAO_cache::String = ""
 function __init__()
-    global download_IBCAO_cache = @get_scratch!("IBCAO")
+    global download_IBCAO_cache = DataWrangling.download_cache("IBCAO")
+    return nothing
 end
 
 IBCAO_bathymetry_variable_names = Dict(
@@ -71,7 +71,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     if φ_south < 64
         error("IBCAOv5 only covers the Arctic Ocean (north of 64°N). " *
               "The grid extends to $(round(φ_south, digits=1))°N. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that extend south of 64°N.")
+              "Use ETOPO2022() or GEBCO2026() for domains that extend south of 64°N.")
     end
 end
 
@@ -82,7 +82,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     @root if !isfile(nc_path)
         if !isfile(tiff_path)
             @info "Downloading IBCAO V5.1 GeoTIFF (100m, with Greenland ice, ~25 GB)..."
-            Downloads.download(IBCAO_tiff_url, tiff_path; progress=DownloadProgress())
+            download_with_retries(IBCAO_tiff_url, tiff_path; progress=DownloadProgress())
         end
 
         @info "Reprojecting IBCAO from Polar Stereographic (EPSG:3996) to WGS84 at 0.01°..."
@@ -94,7 +94,7 @@ function Downloads.download(metadatum::IBCAOMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl when ArchGDAL is loaded.
+# Implemented in ext/NumericalEarthArchGDALExt/ibcao.jl when ArchGDAL is loaded.
 function reproject_ibcao_to_netcdf end
 
 end # module
