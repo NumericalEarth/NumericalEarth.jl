@@ -5,16 +5,16 @@
 using Downloads: Downloads
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: CPU
-using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: Distributed, child_architecture
-using Oceananigans.Fields: CenterField, set!
+using Oceananigans.Fields: set!
 using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory, Cyclical, FlavorOfFTS, time_indices
 using Thermodynamics: Liquid
 
 using ..DataWrangling: Metadata, MetadataSet, BoundingBox, first_date, last_date,
                        native_grid, default_download_directory
 using ..DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset, ERA5HourlySingleLevel, ERA5HourlyPressureLevels,
-                            download_ERA5_cache, per_column_geopotential_discretization, _with_z, era5_native_pressure_fts
+                            download_ERA5_cache, per_column_geopotential_discretization, _with_z, era5_native_pressure_fts,
+                            pressure_level_field
 using ..DataWrangling.JRA55: JRA55Dataset, RepeatYearJRA55, download_JRA55_cache
 using ..DataWrangling.ECCO: ECCO4Monthly
 using ..EarthSystemModels.InterfaceComputations: saturation_specific_humidity
@@ -184,16 +184,6 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                             surface_layer_height  = convert(FT, surface_layer_height),
                                             boundary_layer_height = convert(FT, boundary_layer_height),
                                             tracers)
-end
-
-# Pressure on a `PressureLevelGrid` is the level coordinate (Pa), constant in space and time
-function pressure_level_field(grid, dataset, architecture)
-    FT = eltype(grid)
-    pressure = CenterField(grid)
-    pˡᵉᵛᵉˡ = reshape(FT.(dataset.pressure_levels), 1, 1, :)
-    set!(pressure, zeros(FT, size(pressure)) .+ pˡᵉᵛᵉˡ)   # one host-to-device copy, on every architecture
-    fill_halo_regions!(pressure)
-    return pressure
 end
 
 """

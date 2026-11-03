@@ -15,7 +15,7 @@ using Downloads: Downloads
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.Fields: Field, Center, set!
+using Oceananigans.Fields: Field, Center, CenterField, set!
 using Oceananigans.OutputReaders: Cyclical, Linear, Clamp, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
 using Oceananigans.TimeSteppers: Clock
 using NCDatasets: NCDatasets

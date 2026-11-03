@@ -398,3 +398,12 @@ function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3
     return field
 end
 
+# Pressure on a `PressureLevelGrid` is the level coordinate (Pa), constant in space and time
+function pressure_level_field(grid, dataset, architecture)
+    FT = eltype(grid)
+    pressure = CenterField(grid)
+    pˡᵉᵛᵉˡ = reshape(FT.(dataset.pressure_levels), 1, 1, :)
+    set!(pressure, zeros(FT, size(pressure)) .+ pˡᵉᵛᵉˡ)   # one host-to-device copy, on every architecture
+    fill_halo_regions!(pressure)
+    return pressure
+end
