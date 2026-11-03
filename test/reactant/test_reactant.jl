@@ -65,7 +65,7 @@ end
         model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_state=(; temperature, specific_humidity=BulkHumidity()))
         interface = model.interfaces.atmosphere_land_interface
         set!(land; T=290)
-        set!(interface.temperature, 295)
+        set!(interface.state.temperature, 295)
         set!(interface.fluxes.sensible_heat, 80)
         set!(interface.fluxes.latent_heat, 120)
 

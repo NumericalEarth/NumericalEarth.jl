@@ -3,7 +3,6 @@ include("runtests_setup.jl")
 using Breeze
 using Oceananigans.Units
 using Oceananigans.TimeSteppers: time_step!
-using NumericalEarth.EarthSystemModels: step_interface!
 using RRTMGP   # activates Breeze's RadiativeTransferModel extension
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
@@ -20,7 +19,7 @@ const σ = default_stefan_boltzmann_constant
 const Δt = 0.25
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
-function rtm_canopy_components(arch; hour = 12)
+function rtm_canopy_components(arch; hour = 12, canopy_air_depth = nothing)
     grid = RectilinearGrid(arch; size = (8, 8), halo = (5, 5), x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
                            topology = (Periodic, Flat, Bounded))
     constants = ThermodynamicConstants(Float64)
@@ -31,7 +30,7 @@ function rtm_canopy_components(arch; hour = 12)
     radiation = RadiativeTransferModel(grid, GrayOptics(), constants; solar_position, surface_albedo = rtm_albedo,
                                        surface_emissivity = rtm_emissivity, schedule = IterationInterval(1))
 
-    canopy = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
+    canopy = CanopyInterface(Float64; canopy_air_depth, soil_humidity = bare_soil_humidity(Float64),
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4, moisture_stress = CriticalSaturation(0.5),
                                                     absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64)))
 
@@ -42,34 +41,31 @@ function rtm_canopy_components(arch; hour = 12)
     return atmosphere, land, radiation, canopy
 end
 
-function rtm_canopy_model(arch; hour = 12, storage = nothing)
-    atmosphere, land, radiation, canopy = rtm_canopy_components(arch; hour)
-    return AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface_state=canopy,
-                               atmosphere_land_interface_storage=storage)
+function rtm_canopy_model(arch; hour = 12, canopy_air_depth = nothing)
+    atmosphere, land, radiation, canopy = rtm_canopy_components(arch; hour, canopy_air_depth)
+    return AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface_state=canopy)
 end
 
 @testset "Breeze RadiativeTransferModel driving a CanopyInterface" begin
-    for arch in test_architectures, storage in (nothing, PrognosticCanopyAir())
+    for arch in test_architectures, canopy_air_depth in (nothing, 10)
         A = typeof(arch)
 
-        @testset "Canopy radiation budget under an RTM with $storage on $A" begin
-            model = rtm_canopy_model(arch; storage)
+        @testset "Canopy radiation budget under an RTM with canopy air depth $canopy_air_depth on $A" begin
+            model = rtm_canopy_model(arch; canopy_air_depth)
             time_step!(model, Δt)
-            canopy = model.interfaces.atmosphere_land_interface.temperature
+            canopy = model.interfaces.atmosphere_land_interface.state
 
             # The effective albedo blends the leaf (0.15) and ground (0.2) albedos
             @test all(0.15 .< Array(interior(model.radiation.surface_radiation.direct_surface_albedo)) .< 0.2)
             @test all(Array(interior(canopy.canopy)) .> Array(interior(canopy.ground)))
-            @test all(Array(interior(canopy.effective)) .> Array(interior(canopy.interface)))
+            @test all(Array(interior(canopy.effective)) .> Array(interior(canopy.temperature)))
             @test Array(interior(model.radiation.upwelling_longwave_flux))[:, :, 1] ≈ σ .* Array(interior(canopy.effective, :, :, 1)) .^ 4 rtol = 1e-3
 
-            # The land steps with the ground heat flux of the interface step.
-            step_interface!(model.interfaces, model, Δt)
             @test Array(interior(model.land.fluxes.surface_energy_flux)) ≈ -Array(interior(canopy.ground_heat_flux))
 
-            night = rtm_canopy_model(arch; hour = 0, storage)
+            night = rtm_canopy_model(arch; hour = 0, canopy_air_depth)
             time_step!(night, Δt)
-            @test all(Array(interior(canopy.canopy)) .> Array(interior(night.interfaces.atmosphere_land_interface.temperature.canopy)))
+            @test all(Array(interior(canopy.canopy)) .> Array(interior(night.interfaces.atmosphere_land_interface.state.canopy)))
         end
 
         @testset "Tiled interface keeps the bare tile's configured optics on $A" begin
@@ -79,12 +75,12 @@ end
             model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
             update_state!(model)
 
-            mosaic = model.interfaces.atmosphere_land_interface.temperature
-            αᵛ = Array(interior(tiled.vegetated.temperature.effective_albedo))
+            mosaic = model.interfaces.atmosphere_land_interface.state
+            αᵛ = Array(interior(tiled.vegetated.state.effective_albedo))
             @test Array(interior(mosaic.effective_albedo)) ≈ @. f * αᵛ + (1 - f) * rtm_albedo
 
-            Tᵛ = Array(interior(tiled.vegetated.temperature.effective))
-            Tᵇ = Array(interior(tiled.bare.temperature))
+            Tᵛ = Array(interior(tiled.vegetated.state.effective))
+            Tᵇ = Array(interior(tiled.bare.state.temperature))
             ℐꜜˡʷ = Array(interior(model.interfaces.exchanger.radiation.state.ℐꜜˡʷ))
             bare_longwave = @. rtm_emissivity * σ * Tᵇ^4 - (1 - rtm_emissivity) * ℐꜜˡʷ
             @test σ .* Array(interior(mosaic.effective)) .^ 4 ≈ @. f * σ * Tᵛ^4 + (1 - f) * bare_longwave

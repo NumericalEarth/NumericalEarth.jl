@@ -677,12 +677,16 @@ end
 $(TYPEDSIGNATURES)
 
 Interface temperature from a surface energy balance with conductive coupling to the
-bulk land. Without land skin storage, solve the equilibrium balance. With land skin
-storage, evaluate the implicit energy balance over the coupled time step.
+bulk land. Without a `heat_capacity` (J m⁻² K⁻¹, a number or a horizontal field), solve the
+equilibrium balance. With a `heat_capacity`, the skin temperature is prognostic and advances
+by the implicit energy balance over the coupled time step.
 """
-struct EnergyBalanceTemperature{C}
+struct EnergyBalanceTemperature{H, C}
     coupling :: C
+    heat_capacity :: H
 end
+
+EnergyBalanceTemperature(coupling; heat_capacity = nothing) = EnergyBalanceTemperature(coupling, heat_capacity)
 
 @inline ground_conductance(t::EnergyBalanceTemperature) = ground_conductance(t.coupling)
 Adapt.@adapt_structure EnergyBalanceTemperature
@@ -691,11 +695,13 @@ Adapt.@adapt_structure EnergyBalanceTemperature
 $(TYPEDSIGNATURES)
 
 Ground energy balance with conductance `conductivity/thickness` (W m⁻² K⁻¹)
-to the bulk land. Pass `atmosphere_land_interface_storage = PrognosticSkin()` to include ground heat storage.
+to the bulk land. `heat_capacity` (J m⁻² K⁻¹) makes the ground temperature prognostic.
 """
-SoilSkinTemperature(conductivity, thickness) = EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness))
+SoilSkinTemperature(conductivity, thickness; heat_capacity = nothing) =
+    EnergyBalanceTemperature(SoilConductiveFlux(conductivity, thickness), heat_capacity)
 
-Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(Λ=", prettysummary(ground_conductance(t.coupling)), ")")
+Base.summary(t::EnergyBalanceTemperature) =
+    string("EnergyBalanceTemperature(Λ=", prettysummary(ground_conductance(t.coupling)), ", C=", prettysummary(t.heat_capacity), ")")
 Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
 
 # The surface energy imbalance F(T) = net radiation − 𝒬ᵍʳⁿᵈ − 𝒬ᵀ − 𝒬ᵛ at skin temperature T
@@ -726,15 +732,14 @@ end
 
 # A massless skin takes one Newton step on F(Tⁱⁿ) = 0 per iterate of the Monin–Obukhov
 # fixed point, so the skin and the similarity scales converge jointly.
-@inline function compute_interface_temperature(t::EnergyBalanceTemperature,
+@inline function compute_interface_temperature(t::EnergyBalanceTemperature{Nothing},
                                                interface_state,
                                                atmosphere_state,
                                                interior_state,
                                                radiation_state,
                                                interface_formulation,
                                                atmosphere_properties,
-                                               interior_properties,
-                                               storage::Nothing = interior_state.surface_storage)
+                                               interior_properties)
 
     T = interface_state.temperature
     F, Σg = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
@@ -752,7 +757,7 @@ end
                                       radiation_state,
                                       interface_formulation,
                                       atmosphere_properties,
-                                      interior_properties, storage) = interface_state.temperature
+                                      interior_properties) = interface_state.temperature
 
 ####
 #### Interface specific humidity

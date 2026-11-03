@@ -231,7 +231,7 @@ Low vegetation (grass, crops) has no separable canopy air layer and belongs to a
 single-source [`CanopyConductanceHumidity`](@ref) over the ground surface. Solves the
 leaf temperature `Tˡᵉᵃᶠ`, the ground temperature `Tᵍʳⁿᵈ`, and the canopy-air node
 `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
-or couples to the land component's prognostic canopy-air reservoir. Pass it as the interface state
+or advances it as prognostic state when given a `canopy_air_depth`. Pass it as the interface state
 formulation to solve temperature and specific humidity together. Over an
 [`InterceptingHydrology`](@ref) the wetted fraction `fʷᵉᵗ = (Mᶜⁿᵖʸ/Mᶜⁿᵖʸ⁺)^{2/3}` of the leaf
 ([Deardorff, 1978](@cite deardorff1978)) evaporates intercepted water at the potential
@@ -262,6 +262,8 @@ Fields:
 - `ground_surface_resistance` : bulk ground-surface resistance in series on both ground
   vapor branches (a [`GroundSurfaceResistance`](@ref), the default, whose `Cᵍʳⁿᵈ` may be a
   per-cell `Field`, or a constant `Number` in s m⁻¹), or `nothing` for none.
+- `canopy_air_depth` : depth of the canopy air layer `hᵃᶜᵃⁿ` (m), a number or a per-cell `Field`,
+  which makes the canopy-air node prognostic. Default: `nothing`, a massless node.
 - `inner_iterations` : quasi-Newton iterations of the coupled leaf and ground temperature solve.
 
 The four optics slots accept a per-cell `Field{Center, Center, Nothing}` alongside a
@@ -294,7 +296,7 @@ local_interface_formulation(surface, 2, 1).leaf_albedo
 0.35
 ```
 """
-struct CanopyInterface{S, C, RF, LA, GA, CE, GE, FT, U, W, L}
+struct CanopyInterface{D, S, C, RF, LA, GA, CE, GE, FT, U, W, L}
     soil_humidity                 :: S
     canopy_humidity               :: C
     ground_heat_flux              :: RF
@@ -308,6 +310,7 @@ struct CanopyInterface{S, C, RF, LA, GA, CE, GE, FT, U, W, L}
     undercanopy_transfer_velocity :: U
     wet_soil_resistance           :: W
     ground_surface_resistance     :: L
+    canopy_air_depth              :: D
     inner_iterations              :: Int
 end
 
@@ -325,6 +328,7 @@ function CanopyInterface(FT=Oceananigans.defaults.FloatType;
                              undercanopy_transfer_velocity = 0.013,
                              wet_soil_resistance           = nothing,
                              ground_surface_resistance     = GroundSurfaceResistance(FT),
+                             canopy_air_depth              = nothing,
                              inner_iterations              = 10)
 
     # Convert only a scalar optics slot; a `Field` passes through and is materialized
@@ -338,6 +342,7 @@ function CanopyInterface(FT=Oceananigans.defaults.FloatType;
                                convert(FT, leaf_boundary_layer_velocity),
                                convert_if_number(FT, undercanopy_transfer_velocity),
                                wet_soil_resistance, ground_surface_resistance,
+                               convert_if_number(FT, canopy_air_depth),
                                inner_iterations)
 end
 
@@ -358,6 +363,9 @@ end
 @inline local_interface_formulation(r::GroundSurfaceResistance, i, j) =
     GroundSurfaceResistance(state2dindex(r.transfer_coefficient, i, j))
 
+@inline local_interface_formulation(t::EnergyBalanceTemperature, i, j) =
+    EnergyBalanceTemperature(t.coupling, state2dindex(t.heat_capacity, i, j))
+
 @inline local_interface_formulation(c::CanopyInterface, i, j) =
     CanopyInterface(c.soil_humidity, c.canopy_humidity, local_interface_formulation(c.ground_heat_flux, i, j),
                         state2dindex(c.leaf_albedo, i, j),
@@ -367,12 +375,25 @@ end
                         c.extinction, c.clumping, c.leaf_boundary_layer_velocity,
                         c.undercanopy_transfer_velocity, c.wet_soil_resistance,
                         local_interface_formulation(c.ground_surface_resistance, i, j),
+                        state2dindex(c.canopy_air_depth, i, j),
                         c.inner_iterations)
 
-Base.summary(::CanopyInterface) = "CanopyInterface"
+# The same interface without capacity.
+massless(formulation) = formulation
+massless(state::NamedTuple) = map(massless, state)
+massless(f::InterfaceFormulation) = InterfaceFormulation(f.turbulent_fluxes, massless(f.state), f.velocity_difference)
+massless(t::EnergyBalanceTemperature) = EnergyBalanceTemperature(t.coupling, nothing)
+massless(c::CanopyInterface) =
+    CanopyInterface(c.soil_humidity, c.canopy_humidity, c.ground_heat_flux, c.leaf_albedo, c.ground_albedo,
+                    c.maximum_canopy_emissivity, c.ground_emissivity, c.extinction, c.clumping,
+                    c.leaf_boundary_layer_velocity, c.undercanopy_transfer_velocity, c.wet_soil_resistance,
+                    c.ground_surface_resistance, nothing, c.inner_iterations)
+
+Base.summary(c::CanopyInterface) = string("CanopyInterface(hᵃᶜᵃⁿ=", prettysummary(c.canopy_air_depth), ")")
 Base.show(io::IO, c::CanopyInterface) =
     print(io, "CanopyInterface(soil_humidity=", summary(c.soil_humidity),
-          ", canopy_humidity=", summary(c.canopy_humidity), ")")
+          ", canopy_humidity=", summary(c.canopy_humidity),
+          ", hᵃᶜᵃⁿ=", prettysummary(c.canopy_air_depth), ")")
 
 Adapt.@adapt_structure CanopyInterface
 
@@ -399,25 +420,26 @@ end
 # Leaf vapor conductance `gˡᵉᵃᶠᵛ` and its wet-canopy part `gʷᵉᵗ`: stomata in series with
 # the leaf boundary layer on the dry fraction 1 − fʷᵉᵗ, the leaf boundary layer alone on the
 # wet fraction fʷᵉᵗ. The wet path is capped so the store cannot evaporate more than it holds
-# over the step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜⁿᵖʸ/Δt. λˡᵉᵃᶠ enters through `gᶜⁿᵖʸ` and `gˡᵇˡ`, which
+# over the last time step, Jʷᵉᵗ = gʷᵉᵗ Δq ≤ Mᶜⁿᵖʸ/last_Δt. An infinite `last_Δt`, before the first
+# step, leaves the wet path uncapped. λˡᵉᵃᶠ enters through `gᶜⁿᵖʸ` and `gˡᵇˡ`, which
 # both scale with it, so a leafless canopy has no leaf path.
-@inline function leaf_vapor_conductance(gᶜⁿᵖʸ, gˡᵇˡ, fʷᵉᵗ, Mᶜⁿᵖʸ, Δq, Δt)
+@inline function leaf_vapor_conductance(gᶜⁿᵖʸ, gˡᵇˡ, fʷᵉᵗ, Mᶜⁿᵖʸ, Δq, last_Δt)
     gᵈʳʸ = ifelse(gᶜⁿᵖʸ + gˡᵇˡ > 0, gᶜⁿᵖʸ * gˡᵇˡ / (gᶜⁿᵖʸ + gˡᵇˡ), zero(gᶜⁿᵖʸ))
     gʷᵉᵗ = fʷᵉᵗ * gˡᵇˡ
-    gʷᵉᵗ = ifelse((Δt > 0) & (Δq > 0), min(gʷᵉᵗ, Mᶜⁿᵖʸ / (Δt * Δq)), gʷᵉᵗ)
+    gʷᵉᵗ = ifelse(isfinite(last_Δt) & (Δq > 0), min(gʷᵉᵗ, Mᶜⁿᵖʸ / (last_Δt * Δq)), gʷᵉᵗ)
     return (1 - fʷᵉᵗ) * gᵈʳʸ + gʷᵉᵗ, gʷᵉᵗ
 end
 
 # Leaf vapor conductance `gˡᵉᵃᶠᵛ`, its wet-canopy part `gʷᵉᵗ`, and the leaf-saturated
 # humidity `qˡᵉᵃᶠ` at the leaf temperature; the stomata and the wet cap see the node
 # humidity `qᵃᶜᵃⁿ`.
-@inline function leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+@inline function leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
     FT = typeof(gˡᵇˡ)
     gᶜⁿᵖʸ, qˡᵉᵃᶠ = canopy_conductance_terms(c.canopy_humidity, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
     Mᶜⁿᵖʸ  = convert(FT, Ψˡᵃ.canopy_water_storage)
     Mᶜⁿᵖʸ⁺ = convert(FT, Ψˡᵃ.canopy_water_capacity)
     fʷᵉᵗ  = wetted_fraction(Mᶜⁿᵖʸ, Mᶜⁿᵖʸ⁺)
-    gˡᵉᵃᶠᵛ, gʷᵉᵗ = leaf_vapor_conductance(gᶜⁿᵖʸ, gˡᵇˡ, fʷᵉᵗ, Mᶜⁿᵖʸ, qˡᵉᵃᶠ - qᵃᶜᵃⁿ, Δt)
+    gˡᵉᵃᶠᵛ, gʷᵉᵗ = leaf_vapor_conductance(gᶜⁿᵖʸ, gˡᵇˡ, fʷᵉᵗ, Mᶜⁿᵖʸ, qˡᵉᵃᶠ - qᵃᶜᵃⁿ, convert(FT, Ψˡᵃ.last_Δt))
     return gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ
 end
 
@@ -473,9 +495,6 @@ the equilibrium.
     return equilibrium + (x - equilibrium) * decay
 end
 
-@inline canopy_air_depth(::Nothing) = 0
-@inline canopy_air_depth(storage) = storage.layer_depth
-
 """
 $(TYPEDSIGNATURES)
 
@@ -518,7 +537,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
 
     # Canopy-air heat and vapor capacities (zero for a massless node) and the
     # start-of-step node.
-    hᵃᶜᵃⁿ = convert(FT, canopy_air_depth(Ψˡᵃ.surface_storage))
+    hᵃᶜᵃⁿ = convert(FT, something(c.canopy_air_depth, 0))
     Cᵀ    = ρᵃᵗ * cᵖᵐ * hᵃᶜᵃⁿ
     Cᵛ    = ρᵃᵗ * hᵃᶜᵃⁿ
     T⁻    = Ψⁱⁿ.temperature
@@ -552,11 +571,11 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     maximum_temperature_step = convert(FT, 25)
 
     for _ in 1:c.inner_iterations
-        gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
         # The leaf vapor conductance depends on the leaf temperature through the stomata and the
         # wet-canopy cap; its slope is a one-sided difference at the same node humidity.
         δT = sqrt(eps(FT)) * Tˡᵉᵃᶠ
-        gˡᵉᵃᶠᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃᶠ + δT, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+        gˡᵉᵃᶠᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃᶠ + δT, qᵃᶜᵃⁿ, gˡᵇˡ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
         ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ  = (gˡᵉᵃᶠᵛ⁺ - gˡᵉᵃᶠᵛ) / δT
         gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, dqᵍʳⁿᵈ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
 
@@ -593,7 +612,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     end
 
     # The node and the flux partition at the final leaf and ground temperatures.
-    gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
+    gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
     gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, _ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
     Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍʳⁿᵈᵛ
     Tᵃᶜᵃⁿ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍʳⁿᵈᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍʳⁿᵈ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
@@ -624,27 +643,27 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
 end
 
 # A diagnostic node is re-solved every iterate; one shared solve returns both node values.
-@inline function interface_temperature_and_humidity(c::CanopyInterface,
-                                                    Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt,
-                                                    storage::Nothing = Ψˡᵃ.surface_storage)
+@inline function interface_temperature_and_humidity(c::CanopyInterface{Nothing},
+                                                    Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt)
     solution = canopy_air_space_solve(c, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     return solution.Tᵃᶜᵃⁿ, solution.qᵃᶜᵃⁿ
 end
 
 # A prognostic node is model state, frozen through the fixed point.
 @inline interface_temperature_and_humidity(::CanopyInterface,
-                                           Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt, storage) =
+                                           Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt) =
     (Ψⁱⁿ.temperature, Ψⁱⁿ.specific_humidity)
 
 """
-    struct CanopyInterfaceDiagnostics
+    struct CanopyState
 
-What a [`CanopyInterface`](@ref) stores in the interface `temperature` slot: the
-canopy-air node temperature the atmosphere sees, the leaf, ground, and effective radiating
-temperatures, and the two-source flux partition the land and the radiation read.
+The state of a [`CanopyInterface`](@ref): the canopy-air node temperature and specific
+humidity the atmosphere sees, the leaf, ground, and effective radiating temperatures, and
+the two-source flux partition the land and the radiation read.
 """
-struct CanopyInterfaceDiagnostics{F}
-    interface              :: F   # canopy-air node Tᵃᶜᵃⁿ (what MOST sees)
+struct CanopyState{F}
+    temperature            :: F   # canopy-air node Tᵃᶜᵃⁿ (what MOST sees)
+    specific_humidity      :: F   # canopy-air node qᵃᶜᵃⁿ
     canopy                 :: F   # leaf temperature Tˡᵉᵃᶠ
     ground                 :: F   # ground temperature Tᵍʳⁿᵈ
     effective              :: F   # blackbody-equivalent radiating temperature Tʳᵃᵈ
@@ -660,11 +679,10 @@ struct CanopyInterfaceDiagnostics{F}
     transpiration          :: F   # leaf transpiration 𝒬ᵛˡᵉᵃᶠ/ℒ − Jʷᵉᵗ, drawn from the soil
 end
 
-CanopyInterfaceDiagnostics(grid) =
-    CanopyInterfaceDiagnostics(ntuple(_ -> Field{Center, Center, Nothing}(grid),
-                                     Val(fieldcount(CanopyInterfaceDiagnostics)))...)
+CanopyState(grid) =
+    CanopyState(ntuple(_ -> Field{Center, Center, Nothing}(grid), Val(fieldcount(CanopyState)))...)
 
-Adapt.@adapt_structure CanopyInterfaceDiagnostics
+Adapt.@adapt_structure CanopyState
 
-Base.summary(::CanopyInterfaceDiagnostics) = "CanopyInterfaceDiagnostics"
-Base.show(io::IO, d::CanopyInterfaceDiagnostics) = print(io, summary(d))
+Base.summary(::CanopyState) = "CanopyState"
+Base.show(io::IO, d::CanopyState) = print(io, summary(d))

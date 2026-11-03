@@ -19,16 +19,21 @@ using ..EarthSystemModels: reference_density,
 ##### Container for organizing information related to fluxes
 #####
 
-mutable struct AtmosphereInterface{J, ST, SQ, F, S}
+mutable struct AtmosphereInterface{J, S, F}
     fluxes :: J
-    temperature :: ST
-    specific_humidity :: SQ
+    state :: S
     formulation :: F
-    storage :: S
 end
 
-AtmosphereInterface(fluxes, temperature, specific_humidity, formulation) =
-    AtmosphereInterface(fluxes, temperature, specific_humidity, formulation, nothing)
+struct TemperatureHumidityState{T, Q}
+    temperature :: T
+    specific_humidity :: Q
+end
+
+TemperatureHumidityState(grid) =
+    TemperatureHumidityState(Field{Center, Center, Nothing}(grid), Field{Center, Center, Nothing}(grid))
+
+Adapt.@adapt_structure TemperatureHumidityState
 
 """
     SeaIceOceanInterface{J, F, T, S, P}
@@ -197,6 +202,7 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P, SP}
     net_fluxes :: C
     properties :: P
     surface_partition :: SP
+    state_is_set :: Bool
 end
 
 using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
@@ -209,12 +215,7 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 # closures it differs from `land.temperature`. With both land and ocean interfaces the
 # surface partition's blended temperature wins; otherwise the land interface, then the
 # atmosphere-ocean interface; `nothing` when the atmosphere touches neither.
-# A `CanopyInterface` interface holds several diagnostic temperatures; the atmosphere-facing
-# one is the canopy-air node.
-@inline interface_node_temperature(t) = t
-@inline interface_node_temperature(t::CanopyInterfaceDiagnostics) = t.interface
-EarthSystemModels.surface_temperature(interface::AtmosphereInterface) =
-    interface_node_temperature(interface.temperature)
+EarthSystemModels.surface_temperature(interface::AtmosphereInterface) = interface.state.temperature
 
 function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
     Tⁱⁿ = interfaces.surface_partition.surface_temperature
@@ -224,9 +225,9 @@ function EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces)
 end
 
 EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean_interface) =
-    interface_node_temperature(land_interface.temperature)
+    land_interface.state.temperature
 EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
-    ocean_interface.temperature
+    ocean_interface.state.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
 
 ground_conductance(interface::AtmosphereInterface) = ground_conductance(temperature_formulation(interface.formulation.state))
@@ -258,10 +259,7 @@ function atmosphere_ocean_interface(grid,
                                        (temperature = temperature_formulation, specific_humidity = specific_humidity_formulation),
                                        velocity_formulation)
 
-    interface_temperature = Field{Center, Center, Nothing}(grid)
-    interface_specific_humidity = Field{Center, Center, Nothing}(grid)
-
-    return AtmosphereInterface(ao_fluxes, interface_temperature, interface_specific_humidity, formulation)
+    return AtmosphereInterface(ao_fluxes, TemperatureHumidityState(grid), formulation)
 end
 
 #####
@@ -297,7 +295,7 @@ function atmosphere_sea_ice_interface(grid,
 
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(fluxes, interface_temperature, interface_specific_humidity, formulation)
+    return AtmosphereInterface(fluxes, TemperatureHumidityState(interface_temperature, interface_specific_humidity), formulation)
 end
 
 #####
@@ -390,8 +388,6 @@ Keyword Arguments
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
 - `atmosphere_land_interface_state`: a coupled canopy formulation or a named tuple of temperature and humidity formulations.
-- `atmosphere_land_interface_storage`: prognostic interface storage, [`PrognosticCanopyAir`](@ref) for a
-   [`CanopyInterface`](@ref) or [`PrognosticSkin`](@ref) for an [`EnergyBalanceTemperature`](@ref). Default: `nothing`.
 - `ocean_fraction`: fraction of each exchange-grid cell covered by ocean (anything `set!` accepts:
    a `Field`, function, or number), forming the [`SurfacePartition`](@ref) that weights the
    atmosphere's net surface fluxes. Required when the model has both land and ocean interfaces;
@@ -421,11 +417,9 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
                              atmosphere_land_interface_state = default_al_interface_state(land),
-                             atmosphere_land_interface_storage = nothing,
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
                                                                                    fluxes              = atmosphere_land_fluxes,
                                                                                    state               = atmosphere_land_interface_state,
-                                                                                   storage             = atmosphere_land_interface_storage,
                                                                                    velocity_difference = atmosphere_land_velocity_difference),
                              ocean_fraction = nothing,
                              ocean_reference_density = reference_density(ocean),
@@ -526,7 +520,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                exchanger,
                                total_fluxes,
                                properties,
-                               surface_partition)
+                               surface_partition,
+                               false)
 end
 
 default_al_interface_state(land) = (temperature = BulkTemperature(),

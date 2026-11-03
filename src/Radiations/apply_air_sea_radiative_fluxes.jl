@@ -39,7 +39,7 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     sea_ice = coupled_model.sea_ice
     ice_concentration = sea_ice_concentration(sea_ice)
 
-    interface_temperature = ao_interface.temperature
+    interface_temperature = ao_interface.state.temperature
     ocean_properties = coupled_model.interfaces.ocean_properties
     penetrating_radiation = get_radiative_forcing(ocean)
     compute_absorption_coefficient!(penetrating_radiation, Time(clock.time))

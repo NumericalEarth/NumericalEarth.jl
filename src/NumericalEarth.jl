@@ -58,8 +58,6 @@ export
     PowerLawTortuosity,
     CanopyConductanceHumidity,
     CanopyInterface,
-    PrognosticCanopyAir,
-    PrognosticSkin,
     AreaIndexUndercanopyVelocity,
     FrictionVelocityUndercanopyVelocity,
     ExponentialSoilResistance,

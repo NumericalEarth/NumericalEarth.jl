@@ -3,7 +3,6 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans: set!
 using Oceananigans.TimeSteppers: update_state!, time_step!
-using NumericalEarth.EarthSystemModels: step_interface!
 using Oceananigans.OutputReaders: OnDisk, InMemory
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity,
@@ -20,7 +19,7 @@ column_grid(arch = CPU()) = LatitudeLongitudeGrid(arch; size = 1, latitude = 10,
 intercepting_land(grid; kw...) = SlabLand(grid; energy = SlabEnergy(Float64), hydrology = InterceptingHydrology(Float64; soil = soil_hydrology(Float64), kw...))
 canopy_storage(land) = scalar(land.prognostic.canopy_water_storage)
 vapor_flux(model) = scalar(model.interfaces.atmosphere_land_interface.fluxes.water_vapor)
-# The vapor the land stepped with: soil evaporation and transpiration, and the wet-canopy evaporation
+# The land's vapor flux: soil evaporation and transpiration, and the wet-canopy evaporation
 # per unit vegetated area over the vegetated `cover`.
 land_vapor_flux(land, cover = 1) = scalar(land.fluxes.vapor_flux) + cover * scalar(land.fluxes.canopy_evaporation)
 
@@ -55,8 +54,9 @@ end
         model = interception_model(arch, Float64; cover_fraction = 0.4)
         land = model.land
         before = scalar(land.water_storage) + 0.4 * canopy_storage(land)
+        vapor = land_vapor_flux(land, 0.4)
         time_step!(model, 60.0)
-        @test scalar(land.water_storage) + 0.4 * canopy_storage(land) - before ≈ 60 * (1e-3 - land_vapor_flux(land, 0.4)) atol = 1e-10
+        @test scalar(land.water_storage) + 0.4 * canopy_storage(land) - before ≈ 60 * (1e-3 - vapor) atol = 1e-10
         @test land.hydrology.leaf_area_index == 3.0
         @test land.hydrology.cover_fraction == 0.4
     end
@@ -79,9 +79,10 @@ end
         update_state!(model)
         for n in 1:4
             before = scalar(land.water_storage) + covers[n] * canopy_storage(land)
+            vapor = land_vapor_flux(land, covers[n])
             time_step!(model, 60.0)
             after = scalar(land.water_storage) + covers[n+1] * canopy_storage(land)
-            @test after - before ≈ 60 * (rain - land_vapor_flux(land, covers[n])) atol = 1e-10
+            @test after - before ≈ 60 * (rain - vapor) atol = 1e-10
             @test 0 ≤ canopy_storage(land) ≤ 0.1 * 3
         end
     end
@@ -136,13 +137,13 @@ end
         with, without = interception_model(arch, Float64), interception_model(arch, Float64; interception = false)
         interface, bare = with.interfaces.atmosphere_land_interface, without.interfaces.atmosphere_land_interface
         @test canopy_storage(with.land) == 0
-        for name in (:interface, :canopy, :ground, :effective)
-            @test scalar(getproperty(interface.temperature, name)) == scalar(getproperty(bare.temperature, name))
+        for name in (:temperature, :canopy, :ground, :effective)
+            @test scalar(getproperty(interface.state, name)) == scalar(getproperty(bare.state, name))
         end
         for name in (:sensible_heat, :latent_heat, :water_vapor)
             @test scalar(getproperty(interface.fluxes, name)) == scalar(getproperty(bare.fluxes, name))
         end
-        @test scalar(interface.temperature.canopy_evaporation) == 0
+        @test scalar(interface.state.canopy_evaporation) == 0
         @test scalar(with.land.fluxes.vapor_flux) ≈ vapor_flux(with) rtol = 1e-6
     end
 end
@@ -154,11 +155,9 @@ end
         foreach(_ -> time_step!(model, 600.0), 1:40)
         @test 0 ≤ canopy_storage(land) ≤ 0.1 * 3 + eps(0.1 * 3)
         @test canopy_storage(land) ≈ 0.1 * 3 rtol=1e-6
-        # The land steps with the wet-canopy evaporation of the interface step.
-        step_interface!(model.interfaces, model, 600.0)
         Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
         @test Jʷᵉᵗ > 0
-        @test Jʷᵉᵗ == scalar(model.interfaces.atmosphere_land_interface.temperature.canopy_evaporation)
+        @test Jʷᵉᵗ == scalar(model.interfaces.atmosphere_land_interface.state.canopy_evaporation)
         @test scalar(land.fluxes.vapor_flux) ≈ vapor_flux(model) - Jʷᵉᵗ rtol = 1e-5
     end
 end
@@ -172,9 +171,13 @@ end
         rain = scalar(land.fluxes.liquid_water_precipitation_flux)
         Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
         Mᶜⁿᵖʸⁿ = canopy_storage(land)
+        water_before = scalar(land.water_storage) + Mᶜⁿᵖʸⁿ
+        atmosphere_vapor = vapor_flux(model)
         time_step!(model, 600.0)
         throughfall = scalar(land.diagnostics.throughfall)
         @test rain ≈ (canopy_storage(land) - Mᶜⁿᵖʸⁿ) / 600 + Jʷᵉᵗ + throughfall atol=1e-14
+        # The water the land loses is the vapor the atmosphere receives.
+        @test scalar(land.water_storage) + canopy_storage(land) - water_before ≈ 600 * (rain - atmosphere_vapor) rtol = 1e-4
         @test scalar(land.fluxes.liquid_water_precipitation_flux) == rain
         @test 0 ≤ throughfall < rain
     end
@@ -187,8 +190,9 @@ end
         set!(land; canopy_water_storage = 0.8 * 0.1 * 3)
         for _ in 1:200
             Mᶜⁿᵖʸ⁻ = canopy_storage(land)
+            Jʷᵉᵗ = scalar(land.fluxes.canopy_evaporation)
             time_step!(model, 3600.0)
-            @test scalar(land.fluxes.canopy_evaporation) ≤ Mᶜⁿᵖʸ⁻ / 3600 * (1 + 1e-5)
+            @test Jʷᵉᵗ ≤ Mᶜⁿᵖʸ⁻ / 3600 * (1 + 1e-5)
             @test canopy_storage(land) ≥ 0
         end
         @test canopy_storage(land) < 1e-3

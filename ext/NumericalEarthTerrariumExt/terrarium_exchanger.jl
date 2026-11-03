@@ -145,7 +145,7 @@ function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
             state.windspeed,
             state.rainfall,
             state.snowfall,
-            atmosphere_land_interface.temperature,
+            atmosphere_land_interface.state.temperature,
             interface_fluxes.sensible_heat,
             interface_fluxes.latent_heat,
             atmos_state.u,

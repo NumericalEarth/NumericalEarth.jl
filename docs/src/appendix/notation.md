@@ -260,7 +260,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyInterface`](@
 | ``G^e`` | – | dry-layer vapor conductance | Soil vapor conductance of [`DryLayerHumidity`](@ref) (kg m⁻² s⁻¹) |
 | ``f^{\mathrm{dbr}}`` | – | dry-branch weight | Weight of the dry-layer branch in the blended soil vapor exchange (–) |
 | ``\Sigma g^T``, ``\Sigma g^v`` | – | node conductance sums | Sums over the three branches feeding the canopy-air node, per side |
-| ``h^{\mathrm{acan}}`` | `layer_depth` | canopy air layer depth | Depth of the canopy air layer of a [`PrognosticCanopyAir`](@ref) storage (m) |
+| ``h^{\mathrm{acan}}`` | `canopy_air_depth` | canopy air layer depth | Depth of the canopy air layer of a [`CanopyInterface`](@ref) with a prognostic node (m) |
 | ``C^{T}``, ``C^{v}`` | – | canopy-air heat and vapor capacities | ``\rho c^{pm} h^{\mathrm{acan}}`` (J m⁻² K⁻¹) and ``\rho h^{\mathrm{acan}}`` (kg m⁻²) |
 | ``\epsilon^{\mathrm{leaf}}``, ``\epsilon^{\mathrm{grnd}}`` | `maximum_canopy_emissivity`, `ground_emissivity` | emissivities | Longwave emissivity of the canopy (``\epsilon^{\mathrm{leaf}} = \epsilon^{max}(1 - e^{-\lambda^{\mathrm{leaf}}})``) and of the ground (–) |
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{\mathrm{grnd}}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
@@ -271,7 +271,7 @@ Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyInterface`](@
 | ``P^{\mathrm{int}}``, ``P^{\mathrm{thru}}`` | `Pⁱⁿᵗ`, `throughfall` | intercepted rain, throughfall | Rain caught by the canopy, ``f^{\mathrm{int}} P^l``, and the liquid water reaching the soil beneath it (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{drip}}``, ``J^{\mathrm{dfct}}`` | `Jᵈʳⁱᵖ`, `Jᵈᶠᶜᵗ` | canopy drip, evaporation deficit | Water draining from a full canopy store, and wet-canopy evaporation the store could not supply, over one step (kg m⁻² s⁻¹) |
 | ``f^{\mathrm{wet}}`` | – | wet-canopy fraction | Deardorff wetted-leaf fraction ``(M^{\mathrm{cnpy}}/M^{\mathrm{cnpy}+})^{2/3}`` (–) |
-| ``g^{\mathrm{wet}}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``J^{\mathrm{wet}} \le M^{\mathrm{cnpy}}/\Delta t`` (kg m⁻² s⁻¹) |
+| ``g^{\mathrm{wet}}`` | – | wet-canopy vapor conductance | Wetted fraction of the leaf boundary-layer conductance, capped so that ``J^{\mathrm{wet}} \le M^{\mathrm{cnpy}}/\Delta t`` over the last time step ``\Delta t`` (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{wet}}``, ``\mathcal{Q}^{v\,\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
 | ``\Delta U`` | – | surface wind speed | Wind speed relative to the surface at the surface-layer reference height (m s⁻¹) |
 | ``R^v`` | – | vapor gas constant | Specific gas constant of water vapor (J kg⁻¹ K⁻¹) |

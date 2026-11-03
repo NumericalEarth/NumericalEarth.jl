@@ -16,18 +16,19 @@ focus on atmosphere-ocean fluxes.
 Future expansions of this tutorial should cover atmosphere-sea ice fluxes, ocean-sea ice fluxes, ocean-land fluxes,
 and surface optical computations for radiation.
 
-## Land surface configuration and storage
+## Land surface configuration and prognostic state
 
 The interface's `formulation.state` specifies how to compute the interface state. For an
 ordinary surface it holds separate `temperature` and `specific_humidity` formulations in
 a named tuple. A `CanopyInterface` occupies `formulation.state` directly and solves
-the coupled canopy and ground balances. The computed temperatures, humidity, and fluxes
-are stored on the interface.
+the coupled canopy and ground balances. The computed fluxes are stored in `interface.fluxes`, and the
+temperatures and humidity in `interface.state`: a `TemperatureHumidityState`, or a `CanopyState`
+for a `CanopyInterface`.
 
-The atmosphere–land interface can carry prognostic canopy-air state or ground temperature,
-passed as `atmosphere_land_interface_storage`. Use `PrognosticCanopyAir` for canopy-air
-temperature and humidity, `PrognosticSkin` for ground temperature, or `nothing` (the default)
-for diagnostic interface balances.
+The atmosphere–land interface state is prognostic when its formulation has a capacity: a
+`canopy_air_depth` on a `CanopyInterface` for canopy-air temperature and humidity, or a
+`heat_capacity` on an `EnergyBalanceTemperature` for ground temperature. Without a capacity (the
+default) the interface balances are diagnostic.
 
 ```@example interface_fluxes
 using NumericalEarth
@@ -41,18 +42,17 @@ soil_humidity = DryLayerHumidity(
                                                dry_layer_onset_saturation = 0.5),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
                                                 molecular_diffusivity = 2.4e-5))
-canopy = CanopyInterface(; soil_humidity)
+canopy = CanopyInterface(; soil_humidity, canopy_air_depth = 10)
 atmosphere = PrescribedAtmosphere(land_grid)
 land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_state=canopy,
-                                atmosphere_land_interface_storage=PrognosticCanopyAir(),
                                 radiation=PrescribedRadiation(land_grid))
 ```
 
-Each coupled time step first advances the interface storage with `step_interface!`, which computes
+Each coupled time step first advances the interface state with `step_interface!`, which computes
 step-mean canopy fluxes and an analytical canopy-air update using fixed effective conductances and
 source states over the step. Prognostic ground temperature uses backward Euler with Newton
 refinement. The components then step with those step-mean fluxes, and `update_state!` diagnoses the
-interface from the new state, holding the storage fixed. Canopy-air and ground heat storage are
+interface from the new state, holding the prognostic state fixed. The interface state is
 checkpointed with the interface.
 
 For vegetated and bare tiles, pass

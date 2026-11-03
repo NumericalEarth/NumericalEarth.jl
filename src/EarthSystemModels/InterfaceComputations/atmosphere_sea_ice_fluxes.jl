@@ -28,8 +28,8 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     atmosphere_data = atmosphere_sea_ice_data(coupled_model)
 
     interface_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
-    interface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
-    interface_specific_humidity = coupled_model.interfaces.atmosphere_sea_ice_interface.specific_humidity
+    interface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.state.temperature
+    interface_specific_humidity = coupled_model.interfaces.atmosphere_sea_ice_interface.state.specific_humidity
     interface_formulation = coupled_model.interfaces.atmosphere_sea_ice_interface.formulation
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ocean_properties = coupled_model.interfaces.ocean_properties

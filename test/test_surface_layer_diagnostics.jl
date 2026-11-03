@@ -101,7 +101,7 @@ end
         pᵃᵗ = 101325.0
 
         dry = single_column_land_model(single_column_grid(arch); Tⁱⁿ, pᵃᵗ, hydrology = DryLand())
-        @test column(dry.interfaces.atmosphere_land_interface.specific_humidity) == 0
+        @test column(dry.interfaces.atmosphere_land_interface.state.specific_humidity) == 0
 
         wet = single_column_land_model(single_column_grid(arch); Tⁱⁿ, pᵃᵗ,
                                        hydrology = BucketHydrology(Float64; maximum_water_storage = 10),
@@ -109,7 +109,7 @@ end
 
         ℂᵃᵗ = wet.atmosphere.thermodynamics_parameters
         qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, Thermodynamics.Liquid())
-        @test column(wet.interfaces.atmosphere_land_interface.specific_humidity) ≈ qᵛ⁺
+        @test column(wet.interfaces.atmosphere_land_interface.state.specific_humidity) ≈ qᵛ⁺
     end
 end
 

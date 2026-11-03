@@ -34,7 +34,7 @@ function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSyste
     rk = kernel_radiation_properties(radiation)
 
     ice_concentration = sea_ice_concentration(sea_ice)
-    surface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
+    surface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.state.temperature
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
 
     launch!(arch, grid, :xy,

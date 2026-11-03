@@ -72,6 +72,9 @@ function Oceananigans.Simulations.reset_clock!(model::ESM)
     # Keep prescribed atmospheric forcing synchronized during component resets.
     update_state!(model.atmosphere)
 
+    # A reset model starts again from the massless interface state.
+    model.interfaces.state_is_set = false
+
     return nothing
 end
 

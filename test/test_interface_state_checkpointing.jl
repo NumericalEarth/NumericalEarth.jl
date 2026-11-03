@@ -7,12 +7,12 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
     SoilConductiveFlux, SoilSkinTemperature
 
-checkpoint_canopy() = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
+checkpoint_canopy(; canopy_air_depth = nothing) = CanopyInterface(Float64; canopy_air_depth, soil_humidity = bare_soil_humidity(Float64),
     canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4.0, moisture_stress = CriticalSaturation(0.5),
                                                 absorbed_par = AbsorbedPhotosyntheticallyActiveRadiation(Float64)),
     ground_heat_flux = SoilConductiveFlux(1.5, 0.05))
 
-checkpoint_skin() = SoilSkinTemperature(1.5, 0.05)
+checkpoint_skin(; heat_capacity = nothing) = SoilSkinTemperature(1.5, 0.05; heat_capacity)
 arrays(fields) = map(f -> Array(interior(f)), fields)
 
 # Step `m1`, restore its checkpoint into the fresh `m2`, step both, and return each model's (latent, sensible) heat flux.
@@ -51,28 +51,27 @@ end
 end
 
 @testset "Prognostic land surface checkpointing" begin
-    cases = ((checkpoint_canopy(), PrognosticCanopyAir()),
-             ((temperature=checkpoint_skin(), specific_humidity=bare_soil_humidity(Float64)), PrognosticSkin()),
-             (checkpoint_canopy(), nothing))
-    for arch in test_architectures, (state, storage) in cases
-        m1, m2 = ntuple(_ -> coupled_land_model(arch; atmosphere_land_interface_state=state,
-                                                atmosphere_land_interface_storage=storage), 2)
+    cases = (checkpoint_canopy(canopy_air_depth = 10),
+             (temperature=checkpoint_skin(heat_capacity = 1e5), specific_humidity=bare_soil_humidity(Float64)),
+             checkpoint_canopy())
+    for arch in test_architectures, closure in cases
+        m1, m2 = ntuple(_ -> coupled_land_model(arch; atmosphere_land_interface_state=closure), 2)
         (LE1, H1), (LE2, H2) = roundtrip!(m1, m2)
         @test LE2 ≈ LE1
         @test H2 ≈ H1
-        storage_state(m) = prognostic_state(m.interfaces.atmosphere_land_interface.storage)
-        @test storage_state(m2) == storage_state(m1)
+        interface_state(m) = prognostic_state(m.interfaces.atmosphere_land_interface.state)
+        @test interface_state(m2) == interface_state(m1)
     end
 end
 
-@testset "Updating the state preserves interface storage" begin
-    cases = ((checkpoint_canopy(), PrognosticCanopyAir()),
-             ((temperature=checkpoint_skin(), specific_humidity=bare_soil_humidity(Float64)), PrognosticSkin()))
-    for arch in test_architectures, (formulation, storage) in cases
-        model = coupled_land_model(arch; atmosphere_land_interface_state=formulation,
-                                   atmosphere_land_interface_storage=storage)
+@testset "Updating the state preserves prognostic interface state" begin
+    cases = (checkpoint_canopy(canopy_air_depth = 10),
+             (temperature=checkpoint_skin(heat_capacity = 1e5), specific_humidity=bare_soil_humidity(Float64)))
+    for arch in test_architectures, closure in cases
+        model = coupled_land_model(arch; atmosphere_land_interface_state=closure)
         time_step!(model, 300.0)
-        state = model.interfaces.atmosphere_land_interface.storage.prognostic
+        interface_state = model.interfaces.atmosphere_land_interface.state
+        state = (; interface_state.temperature, interface_state.specific_humidity)
         before = arrays(state)
         latent_heat = model.interfaces.atmosphere_land_interface.fluxes.latent_heat
         heat = scalar(latent_heat)
@@ -85,13 +84,22 @@ end
     end
 end
 
-@testset "Tiled canopy storage restarts" begin
+@testset "Tiled prognostic canopy restarts" begin
     for arch in test_architectures
-        m1, m2 = ntuple(_ -> tiled_land_model(arch; vegetated = checkpoint_canopy(), cover_fraction = 0.6,
-                                              interface_kw = (; storage = PrognosticCanopyAir())), 2)
+        m1, m2 = ntuple(_ -> tiled_land_model(arch; vegetated = checkpoint_canopy(canopy_air_depth = 10), cover_fraction = 0.6), 2)
         fluxes1, fluxes2 = roundtrip!(m1, m2)
         @test fluxes1 == fluxes2
-        storage_state(m) = prognostic_state(m.interfaces.atmosphere_land_interface.vegetated.storage)
-        @test storage_state(m2) == storage_state(m1)
+        vegetated_state(m) = prognostic_state(m.interfaces.atmosphere_land_interface.vegetated.state)
+        @test vegetated_state(m2) == vegetated_state(m1)
+    end
+end
+
+@testset "Setting tiled interface state" begin
+    for arch in test_architectures
+        model = tiled_land_model(arch; vegetated = checkpoint_canopy(canopy_air_depth = 10), cover_fraction = 0.6)
+        set!(model.interfaces; atmosphere_land_interface = (; vegetated = (; T = 295, q = 0.012)))
+        update_state!(model)
+        @test scalar(model.interfaces.atmosphere_land_interface.vegetated.state.temperature) == 295
+        @test_throws ArgumentError set!(model.interfaces; atmosphere_land_interface = (; bare = (; T = 295)))
     end
 end
