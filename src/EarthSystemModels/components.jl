@@ -141,6 +141,7 @@ adopt_clock(component, clock) = component
 adopt_clock(::Nothing, clock) = nothing
 
 function adopt_clock(simulation::Simulation, clock)
+    validate_clock_origin(simulation.model.clock.time, clock)
     same_time_type(simulation.model.clock.time, clock.time) && return simulation
     throw(ArgumentError(string("the simulation clock tracks time as ", typeof(simulation.model.clock.time),
                                " but the EarthSystemModel clock uses ", typeof(clock.time))))
@@ -148,8 +149,14 @@ end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT
 
+validate_clock_origin(component_time, clock) =
+    component_time == clock.time ||
+        throw(ArgumentError(string("component clock starts at t = ", component_time,
+                                   " but the EarthSystemModel clock starts at t = ", clock.time)))
+
 # Return a clock matching `clock`'s time type (or nothing if clocks are the same)
 function matching_clock(old::Clock, clock)
+    validate_clock_origin(old.time, clock)
     same_time_type(old.time, clock.time) && return nothing
     TT = typeof(clock.time)
     return Clock{TT}(time = convert(TT, old.time),
