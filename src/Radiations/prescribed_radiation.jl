@@ -50,7 +50,7 @@ end
 """
     PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
                         clock = nothing,
-                        ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                        ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                         sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                         snow_surface = nothing,
                         land_surface = nothing,
@@ -58,14 +58,15 @@ end
 
 Construct a `PrescribedRadiation` component from `FieldTimeSeries` of
 downwelling shortwave and longwave radiation. Grid + times are inferred from
-the shortwave FTS.
+the shortwave FTS. Inputs are positive downwelling magnitudes (W m⁻²);
+the exchanged radiation state uses positive-upward fluxes.
 
 Pass `*_surface = nothing` to omit that surface from `surface_properties`.
 """
 function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
                              downwelling_longwave::FieldTimeSeries;
                              clock = nothing,
-                             ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                             ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                              sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                              snow_surface = nothing,
                              land_surface = nothing,
@@ -123,7 +124,7 @@ end
 """
     set!(radiation::PrescribedRadiation; downwelling_shortwave=nothing, downwelling_longwave=nothing)
 
-Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
+Set the prescribed downwelling shortwave and longwave magnitudes (positive downward, W m⁻²),
 then refresh the interpolated state. Omitted keywords are left untouched. A
 `Number` sets a constant in space and time.
 """

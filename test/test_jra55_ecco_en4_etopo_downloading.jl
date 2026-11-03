@@ -7,6 +7,7 @@ include("download_utils.jl")
         # Build a Metadatum to determine the expected file path
         datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
         filepath = metadata_path(datum)
+        isfile(filepath) && rm(filepath; force=true)
 
         download_dataset_with_fallback(filepath; dataset_name="JRA55 $name") do
             FieldTimeSeries(Metadata(name; dataset=NumericalEarth.JRA55.RepeatYearJRA55()); time_indices_in_memory=2)

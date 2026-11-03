@@ -1,4 +1,5 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
+using Oceananigans.Grids: znode
 using Oceananigans.Operators: Δzᶜᶜᶜ
 
 using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
@@ -20,7 +21,7 @@ The minimal possible sea ice representation, clipping the temperature below to t
 Not really a "model" per se, however, it is the most simple way to make sure that temperature
 does not dip below freezing.
 
-The melting temperature is a function of salinity and is controlled by the `liquidus`.
+The melting temperature is a function of salinity and depth and is controlled by the `liquidus`.
 """
 FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; liquidus=LinearLiquidus(FT)) =
     FreezingLimitedOceanTemperature(liquidus, nothing)
@@ -85,7 +86,7 @@ function InterfaceComputations.compute_sea_ice_ocean_fluxes!(cm::FreezingLimited
     cᵒᶜ = ocean_properties.heat_capacity
 
     # Guard for ocean.model.clock.iteration == 0
-    Δt_frazil = ocean.model.clock.iteration == 0 ? convert(typeof(Δt), Inf) : Δt
+    Δt_frazil = ifelse(ocean.model.clock.iteration == 0, convert(typeof(Δt), Inf), Δt)
 
     launch!(arch, grid, :xy, _freeze_ocean_temperature!, 𝒬ᶠʳᶻ, Tᵒᶜ, Sᵒᶜ, liquidus, grid, ρᵒᶜ, cᵒᶜ, Δt_frazil)
 
@@ -105,7 +106,8 @@ end
             Sᵏ = Sᵒᶜ[i, j, k]
         end
 
-        Tₘ = melting_temperature(liquidus, Sᵏ)
+        z  = znode(i, j, k, grid, Center(), Center(), Center())
+        Tₘ = melting_temperature(liquidus, Sᵏ, z)
         freezing = Tᵏ < Tₘ
         δE = freezing * ρᵒᶜ * cᵒᶜ * (Tₘ - Tᵏ)
 
