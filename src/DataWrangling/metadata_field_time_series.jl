@@ -1,74 +1,3 @@
-using Oceananigans.Architectures: AbstractArchitecture
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans.Fields: interpolate!
-using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_indices
-
-import Oceananigans.OutputReaders: new_backend, update_field_time_series!, FieldTimeSeries
-
-@inline instantiate(T::DataType) = T()
-@inline instantiate(T) = T
-
-struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int}
-    start :: Int
-    length :: Int
-    inpainting :: I
-    metadata :: M
-
-    function DatasetBackend{N, C}(start::Int, length::Int, inpainting, metadata) where {N, C}
-        M = typeof(metadata)
-        I = typeof(inpainting)
-        return new{N, C, I, M}(start, length, inpainting, metadata)
-    end
-end
-
-Adapt.adapt_structure(to, b::DatasetBackend{N, C}) where {N, C} =
-    DatasetBackend{N, C}(b.start, b.length, nothing, nothing)
-
-"""
-    DatasetBackend(length, metadata;
-                   on_native_grid = false,
-                   cache_inpainted_data = false,
-                   inpainting = NearestNeighborInpainting(Inf))
-
-Represent a FieldTimeSeries backed by the backend that corresponds to the
-dataset with `metadata` (e.g., netCDF). Each time instance is stored in an
-individual file.
-"""
-function DatasetBackend(length, metadata;
-                        on_native_grid = false,
-                        cache_inpainted_data = false,
-                        inpainting = NearestNeighborInpainting(Inf))
-
-    return DatasetBackend{on_native_grid, cache_inpainted_data}(1, length, inpainting, metadata)
-end
-
-Base.length(backend::DatasetBackend)  = backend.length
-Base.summary(backend::DatasetBackend) = string("DatasetBackend(", backend.start, ", ", backend.length, ")")
-
-new_backend(b::DatasetBackend{native, cache_data}, start, length) where {native, cache_data} =
-    DatasetBackend{native, cache_data}(start, length, b.inpainting, b.metadata)
-
-on_native_grid(::DatasetBackend{native}) where native = native
-cache_inpainted_data(::DatasetBackend{native, cache_data}) where {native, cache_data} = cache_data
-
-const DatasetFieldTimeSeries{N} = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{N}} where N
-
-function set!(fts::DatasetFieldTimeSeries)
-    backend = fts.backend
-    inpainting = backend.inpainting
-    cache_data = cache_inpainted_data(backend)
-
-    for t in time_indices(fts)
-        # Set each element of the time-series to the associated file
-        metadatum = @inbounds backend.metadata[t]
-        set!(fts[t], metadatum; inpainting, cache_inpainted_data=cache_data)
-    end
-
-    fill_halo_regions!(fts)
-
-    return nothing
-end
-
 """
     FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
                     time_indices_in_memory = 2,
@@ -100,35 +29,100 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 """
-function FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
-    download_dataset(metadata)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
+    Downloads.download(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
 
-function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
-                         time_indices_in_memory = 2,
-                         time_indexing = Cyclical(),
-                         inpainting = default_inpainting(metadata),
-                         cache_inpainted_data = true)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
+                                                    time_indices_in_memory = 2,
+                                                    time_indexing = Cyclical(),
+                                                    inpainting = default_inpainting(metadata),
+                                                    cache_inpainted_data = true)
 
-    # Make sure all the required individual files are downloaded
-    download_dataset(metadata)
+    Downloads.download(metadata)
+
+    # Float64 like the model clock: past 2^28 s a Float32 axis rounds the nodes by up to 32 s
+    times = native_times(metadata)
+
+    # A window-averaged series repeats over the span its windows tile, not over the span of its
+    # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.
+    if time_indexing isa Cyclical{Nothing}
+        period = window_span(metadata)
+        isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
+    end
+
+    validate_time_coverage(metadata, time_indexing)
+
+    # Make sure we do not use more indices then the ones available!
+    if length(times) < time_indices_in_memory
+        time_indices_in_memory = length(times)
+    end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    is_native = grid == native_grid(metadata)
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid=is_native, inpainting, cache_inpainted_data)
+    on_native_grid = same_grid(grid, native_grid(metadata, architecture(grid)))
+    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
-    times = native_times(metadata)
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)
 
     return fts
 end
 
-function FieldTimeSeries(variable_name::Symbol;
+"""
+    validate_time_coverage(metadata, time_indexing)
+
+Check that `time_indexing` is a valid operation outside the nodes of a window-averaged series.
+
+Nodes sit at [`window_center`](@ref)s, so the first and last half window of the span the data
+covers falls outside them — see [`uncovered_time_gaps`](@ref). `Clamp` holds the end values
+there; `Cyclical` fills them from the far end of the record; `Linear` holds the first value
+before the first node but extrapolates without bound past the last, so it can leave the range
+of the data.
+
+A single sample has no far end and nothing to interpolate between (it is constant in time)
+so it is left alone whatever the scheme.
+"""
+validate_time_coverage(metadata, time_indexing) = nothing
+
+# One warning per dataset per session, rather than one for whichever series is built first.
+warning_id(metadata) = Symbol(:time_coverage_, nameof(typeof(metadata.dataset)))
+
+function validate_time_coverage(metadata, time_indexing::Cyclical)
+    length(metadata) == 1 && return nothing
+    spans_whole_cycle(metadata) && return nothing
+    head, tail = uncovered_time_gaps(metadata)
+    head == 0 && tail == 0 && return nothing
+
+    @warn string(summary(metadata.dataset), " holds window means, so this series interpolates only ",
+                 "between ", window_center(first(metadata)), " and ", window_center(last(metadata)), ". ",
+                 "`Cyclical()` fills the ", prettytime(head), " before that and the ", prettytime(tail),
+                 " after it by wrapping around to the other end of the record, which is the cycle ",
+                 "itself only if the dates span whole cycles. Extend the dates by one interval at ",
+                 "each end to interpolate across the whole span.") maxlog=1 _id=warning_id(metadata)
+
+    return nothing
+end
+
+function validate_time_coverage(metadata, time_indexing::LinearTimeIndexing)
+    length(metadata) == 1 && return nothing
+    head, tail = uncovered_time_gaps(metadata)
+    head == 0 && tail == 0 && return nothing
+
+    throw(ArgumentError(string(summary(metadata.dataset), " holds window means, so this series ",
+                               "interpolates only between ", window_center(first(metadata)), " and ",
+                               window_center(last(metadata)), ", and `Linear()` extrapolates outside ",
+                               "it: it holds the first value for the ", prettytime(head), " before, ",
+                               "and extrapolates without bound for the ", prettytime(tail), " after. ",
+                               "Use `Clamp()` to hold the end values, `Cyclical()` to wrap around, or ",
+                               "extend the dates by one interval at each end.")))
+end
+
+function Oceananigans.OutputReaders.FieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),

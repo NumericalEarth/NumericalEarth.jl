@@ -1,8 +1,3 @@
-using Oceananigans.Operators: ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
-using Oceananigans.Forcings: MultipleForcings
-
-using Adapt
-
 struct XDirection end
 struct YDirection end
 

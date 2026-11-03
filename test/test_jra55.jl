@@ -1,11 +1,19 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
-using NumericalEarth.JRA55: download_JRA55_cache
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: compute_native_date_range
+using NumericalEarth.JRA55: download_JRA55_cache
 
 @testset "JRA55 and data wrangling utilities" begin
+    native_dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
+    start_date = DateTimeProlepticGregorian(1992, 1, 15)
+    end_date = DateTimeProlepticGregorian(1992, 2, 15)
+
+    dates = compute_native_date_range(native_dates, start_date, end_date)
+
+    @test dates == native_dates[1:3]
+
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing reanalysis_field_time_series on $A..."
@@ -15,7 +23,7 @@ using NumericalEarth.DataWrangling: compute_native_date_range
             dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), test_name)
             end_date = dates[3]
 
-            JRA55_fts = JRA55FieldTimeSeries(test_name, arch; end_date)
+            JRA55_fts = FieldTimeSeries(Metadata(test_name; dataset=JRA55.RepeatYearJRA55(), end_date), arch)
             test_filename = joinpath(download_JRA55_cache, "RYF.rsds.1990_1991.nc")
 
             @test JRA55_fts isa FieldTimeSeries
@@ -28,21 +36,21 @@ using NumericalEarth.DataWrangling: compute_native_date_range
             @test Nt == 3
 
             if test_name == :downwelling_shortwave_radiation
-                CUDA.@allowscalar begin
+                @allowscalar begin
                     @test JRA55_fts[1, 1, 1, 1]   == 430.98105f0
                     @test JRA55_fts[641, 1, 1, 1] == 430.98105f0
                 end
             end
 
             # Test that halo regions were filled to respect boundary conditions
-            CUDA.@allowscalar begin
+            @allowscalar begin
                 @test view(JRA55_fts.data, 1, :, 1, :) == view(JRA55_fts.data, Nx+1, :, 1, :)
             end
 
             @info "Testing Cyclical time_indices for JRA55 data on $A..."
             Nb = 4
-            backend = JRA55NetCDFBackend(Nb)
-            netcdf_JRA55_fts = JRA55FieldTimeSeries(test_name, arch; backend)
+            netcdf_JRA55_fts = FieldTimeSeries(Metadata(test_name; dataset=JRA55.RepeatYearJRA55()), arch;
+                                               time_indices_in_memory=Nb)
 
             Nt = length(netcdf_JRA55_fts.times)
             @test Oceananigans.OutputReaders.time_indices(netcdf_JRA55_fts) == (1, 2, 3, 4)
@@ -58,12 +66,32 @@ using NumericalEarth.DataWrangling: compute_native_date_range
             @test f₁ == f₁′
         end
 
+        @info "Testing Field(::JRA55Metadatum) on $A..."
+        # Locks in: position-based RepeatYear file_index lookup, halo
+        # periodic wrap, and agreement between the per-Metadatum Field
+        # path and the chunked-file FTS path at the same time index.
+        ds_var = :downwelling_shortwave_radiation
+        all_jra55_dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), ds_var)
+
+        md_first = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55())
+        f_first  = Field(md_first, arch)
+        @test size(f_first) == (640, 320, 1)
+        @allowscalar @test f_first[1, 1, 1] == 430.98105f0
+        @allowscalar @test view(f_first.data, 1, :, 1) == view(f_first.data, 641, :, 1)
+
+        md_mid = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55(), date=all_jra55_dates[100])
+        f_mid  = Field(md_mid, arch)
+        # Same time index loaded via the chunked-file FTS path → must agree
+        fts100 = FieldTimeSeries(Metadata(ds_var; dataset=JRA55.RepeatYearJRA55(), end_date=all_jra55_dates[100]), arch; time_indices_in_memory=100)
+        @allowscalar @test f_mid[1, 1, 1]   == fts100[1, 1, 1, 100]
+        @allowscalar @test f_mid[640, 1, 1] == fts100[640, 1, 1, 100]
+
         @info "Testing interpolate_field_time_series! on $A..."
 
         name  = :downwelling_shortwave_radiation
         dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), name)
         end_date = dates[3]
-        JRA55_fts = JRA55FieldTimeSeries(name, arch; end_date)
+        JRA55_fts = FieldTimeSeries(Metadata(name; dataset=JRA55.RepeatYearJRA55(), end_date), arch; time_indices_in_memory=3)
 
         # Make target grid and field
         resolution = 1 # degree, eg 1/4
@@ -88,7 +116,7 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         interpolate!(target_fts, JRA55_fts)
 
         # Random regression test
-        CUDA.@allowscalar begin
+        @allowscalar begin
             @test Float32(target_fts[1, 1, 1, 1]) ≈ Float32(222.24313354492188)
 
             # Only include this if we are filling halo regions within
@@ -103,10 +131,9 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         @info "Testing save_field_time_series! on $A..."
         filepath = "JRA55_downwelling_shortwave_radiation_test_$(string(typeof(arch))).jld2" # different filename for each arch so that the CPU and GPU tests do not crash
         NumericalEarth.DataWrangling.save_field_time_series!(target_fts, path=filepath, name="Qsw",
-                                                         overwrite_existing = true)
+                                                             overwrite_files=true)
         @test isfile(filepath)
 
-        # Test that we can load the data back
         Qswt = FieldTimeSeries(filepath, "Qsw")
         @test on_architecture(CPU(), parent(Qswt.data)) == on_architecture(CPU(), parent(target_fts.data))
         @test Qswt.times == target_fts.times
@@ -116,12 +143,14 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         ##### JRA55 prescribed atmosphere
         #####
 
-        backend    = JRA55NetCDFBackend(2)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2)
         @test atmosphere isa PrescribedAtmosphere
 
         # Test JRA55PrescribedLand loads river and iceberg data with correct frequency
-        land = JRA55PrescribedLand(arch; backend)
+        land_grid = LatitudeLongitudeGrid(arch; size=(20, 10, 1), longitude=(0, 360),
+                                          latitude=(-60, 60), z=(-100, 0))
+        river_dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), :river_freshwater_flux)
+        land = JRA55PrescribedLand(land_grid; time_indices_in_memory=2, end_date=river_dates[2])
         @test land isa NumericalEarth.Lands.PrescribedLand
         @test haskey(land.freshwater_flux, :rivers)
         @test haskey(land.freshwater_flux, :icebergs)
@@ -135,30 +164,72 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         @info "Testing MultiYearJRA55 data on $A..."
         dataset = JRA55.MultiYearJRA55()
 
+        # The multi-file `set!` path under test is variable-agnostic, so it runs on friver
+        # (57 MB/year) rather than tas (1.2 GB/year): both split one file per year and both
+        # span the 1958 → 1959 boundary, but tas costs ~13 min of ESGF transfer.
+        multiyear_name = :river_freshwater_flux
+        native_dates = NumericalEarth.DataWrangling.all_dates(dataset, multiyear_name)
+
+        # friver is a daily *mean*, timestamped at 12:00; anchoring the window on the hour would
+        # straddle native timestamps and change how many dates the range covers.
+        anchor = DateTime("1959-01-01T12:00:00")
+
         # Test that when date range spans two years both netCDF files are downloaded
         # and concatenated when reading the data.
-        start_date = DateTime("1959-01-01T00:00:00") - 15 * Day(1) # sometime in 1958
-        end_date   = DateTime("1959-01-01T00:00:00") + 85 * Day(1) # sometime in 1959
+        start_date = anchor - 15 * Day(1) # sometime in 1958
+        end_date   = anchor + 85 * Day(1) # sometime in 1959
 
-        backend = JRA55NetCDFBackend(10)
+        dates = compute_native_date_range(native_dates, start_date, end_date)
+        metadata = Metadata(multiyear_name; dataset, dates)
+        filepaths = unique(metadata_path(metadata))
 
-        # Use a temporary directory so different architectures don't clash
-        mktempdir("./") do dir
-            # Compute expected file paths so we can fall back to artifacts if needed
-            native_dates = NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
-            dates = compute_native_date_range(native_dates, start_date, end_date)
-            metadata = Metadata(:temperature; dataset, dates, dir)
-            filepaths = unique(metadata_path(metadata))
+        river_flux = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 $multiyear_name") do
+            FieldTimeSeries(metadata, arch; time_indices_in_memory=10)
+        end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
 
-            Ta = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 :temperature") do
-                JRA55FieldTimeSeries(:temperature, arch; dataset, start_date, end_date, backend, dir)
-            end
-            @test Second(end_date - start_date).value ≈ Ta.times[end] - Ta.times[1]
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
 
-            # Test we can access all the data
-            for t in eachindex(Ta.times)
-                @test Ta[t] isa Field
-            end
+        # Test we can access all the data
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`. Keep the
+        # three-hourly branch that tas exercises covered; building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`; keep the
+        # three-hourly branch that tas exercises covered. Building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
+
+        @info "Testing MultiYearJRA55 single-window crossing year boundary on $A..."
+
+        # A single in-memory window straddling the 1958 → 1959 file boundary must have every slot
+        # written, with each file's iteration going to its own slots.
+        start_date_span = DateTime("1958-12-27T12:00:00")
+        end_date_span   = DateTime("1959-01-05T12:00:00")
+
+        dates_span = compute_native_date_range(native_dates, start_date_span, end_date_span)
+        metadata_span = Metadata(multiyear_name; dataset, dates=dates_span)
+        filepaths_span = unique(metadata_path(metadata_span))
+
+        river_flux_span = download_dataset_with_fallback(filepaths_span;
+                                                         dataset_name="MultiYearJRA55 $multiyear_name year-boundary window") do
+            # backend window of 80 holds the whole range in a single window
+            FieldTimeSeries(metadata_span, arch; time_indices_in_memory=80)
+        end
+
+        # Every slot in the single in-memory window must carry data.
+        for t in eachindex(river_flux_span.times)
+            @test maximum(abs, interior(river_flux_span[t])) > 0
         end
     end
 end

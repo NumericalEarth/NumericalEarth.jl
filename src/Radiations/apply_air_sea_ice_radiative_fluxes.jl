@@ -10,9 +10,9 @@ into `coupled_model.radiation.interface_fluxes.sea_ice`.
 When `coupled_model.radiation === nothing`, this is a no-op.
 Also a no-op when sea-ice is not a `Simulation{<:SeaIceModel}`.
 """
-apply_air_sea_ice_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel) =
+EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel) =
     _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, coupled_model.sea_ice)
 
 # No sea-ice or non-prognostic sea-ice: nothing to do.
@@ -77,17 +77,14 @@ end
     ℐꜛˡʷ = emitted_longwave_radiation(Ts, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
-
-    # Sea-ice radiation contributes only where ice exists.
-    ice_present = ℵᵢ > 0
-    ΣQ_rad_ice = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ice_present
+    ΣQ  = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ℵᵢ
 
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
-        top_heat_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ_rad_ice)
+        top_heat_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end

@@ -12,11 +12,18 @@ end
     tolerance = convergence.tolerance
     hasnt_started = iteration == 0
     reached_maxiter = iteration ≥ maxiter
-    drift = abs(Ψⁿ.u★ - Ψ⁻.u★) + abs(Ψⁿ.θ★ - Ψ⁻.θ★) + abs(Ψⁿ.q★ - Ψ⁻.q★)
+    drift = abs(Ψⁿ.fluxes.u★ - Ψ⁻.fluxes.u★) + abs(Ψⁿ.fluxes.θ★ - Ψ⁻.fluxes.θ★) + abs(Ψⁿ.fluxes.q★ - Ψ⁻.fluxes.q★)
     converged = drift < tolerance
     return !(converged | reached_maxiter) | hasnt_started
 end
 
+"""
+    FixedIterations(iterations)
+
+Stop criteria running the interface fixed point for a fixed number of
+`iterations` — every GPU thread follows the same path, unlike the
+tolerance-based `ConvergenceStopCriteria`.
+"""
 struct FixedIterations{I}
     iterations :: I
 end
@@ -28,97 +35,89 @@ end
 #####
 
 # Iterating condition for the characteristic scales solvers
-@inline function compute_interface_state(flux_formulation,
+@inline function compute_interface_state(interface_formulation,
                                          initial_interface_state,
                                          atmosphere_state,
                                          interior_state,
                                          radiation_state,
-                                         interface_properties,
                                          atmosphere_properties,
-                                         interior_properties)
+                                         interior_properties,
+                                         Δt = 0)
 
     Ψₐ = atmosphere_state
     Ψᵢ = interior_state
-    Ψₛⁿ = Ψₛ⁻ = initial_interface_state
-    stop_criteria = flux_formulation.solver_stop_criteria
+    Ψⁱⁿⁿ = Ψⁱⁿ⁻ = initial_interface_state
+    stop_criteria = interface_formulation.turbulent_fluxes.solver_stop_criteria
     iteration = 0
 
-    while iterating(Ψₛⁿ, Ψₛ⁻, iteration, stop_criteria)
-        Ψₛ⁻ = Ψₛⁿ
-        Ψₛⁿ = iterate_interface_state(flux_formulation,
-                                      Ψₛ⁻, Ψₐ, Ψᵢ,
+    while iterating(Ψⁱⁿⁿ, Ψⁱⁿ⁻, iteration, stop_criteria)
+        Ψⁱⁿ⁻ = Ψⁱⁿⁿ
+        Ψⁱⁿⁿ = iterate_interface_state(interface_formulation,
+                                      Ψⁱⁿ⁻, Ψₐ, Ψᵢ,
                                       radiation_state,
-                                      interface_properties,
                                       atmosphere_properties,
-                                      interior_properties)
+                                      interior_properties, Δt)
         iteration += 1
     end
 
-    return Ψₛⁿ
+    return Ψⁱⁿⁿ
+end
+
+@inline function interface_temperature_and_humidity(state::NamedTuple,
+                                                    Ψⁱⁿ, Ψₐ, Ψᵢ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ, Δt)
+    Tⁱⁿ = compute_interface_temperature(state.temperature, Ψⁱⁿ, Ψₐ, Ψᵢ, Ψᵣ, ℙⁱⁿ, ℙₐ, ℙᵢ)
+    qⁱⁿ = compute_interface_humidity(state.specific_humidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return Tⁱⁿ, qⁱⁿ
 end
 
 """
-    iterate_interface_state(flux_formulation, Ψₛⁿ⁻¹, Ψₐ, Ψᵢ, Qᵣ, ℙₛ, ℙₐ, ℙᵢ)
+$(TYPEDSIGNATURES)
 
-Return the nth iterate of the interface state `Ψₛⁿ` computed according to the
-`flux_formulation`, given the interface state at the previous iterate `Ψₛⁿ⁻¹`,
+Return the nth iterate of the interface state `Ψⁱⁿⁿ` computed according to the
+`interface_formulation`, given the interface state at the previous iterate `Ψⁱⁿⁿ⁻¹`,
 as well as the atmosphere state `Ψₐ`, the interior state `Ψᵢ`,
-downwelling radiation `Qᵣ`, and the interface, atmosphere,
-and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
+downwelling radiation `Qᵣ`, and the atmosphere and interior properties `ℙₐ` and `ℙᵢ`.
 """
-@inline function iterate_interface_state(flux_formulation,
+@inline function iterate_interface_state(interface_formulation,
                                          approximate_interface_state,
                                          atmosphere_state,
                                          interior_state,
                                          radiation_state,
-                                         interface_properties,
                                          atmosphere_properties,
-                                         interior_properties)
-
-    Tₛ = compute_interface_temperature(interface_properties.temperature_formulation,
-                                       approximate_interface_state,
-                                       atmosphere_state,
-                                       interior_state,
-                                       radiation_state,
-                                       interface_properties,
-                                       atmosphere_properties,
-                                       interior_properties)
+                                         interior_properties,
+                                         Δt)
 
     FT = eltype(approximate_interface_state)
-    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
 
-    # Recompute the saturation specific humidity at the interface based on the new temperature
-    q_formulation = interface_properties.specific_humidity_formulation
-    Sₛ = approximate_interface_state.S
-    Tᵃᵗ = atmosphere_state.T
-    pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ)
+    Tⁱⁿ, qⁱⁿ = interface_temperature_and_humidity(interface_formulation.state,
+                                                approximate_interface_state,
+                                                atmosphere_state,
+                                                interior_state,
+                                                radiation_state,
+                                                interface_formulation,
+                                                atmosphere_properties,
+                                                interior_properties, Δt)
 
     # Compute the specific humidity increment
-    Δq = qᵃᵗ - qₛ
+    Δq = qᵃᵗ - qⁱⁿ
 
     θᵃᵗ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
-    Δθ = θᵃᵗ - Tₛ
+    Δθ = θᵃᵗ - Tⁱⁿ
     Δh = atmosphere_state.z # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
 
-    u★, θ★, q★ = iterate_interface_fluxes(flux_formulation,
-                                          Tₛ, qₛ, Δθ, Δq, Δh,
-                                          approximate_interface_state,
-                                          atmosphere_state,
-                                          interface_properties,
-                                          atmosphere_properties)
+    u★, θ★, q★, Ξθ, Ξq = iterate_interface_fluxes(interface_formulation.turbulent_fluxes,
+                                                  Tⁱⁿ, qⁱⁿ, Δθ, Δq, Δh,
+                                                  approximate_interface_state,
+                                                  atmosphere_state,
+                                                  interface_formulation,
+                                                  atmosphere_properties)
 
-    u = approximate_interface_state.u
-    v = approximate_interface_state.v
-    S = approximate_interface_state.S
+    fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★),
+                                 convert(FT, Ξθ), convert(FT, Ξq))
 
-    return InterfaceState(convert(FT, u★),
-                          convert(FT, θ★),
-                          convert(FT, q★), 
-                          convert(FT, u), 
-                          convert(FT, v), 
-                          convert(FT, Tₛ), 
-                          convert(FT, S), 
-                          convert(FT, qₛ))
+    return rebuild_interface_state(approximate_interface_state,
+                                   fluxes,
+                                   convert(FT, Tⁱⁿ),
+                                   convert(FT, qⁱⁿ))
 end

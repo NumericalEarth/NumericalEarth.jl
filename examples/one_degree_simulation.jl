@@ -83,36 +83,38 @@ sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 # We initialize the ocean and sea ice models with data from the ECCO state estimate.
 
 date = DateTime(1993, 1, 1)
-dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset)
-ecco_salinity              = Metadatum(:salinity; date, dataset)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
+ecco_variables = (:temperature, :salinity, :sea_ice_thickness, :sea_ice_concentration)
+ecco_set = MetadataSet(ecco_variables; dataset = ECCO4Monthly(), date)
 
-set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
-set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
+# A single MetadataSet drives both components; variables not in
+# `variable_glossary` for a given model fall through silently.
+set!(ocean.model,   ecco_set)   # picks up :temperature, :salinity → T, S
+set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 
-# ### Atmospheric forcing
+# ### JRA55-based atmospheric state, radiation, and land model
+#
+# We force the simulation with data derived from the JRA55-do atmospheric reanalysis,
+# which include the atmospheric state and radiative fluxes, as well as
+# land-based freshwater fluxes from rivers and icebergs.
+#
+# In the radiation component we prescribed a latitude-dependent ocean albedo due to
+# Large & Yeager 2009.
 
-# We force the simulation with a JRA55-do atmospheric reanalysis.
-jra55_backend = JRA55NetCDFBackend(80)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-# Use a latitude-dependent ocean albedo (Large & Yeager 2009); keep the
-# default ocean emissivity (0.97) and sea-ice surface (albedo 0.7,
-# emissivity 1.0).
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend,
-                                      ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo()))
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+land = JRA55PrescribedLand(grid)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+
+ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo())
+radiation = JRA55PrescribedRadiation(arch; ocean_surface)
 
 # ### Coupled simulation
-
+#
 # Now we are ready to build the coupled ocean--sea ice model and bring everything
 # together into a `simulation`.
 
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
-coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
-simulation = Simulation(coupled_model; Δt=20minutes, stop_time=365days)
+coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
+simulation = Simulation(coupled_model; Δt=20minutes, stop_time=90days)
 
 # ### A progress messenger
 #
@@ -165,17 +167,17 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             schedule = TimeInterval(1days),
                                             filename = "ocean_one_degree_surface_fields",
                                             indices = (:, :, grid.Nz),
-                                            overwrite_existing = true)
+                                            overwrite_files = true)
 
 ocean.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η = free_surface);
                                                  schedule = TimeInterval(1days),
                                                  filename = "ocean_one_degree_free_surface",
-                                                 overwrite_existing = true)
+                                                 overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               schedule = TimeInterval(1days),
                                               filename = "sea_ice_one_degree_surface_fields",
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ### Ready to run
 
@@ -206,7 +208,9 @@ Nt = length(times)
 n = Observable(Nt)
 
 # We create a land mask and use it to fill land points with `NaN`s.
-land = interior(To.grid.immersed_boundary.bottom_height) .≥ 0
+# The grid's `bottom_height` is stored as a halo-padded `OffsetArray`,
+# so we take a view of its interior to build the mask.
+land = view(To.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
 
 Toₙ = @lift begin
     Tₙ = interior(To[$n])
@@ -268,7 +272,7 @@ end
 # Finally, we plot a snapshot of the surface speed, temperature, and the turbulent
 # eddy kinetic energy from the CATKE vertical mixing parameterization as well as the
 # sea ice speed and the effective sea ice thickness.
-fig = Figure(size=(1200, 1000))
+fig = Figure(size=(900, 750))
 
 title = @lift string("Global 1ᵒ ocean simulation after ", prettytime(times[$n] - times[1]))
 

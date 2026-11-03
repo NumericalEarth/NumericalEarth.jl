@@ -26,7 +26,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -55,7 +55,7 @@ EarthSystemModel{CPU}(time = 1 hour, iteration = 3)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 1 hour, iteration = 3)
 └── interfaces: ComponentInterfaces
 ```
@@ -89,19 +89,19 @@ a sea ice component as positional arguments:
 ```jldoctest esm
 ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
 sea_ice = FreezingLimitedOceanTemperature()
-model = OceanSeaIceModel(sea_ice, ocean)
+model = OceanSeaIceModel(ocean, sea_ice)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
-Here we passed `FreezingLimitedOceanTemperature` again, but a "real" sea ice simulation, 
+Here we passed `FreezingLimitedOceanTemperature` again, but a "real" sea ice simulation,
 built with [`sea_ice_simulation`](@ref) which wraps `ClimaSeaIce.SeaIceModel` in an
 Oceananigans `Simulation`, would also work.
 
@@ -129,7 +129,7 @@ To change the defaults, construct `ComponentInterfaces` yourself and pass it in.
 For example, to use constant transfer coefficients instead of similarity theory:
 
 ```jldoctest esm
-atmosphere_ocean_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
+atmosphere_ocean_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 2e-3))
 interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(nothing, ocean;
                                                                   atmosphere_ocean_fluxes)
 model = OceanOnlyModel(ocean; interfaces)
@@ -139,7 +139,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -158,7 +158,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── sea_ice: FreezingLimitedOceanTemperature
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
@@ -198,5 +198,5 @@ Each call to `time_step!` advances the coupled system by `Δt`:
 
 `EarthSystemModel` supports Oceananigans' checkpointing infrastructure.
 The functions `prognostic_state` and `restore_prognostic_state!` capture and restore
-the full state of all components -- ocean, atmosphere, sea ice, clock, and interfaces --
-so simulations can be restarted from any saved checkpoint.
+the full state of all components -- ocean, atmosphere, sea ice, land, radiation, clock,
+and interfaces -- so simulations can be restarted from any saved checkpoint.

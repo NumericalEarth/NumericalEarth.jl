@@ -1,15 +1,50 @@
 module EarthSystemModels
 
+abstract type AbstractPrescribedComponent end
+
 export
     EarthSystemModel,
+    AbstractPrescribedComponent,
+    BoundaryPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    AtmosphereLandModel,
+    BulkHumidity,
+    SkinHumidity,
+    FractionalHumidity,
+    CriticalSaturation,
+    PlantAvailableWaterStress,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CanopyInterface,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    ExponentialSoilResistance,
+    GroundSurfaceResistance,
+    TiledLandInterface,
+    JarvisConductance,
+    AbsorbedPhotosyntheticallyActiveRadiation,
+    AltitudeCorrection,
+    atmosphere_land_interface,
+    surface_layer_diagnostics,
+    SurfacePartition,
     SimilarityTheoryFluxes,
+    FixedIterations,
+    ConvergenceStopCriteria,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
     BulkTemperature,
+    DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
+    InteriorDiffusivity,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
     compute_sea_ice_ocean_fluxes!,
@@ -17,41 +52,33 @@ export
     IceBathHeatFlux,
     ThreeEquationHeatFlux,
     # Friction velocity formulations
-    MomentumBasedFrictionVelocity
+    MomentumBasedFrictionVelocity,
+    default_stop_time
 
-using Oceananigans
-using Oceananigans.Operators
-using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.Units: Time
-using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition
-using Oceananigans.Grids: architecture
-using Oceananigans.Fields: ZeroField
-using Oceananigans.TimeSteppers: tick!
-using Oceananigans.Models: AbstractModel
-using Oceananigans.OutputReaders: FieldTimeSeries, GPUAdaptedFieldTimeSeries
-
-using ClimaSeaIce: SeaIceModel
+import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-
-using NumericalEarth: stateindex
-
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
-using KernelAbstractions.Extras.LoopInfo: @unroll
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
-import Thermodynamics as AtmosphericThermodynamics
+using Oceananigans: Oceananigans, AbstractModel, initialize!,
+                    prognostic_state, restore_prognostic_state!
+using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Diagnostics: NaNChecker
+using Oceananigans.Fields: ZeroField
+using Oceananigans.Simulations: reset_clock!, Simulation
+using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
+using Oceananigans.Grids: x_domain, y_domain
+using Oceananigans.Utils: launch!, prettytime
 
-# Simulations interface
-import Oceananigans: fields, prognostic_fields, prognostic_state, restore_prognostic_state!
-import Oceananigans.Architectures: architecture
-import Oceananigans.Fields: set!
-import Oceananigans.Models: NaNChecker, default_nan_checker
-import Oceananigans.OutputWriters: default_included_properties
-import Oceananigans.Simulations: timestepper, reset_clock!, initialize!, iteration
-import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, time, reconcile_state!
-import Oceananigans.Utils: prettytime
+# Reactant does not support `stop_time`; it must stay `nothing` there.
+default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)
+default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59)
+default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
+include("boundary_prescribed_component.jl")
 
 #####
 ##### The coupled model
@@ -59,6 +86,7 @@ include("components.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
+const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 
@@ -84,16 +112,22 @@ const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterfac
 const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
-InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing
+InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel)      = nothing
 
-InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel) = nothing
+InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, Δt) = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
-InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
+InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing
 
-InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel) = nothing
+# `NoInterface` means atmosphere-ocean / atmosphere-sea-ice / sea-ice-ocean
+# are all absent. The atmosphere-land interface may still be present
+# (e.g. an `AtmosphereLandModel` with ocean = sea_ice = nothing), so we
+# explicitly do *not* fall back `compute_atmosphere_land_fluxes!` here —
+# its own Nothing dispatch handles the missing-AL-interface case.
+InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
-InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel) = nothing
+InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel)      = nothing
 
 end # module

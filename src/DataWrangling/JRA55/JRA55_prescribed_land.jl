@@ -1,37 +1,56 @@
-using NumericalEarth.Lands: PrescribedLand
-
-export JRA55PrescribedLand
-
-JRA55PrescribedLand(arch::Distributed, FT=Float32; kw...) =
-    JRA55PrescribedLand(child_architecture(arch), FT; kw...)
+using ...Lands: PrescribedLand, build_flux_routing, routable_grid
 
 """
-    JRA55PrescribedLand([architecture = CPU(), FT = Float32];
+    JRA55PrescribedLand(grid;
                         dataset = RepeatYearJRA55(),
                         start_date = first_date(dataset, :river_freshwater_flux),
                         end_date = last_date(dataset, :river_freshwater_flux),
-                        backend = JRA55NetCDFBackend(10),
+                        dir = download_JRA55_cache,
+                        time_indices_in_memory = 10,
                         time_indexing = Cyclical(),
+                        region = nothing,
+                        maximum_search_radius = 5,
+                        spread_radius = 1.2,
+                        maximum_spread_cells = nothing,
                         other_kw...)
 
-Return a [`PrescribedLand`](@ref) representing JRA55 reanalysis land surface data
-(river runoff and iceberg calving freshwater fluxes).
+Return a [`PrescribedLand`](@ref) holding the JRA55-do river runoff and iceberg calving fluxes, routed
+onto the coastline of the target ocean `grid` by [`build_flux_routing`](@ref).
+
+Keyword Arguments
+=================
+- `maximum_search_radius`: search distance in `grid` cells for the ocean cell receiving a mouth. Default: `5`.
+- `spread_radius`: radius in degrees over which each mouth's discharge is divided equally. Default: `1.2`.
+- `maximum_spread_cells`: cap on that footprint, nearest first. Default: `nothing` (uncapped).
+
+See also [`GloFASPrescribedLand`](@ref).
 """
-function JRA55PrescribedLand(architecture=CPU(), FT=Float32;
+function JRA55PrescribedLand(grid;
                              dataset = RepeatYearJRA55(),
                              start_date = first_date(dataset, :river_freshwater_flux),
                              end_date = last_date(dataset, :river_freshwater_flux),
-                             backend = JRA55NetCDFBackend(10),
+                             dir = download_JRA55_cache,
+                             time_indices_in_memory = 10,
                              time_indexing = Cyclical(),
+                             region = nothing,
+                             maximum_search_radius = 5,
+                             spread_radius = 1.2,
+                             maximum_spread_cells = nothing,
                              other_kw...)
 
-    kw = (; time_indexing, backend, start_date, end_date, dataset)
+    arch = child_architecture(grid)
+    kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    Fri = JRA55FieldTimeSeries(:river_freshwater_flux, architecture, FT;   kw...)
-    Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux, architecture, FT; kw...)
+    JRA55FieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), arch; kw...)
+
+    Fri = JRA55FieldTimeSeries(:river_freshwater_flux)
+    Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux)
 
     freshwater_flux = (; rivers = Fri, icebergs = Fic)
+    river_routing = routable_grid(grid) ?
+        map(fts -> build_flux_routing(grid, fts; maximum_search_radius, spread_radius, maximum_spread_cells),
+            freshwater_flux) : nothing
 
-    return PrescribedLand(freshwater_flux)
+    return PrescribedLand(freshwater_flux; river_routing)
 end

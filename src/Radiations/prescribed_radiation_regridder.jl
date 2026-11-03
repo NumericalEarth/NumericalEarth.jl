@@ -1,4 +1,4 @@
-function ComponentExchanger(radiation::PrescribedRadiation, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid)
 
     regridder = radiation_regridder(radiation, grid)
 
@@ -19,7 +19,7 @@ function radiation_regridder(radiation::PrescribedRadiation, exchange_grid)
     return (i = fi, j = fj)
 end
 
-function initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedRadiation)
+function EarthSystemModels.InterfaceComputations.initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedRadiation)
     frac_indices = exchanger.regridder
     # Skip horizontal regridding when both fractional-index buffers are
     # absent (purely Flat horizontal exchange grid).
@@ -29,23 +29,6 @@ function initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedR
     rad_grid = radiation.grid
     kernel_parameters = interface_kernel_parameters(grid)
     launch!(architecture(grid), grid, kernel_parameters,
-            _compute_radiation_fractional_indices!, frac_indices, grid, rad_grid)
+            _compute_fractional_indices!, frac_indices, grid, rad_grid, Center(), Center())
     return nothing
-end
-
-@kernel function _compute_radiation_fractional_indices!(indices_tuple, exchange_grid, rad_grid)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(exchange_grid, 3)
-    X = _node(i, j, kᴺ + 1, exchange_grid, Center(), Center(), Face())
-    fractional_indices_ij = FractionalIndices(X, rad_grid, Center(), Center(), Center())
-    fi = indices_tuple.i
-    fj = indices_tuple.j
-    @inbounds begin
-        if !isnothing(fi)
-            fi[i, j, 1] = fractional_indices_ij.i
-        end
-        if !isnothing(fj)
-            fj[i, j, 1] = fractional_indices_ij.j
-        end
-    end
 end

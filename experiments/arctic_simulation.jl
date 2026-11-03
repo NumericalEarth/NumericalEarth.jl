@@ -50,10 +50,11 @@ ocean = ocean_simulation(grid;
                          free_surface,
                          closure)
 
-dataset = ECCO4Monthly()
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly())
 
-set!(ocean.model, T=Metadatum(:temperature; dataset),
-                  S=Metadatum(:salinity;    dataset))
+set!(ocean.model, ecco_set)   # T, S
 
 #####
 ##### A Prognostic Sea-ice model
@@ -82,21 +83,20 @@ dynamics = SeaIceMomentumEquation(grid;
 
 sea_ice = sea_ice_simulation(grid; bottom_heat_boundary_condition, dynamics, advection=WENO(order=7))
 
-set!(sea_ice.model, h=Metadatum(:sea_ice_thickness;     dataset),
-                    ℵ=Metadatum(:sea_ice_concentration; dataset))
+set!(sea_ice.model, ecco_set)   # h, ℵ
 
 #####
 ##### A Prescribed Atmosphere model
 #####
 
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(40))
-radiation  = JRA55PrescribedRadiation(arch; backend=JRA55NetCDFBackend(40))
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch)
 
 #####
 ##### Arctic coupled model
 #####
 
-arctic = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+arctic = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 arctic = Simulation(arctic, Δt=5minutes, stop_time=365days)
 
 # Sea-ice variables
@@ -121,13 +121,13 @@ arctic.output_writers[:vars] = JLD2Writer(sea_ice.model, (; h, ℵ, u, v, Tu, �
                                           including = [:grid],
                                           filename = "sea_ice_quantities.jld2",
                                           schedule = IterationInterval(12),
-                                          overwrite_existing=true)
+                                          overwrite_files=true)
 
 arctic.output_writers[:averages] = JLD2Writer(sea_ice.model, (; h, ℵ, Tu, 𝒬ᵛ, 𝒬ᵀ, 𝒬ⁱⁿᵗ, 𝒬ᶠʳᶻ, 𝒬ᵗᵒᵖ, 𝒬ᵇᵒᵗ, u, v, τˣ, τʸ),
                                               including = [:grid],
                                               filename = "averaged_sea_ice_quantities.jld2",
                                               schedule = AveragedTimeInterval(1days),
-                                              overwrite_existing=true)
+                                              overwrite_files=true)
 
 wall_time = Ref(time_ns())
 

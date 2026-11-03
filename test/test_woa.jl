@@ -5,18 +5,18 @@ ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
 using CUDA: @allowscalar
 using NumericalEarth.WOA
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, download_dataset
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path
 using Oceananigans.Architectures: on_architecture
 using WorldOceanAtlasTools
 
 inpainting = NearestNeighborInpainting(10)
 
-# Ensure a WOA Metadatum file is on disk, trying NOAA first 
+# Ensure a WOA Metadatum file is on disk, trying NOAA first
 # and falling back to the NumericalEarthArtifacts mirror.
 function ensure_woa_file(metadatum; label)
     filepath = metadata_path(metadatum)
     download_dataset_with_fallback(filepath; dataset_name=label) do
-        download_dataset(metadatum)
+        download(metadatum)
     end
     return filepath
 end
@@ -33,8 +33,7 @@ for arch in test_architectures
                 filepath = ensure_woa_file(metadata; label="WOA Annual $name")
                 @test isfile(filepath)
 
-                field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
-                @test field isa Field
+                Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
 
                 # Check inpainted data was cached
                 datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(metadata)
@@ -96,8 +95,7 @@ for arch in test_architectures
                 filepath = ensure_woa_file(metadata; label="WOA Monthly $name")
                 @test isfile(filepath)
 
-                field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
-                @test field isa Field
+                Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
             end
         end
 

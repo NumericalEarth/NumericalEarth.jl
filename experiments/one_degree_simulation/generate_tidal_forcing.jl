@@ -6,8 +6,7 @@ using Dates
 using GLMakie
 import SPICE
 
-backend = JRA55NetCDFBackend(41)
-pa = JRA55_field_time_series(:sea_level_pressure; backend)
+pa = JRA55_field_time_series(:sea_level_pressure; time_indices_in_memory=41)
 
 pa_with_tides = FieldTimeSeries{Center, Center, Nothing}(pa.grid, pa.times,
                                                          path = "sea_level_pressure_plus_tides.jld2",

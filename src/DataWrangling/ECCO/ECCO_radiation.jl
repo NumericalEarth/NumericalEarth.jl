@@ -1,14 +1,15 @@
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
+using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant,
+                     default_water_emissivity
 
 """
-    ECCOPrescribedRadiation([architecture = CPU(), FT = Float32];
+    ECCOPrescribedRadiation([architecture = CPU()];
                             dataset = ECCO4Monthly(),
                             start_date = first_date(dataset, :downwelling_shortwave),
                             end_date = last_date(dataset, :downwelling_shortwave),
                             dir = default_download_directory(dataset),
                             time_indices_in_memory = 10,
                             time_indexing = Cyclical(),
-                            ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                            ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                             sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                             stefan_boltzmann_constant = default_stefan_boltzmann_constant,
                             other_kw...)
@@ -16,14 +17,14 @@ using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 Return a [`PrescribedRadiation`](@ref) backed by ECCO downwelling shortwave
 and longwave fields.
 """
-function ECCOPrescribedRadiation(architecture = CPU(), FT = Float32;
+function ECCOPrescribedRadiation(architecture = CPU();
                                  dataset = ECCO4Monthly(),
                                  start_date = first_date(dataset, :downwelling_shortwave),
                                  end_date = last_date(dataset, :downwelling_shortwave),
                                  dir = default_download_directory(dataset),
                                  time_indexing = Cyclical(),
                                  time_indices_in_memory = 10,
-                                 ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                                 ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                                  sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                                  stefan_boltzmann_constant = default_stefan_boltzmann_constant,
                                  other_kw...)

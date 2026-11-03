@@ -1,7 +1,7 @@
 """
     InterfaceRadiationFlux{F}
 
-Container for the diagnostic radiative fluxes at an air–surface interface.
+Container for diagnostic radiative fluxes (W m⁻², positive upward) at an air–surface interface.
 The same struct type is instantiated per surface (ocean, sea ice, snow, ...).
 
 Fields
@@ -28,7 +28,7 @@ Adapt.adapt_structure(to, fluxes::InterfaceRadiationFlux) =
                            Adapt.adapt(to, fluxes.downwelling_longwave),
                            Adapt.adapt(to, fluxes.downwelling_shortwave))
 
-on_architecture(arch, fluxes::InterfaceRadiationFlux) =
+Oceananigans.Architectures.on_architecture(arch, fluxes::InterfaceRadiationFlux) =
     InterfaceRadiationFlux(on_architecture(arch, fluxes.upwelling_longwave),
                            on_architecture(arch, fluxes.downwelling_longwave),
                            on_architecture(arch, fluxes.downwelling_shortwave))

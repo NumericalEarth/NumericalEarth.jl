@@ -1,8 +1,16 @@
 using NumericalEarth
+using Breeze
+using PythonCall, CondaPkg
+using SpeedyWeather, ConservativeRegridding
 using CUDA
 using Documenter
 using DocumenterCitations
 using Literate
+using TOML
+
+if CUDA.functional()
+    CUDA.versioninfo()
+end
 
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
@@ -17,7 +25,10 @@ struct Example
     title::String
     basename::String
     build_always::Bool
+    gpu::Bool
 end
+
+Example(title, basename; build_always, gpu) = Example(title, basename, build_always, gpu)
 
 const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
 const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
@@ -27,20 +38,32 @@ mkpath(OUTPUT_DIR)
 
 # Examples from examples/ directory.
 # Set `build_always = false` for long-running examples that should only be built
-# on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
+# by the scheduled build, or when the `build all examples` label is added to a PR.
 examples = [
-    Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
-    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
-    Example("Global climate simulation", "global_climate_simulation", false),
-    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
-    Example("Breeze over two oceans", "breeze_over_two_oceans", false),
-    Example("ERA5 hourly data", "ERA5_hourly_data", true),
+    Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false),
+    Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
+    Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
+    # Near-global is the heaviest example (¼°, ~35M cells) and stays disabled.
+    # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
+    Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
+    # Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
+    Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
+    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
+    Example("Breeze over slab land", "breeze_over_slab_land"; build_always=true, gpu=false),
+    # Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
+    Example("ERA5-forced Terrarium land", "era5_forced_terrarium_land"; build_always=false, gpu=false),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true),
+    # The MODIS examples need NASA Earthdata credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD),
+    # which the docs workflow does not have yet.
+    # Example("MODIS leaf area index", "modis_leaf_area_index"; build_always=false, gpu=false),
+    # Example("MODIS land cover and gap filling", "modis_landcover_gap_fill"; build_always=false, gpu=false),
+    Example("Tiled land column", "tiled_land_column"; build_always=false, gpu=false),
 ]
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
-    Example("EarthSystemModel interface", "slab_ocean", false),
+    Example("Implementing a new dataset", "implement_a_dataset"; build_always=true, gpu=false),
+    # Example("EarthSystemModel interface", "slab_ocean"; build_always=false, gpu=false),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
@@ -52,26 +75,133 @@ filter!(x -> x.build_always || build_all, developer_examples)
 ##### Generate examples using Literate (each in a subprocess for memory isolation)
 #####
 
-for example in examples
-    script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
-    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-    CUDA.functional() && CUDA.reclaim()
+skip_literate = get(ENV, "NUMERICAL_EARTH_SKIP_LITERATE", "false") == "true"
+
+# A failed example does not abort the build: the site is built from the
+# examples that succeeded, and the failures are reported (and fail the build)
+# at the very end, so one broken example cannot block every other page.
+failed_examples = String[]
+failure_lock = ReentrantLock()
+
+# Each example is an independent subprocess and `run` yields while it executes,
+# so tasks overlap them: GPU examples serialize on the single device while CPU
+# examples run alongside, a couple at a time (each subprocess loads the full
+# package stack, so memory — not cores — bounds CPU concurrency).
+cpu_semaphore = Base.Semaphore(2)
+gpu_semaphore = Base.Semaphore(1)
+
+function generate_example!(example, dir)
+    script_path = joinpath(dir, example.basename * ".jl")
+    Base.acquire(example.gpu ? gpu_semaphore : cpu_semaphore) do
+        try
+            run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+        catch
+            @error "Example $(example.basename) failed to build; continuing with the remaining examples."
+            lock(() -> push!(failed_examples, example.basename), failure_lock)
+        end
+        example.gpu && CUDA.functional() && CUDA.reclaim()
+    end
 end
 
-for example in developer_examples
-    script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
-    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-    CUDA.functional() && CUDA.reclaim()
+if skip_literate
+    @info "Skipping Literate generation because NUMERICAL_EARTH_SKIP_LITERATE=true."
+else
+    @time "Example generation" @sync begin
+        foreach(ex -> @async(generate_example!(ex, EXAMPLES_DIR)), examples)
+        foreach(ex -> @async(generate_example!(ex, DEVELOPERS_DIR)), developer_examples)
+    end
 end
+
+# Report failures here too: if makedocs errors below, the end-of-build summary
+# never prints, and this line is then the only inventory in the log.
+isempty(failed_examples) || @error "Examples that failed to build: " * join(failed_examples, ", ")
+
+# Build pages from the examples that produced markdown, whether because
+# generation succeeded just now or (with skip_literate) on a previous build.
+filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
+filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examples)
+
+modules = Module[]
+NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : NumericalEarth.NumericalEarthBreezeExt
+NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
+NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
+
+for m in [NumericalEarth, NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt]
+    if !isnothing(m)
+        push!(modules, m)
+    end
+end
+
+
+#####
+##### Automatically generate files with docstrings for all modules
+#####
+
+function walk_submodules!(result, visited, mod::Module)
+    for name in sort(names(mod; all=true, imported=false))
+        isdefined(mod, name) || continue
+        value = getproperty(mod, name)
+        if value isa Module &&
+            parentmodule(value) === mod &&
+            !(value in visited) &&
+            value !== mod
+
+            push!(visited, value)
+            push!(result, value)
+            walk_submodules!(result, visited, value)
+        end
+    end
+end
+
+function get_submodules(mod::Module)
+    result = Module[]
+    visited = Set{Module}()
+
+    walk_submodules!(result, visited, mod)
+    return result
+end
+
+function write_api_md(filename; public)
+    modules = get_submodules(NumericalEarth)
+    append!(modules, [NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt])
+    io = IOBuffer()
+
+    title = public ? "Public API" : "Private API"
+    privacy_keyword = public ? "Private = false" : "Public = false"
+
+    println(io, "# ", title)
+    println(io)
+    println(io, "```@autodocs")
+    println(io, "Modules = [NumericalEarth]")
+    println(io, privacy_keyword)
+    println(io, "```")
+    println(io)
+
+    for mod in modules
+        println(io, "## ", chopprefix(string(mod), "NumericalEarth."))
+        println(io)
+        println(io, "```@autodocs")
+        println(io, "Modules = [", mod, "]")
+        println(io, privacy_keyword)
+        println(io, "```")
+        println(io)
+    end
+
+    # Remove multiple trailing whitespaces, but keep the final one.
+    write(joinpath(@__DIR__, "src", "library", filename), strip(String(take!(io))) * "\n")
+end
+
+write_api_md("public_api.md"; public = true)
+write_api_md("private_api.md"; public = false)
 
 #####
 ##### Build docs
 #####
 
-examples_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
+examples_pages  = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
 developer_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in developer_examples]
 
-format = Documenter.HTML(collapselevel = 2,
+format = Documenter.HTML(collapselevel = 3,
                          size_threshold = nothing,
                          canonical = "https://numericalearth.github.io/NumericalEarthDocumentation/stable/")
 
@@ -91,6 +221,7 @@ pages = [
         "Supported variables" => "Metadata/supported_variables.md",
     ],
     "Interface fluxes" => "interface_fluxes.md",
+    "Urban roughness" => "urban_roughness.md",
 
     "Appendix" => [
         "Notation" => "appendix/notation.md",
@@ -98,34 +229,48 @@ pages = [
 
     "Library" => [
         "Contents"       => "library/outline.md",
-        "Public"         => "library/public.md",
-        "Private"        => "library/internals.md",
+        "Public API"     => "library/public_api.md",
+        "Private API"    => "library/private_api.md",
         "Function index" => "library/function_index.md",
     ],
 
     "References" => "references.md",
 ]
 
-modules = Module[]
-NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
-NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
-NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : nothing
-
-for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt, NumericalEarthBreezeExt, NumericalEarthVerosExt]
-    if !isnothing(m)
-        push!(modules, m)
-    end
-end
-
 makedocs(; sitename = "NumericalEarth.jl",
-         format, pages, modules,
+         format,
+         pages,
+         modules,
          plugins = [bib],
          doctest = true,
+         draft = false,
          doctestfilters = [
              r"┌ Warning:.*",  # remove standard warning lines
              r"│ Use at own risk",
              r"└ @ .*",        # remove the source location of warnings
+             r"(?s)(└── dir:).*" => s"\1",
          ],
          clean = true,
-         warnonly = [:cross_references, :missing_docs],
-         checkdocs = :exports)
+         # `:linkcheck` warns rather than errors: the nightly build reaches
+         # dozens of external hosts, and one of them moving a page or rate
+         # limiting should not throw away hours of example builds. Broken
+         # links still show up as warnings in the build log.
+         warnonly = [:cross_references, :missing_docs, :linkcheck],
+         checkdocs = :exports,
+         linkcheck = true,
+         linkcheck_timeout = 30, # some hosts (e.g. JMA JRA-55) are slow; the default 10s times out
+         linkcheck_ignore = [
+             r"^https://ecco\.jpl\.nasa\.gov/.*",
+             r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
+             r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
+             r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",
+             # Self-referential links to this repo's own test files on `main`:
+             # they 404 during a PR's CI (the files only land on `main` at merge).
+             r"https://github\.com/NumericalEarth/NumericalEarth\.jl/blob/main/test/",
+        ],)
+
+# The site above is complete for every example that built; now surface the ones
+# that didn't, and fail the build so CI reports them.
+if !isempty(failed_examples)
+    error("The following examples failed to build: ", join(failed_examples, ", "))
+end

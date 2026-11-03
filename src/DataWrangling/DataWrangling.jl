@@ -4,68 +4,148 @@ restoring, or validation.
 """
 module DataWrangling
 
-export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
+export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
+export supported_datasets
 export LinearlyTaperedPolarMask
-export DatasetRestoring, SurfaceFluxRestoring
+export DatasetRestoring, SurfaceFluxRestoring, ConservativeSurfaceFluxRestoring
+export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
+export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
+export class_fractions, valid_area_mean!
 
-using Oceananigans
-using Downloads
-using Printf
-using Downloads
-
-using Oceananigans.Architectures: architecture, on_architecture
-using Oceananigans.Grids: node
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: interpolate
-using Oceananigans: pretty_filesize, location
-using Oceananigans.Utils: launch!
+using Adapt: Adapt
+using Downloads: Downloads
+using LibCURL: LibCURL
+using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
+using Oceananigans: Oceananigans, pretty_filesize, location
+using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
+                                  on_architecture, child_architecture
+using Oceananigans.AbstractOperations: Average
+using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
+using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
+using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, OrthogonalSphericalShellGrid, λnodes, φnodes,
+                          topology, x_domain, y_domain, z_domain
+using Oceananigans.Fields: Fields, Field, compute!, interpolate, interpolate!, interior, regrid!, set!
+using Oceananigans.Grids: node
+using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
+                                  FieldTimeSeries, FlavorOfFTS, time_indices
+using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
+using Oceananigans.Utils: launch!, prettytime, prettysummary
+using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES
+using NCDatasets: NCDatasets, Dataset
+using Printf: Printf, @sprintf
+using ZipFile: ZipFile
+using Scratch: @get_scratch!
 
-using Oceananigans.DistributedComputations
-using Adapt
-
-import Oceananigans.Fields: set!
+using ..NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Downloading utilities
 #####
 
-next_fraction = Ref(0.0)
-download_start_time = Ref(time_ns())
+"""
+    download_cache(key)
+
+Return the directory used to cache `key` data downloaded by NumericalEarth.
+
+By default this is a [Scratch.jl](https://github.com/JuliaPackaging/Scratch.jl) space
+managed by Julia under the active depot. If the environment variable
+`NUMERICALEARTH_DATA_DIRECTORY` is set, data is instead cached under
+`joinpath(ENV["NUMERICALEARTH_DATA_DIRECTORY"], key)`. This is useful on systems where the
+Julia depot lives on a small or quota-limited filesystem (e.g. `\$HOME` on HPC clusters),
+or to share a single cache of large datasets across depots and users.
+
+The variable is read when NumericalEarth is loaded, so it must be set *before*
+`using NumericalEarth`.
+"""
+function download_cache(key)
+    if haskey(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
+        return mkpath(joinpath(ENV["NUMERICALEARTH_DATA_DIRECTORY"], key))
+    else
+        return @get_scratch!(key)
+    end
+end
 
 """
-    download_progress(total, now; filename="")
+    $(TYPEDSIGNATURES)
+
+Call `write!(staging_path)` with a staging path unique to this writer in `filepath`'s
+directory, which is created if missing, then rename the staged file into place, so
+`filepath` never appears half-written. A failed `write!` removes its staging file.
 """
-function download_progress(total, now; filename="")
+function write_atomically(write!, filepath)
+    directory = mkpath(dirname(abspath(filepath)))
+    staging_path = tempname(directory; cleanup = false) * splitext(filepath)[2]
+    try
+        write!(staging_path)
+        mv(staging_path, filepath; force = true)
+    finally
+        rm(staging_path; force = true)
+    end
+    return filepath
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Extract the zip archive `file` into the directory `exdir`, which is created if missing.
+"""
+function unzip(file, exdir = dirname(file))
+    mkpath(exdir)
+    archive = ZipFile.Reader(file)
+    for entry in archive.files
+        endswith(entry.name, '/') && continue
+        path = joinpath(exdir, entry.name)
+        mkpath(dirname(path))
+        write(path, read(entry))
+    end
+    close(archive)
+    return exdir
+end
+
+mutable struct DownloadProgress <: Function
+    next_fraction :: Float64
+    download_start_time :: UInt64
+end
+
+DownloadProgress() = DownloadProgress(0.0, time_ns())
+
+"""
+    DownloadProgress(total, now; filename="")
+"""
+function (d::DownloadProgress)(total, now; filename="")
     messages = 10
 
     if total > 0
         fraction = now / total
 
-        if fraction < 1 / messages && next_fraction[] == 0
+        if fraction < 1 / messages && d.next_fraction == 0
             @info @sprintf("Downloading %s (size: %s)...", filename, pretty_filesize(total))
-            next_fraction[] = 1 / messages
-            download_start_time[] = time_ns()
+            d.next_fraction = 1 / messages
+            d.download_start_time = time_ns()
         end
 
-        if fraction > next_fraction[]
-            elapsed = 1e-9 * (time_ns() - download_start_time[])
+        if fraction > d.next_fraction
+            elapsed = 1e-9 * (time_ns() - d.download_start_time)
             msg = @sprintf(" ... downloaded %s (%d%% complete, %s)", pretty_filesize(now),
                            100fraction, prettytime(elapsed))
             @info msg
-            next_fraction[] = next_fraction[] + 1 / messages
+            d.next_fraction = d.next_fraction + 1 / messages
         end
     else
-        if now > 0 && next_fraction[] == 0
+        if now > 0 && d.next_fraction == 0
             @info "Downloading $filename..."
-            next_fraction[] = 1 / messages
-            download_start_time[] = time_ns()
+            d.next_fraction = 1 / messages
+            d.download_start_time = time_ns()
         end
     end
 
@@ -73,9 +153,11 @@ function download_progress(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir)
+    netrc_downloader(username, password, machine, dir; verify_ssl = true)
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
+Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate, as
+`ecco.jpl.nasa.gov` does.
 This downloader writes the username and password in a file named `auth.netrc` (for Unix) and
 `auth_netrc` (for Windows), located in the directory `dir`.
 To avoid leaving the password on disk after the downloader has been used,
@@ -91,13 +173,12 @@ mktempdir(dir) do tmp
 end
 ```
 """
-function netrc_downloader(username, password, machine, dir)
+function netrc_downloader(username, password, machine, dir; verify_ssl = true)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
     easy_hook  = (easy, _) -> begin
-        Downloads.Curl.setopt(easy, Downloads.Curl.CURLOPT_NETRC_FILE, netrc_file)
-        # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
-        Downloads.Curl.setopt(easy, Downloads.Curl.CURLOPT_SSL_VERIFYPEER, false)
+        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
+        verify_ssl || Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
     end
     downloader.easy_hook = easy_hook
     return downloader
@@ -118,12 +199,33 @@ function netrc_permission_file(username, password, machine, dir)
     return filepath
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Download `url` to `path`, retrying up to `attempts` times on failure. Each transfer lands beside the
+destination and is renamed into place once it has arrived in full, so `path` never holds a partial file.
+
+Extra keyword arguments are forwarded to `Downloads.download` (`progress`, `downloader`, ...).
+"""
+function download_with_retries(url, path; attempts = 3, description = "Download", kw...)
+    for attempt in 1:attempts
+        try
+            write_atomically(partial_path -> Downloads.download(url, partial_path; kw...), path)
+            return path
+        catch error
+            attempt == attempts && rethrow()
+            @warn "$description failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
+        end
+    end
+end
+
 #####
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_files=false)
+    overwrite_files && rm(path; force=true)
 
     times = on_architecture(CPU(), fts.times)
     grid  = on_architecture(CPU(), fts.grid)
@@ -142,13 +244,13 @@ function save_field_time_series!(fts; path, name, overwrite_existing=false)
 end
 
 """
-    download_dataset(metadata; url = urls(metadata))
+    download(metadata; url = urls(metadata))
 
 Download the dataset specified by the `metadata::ECCOMetadata`. If `metadata.dates` is a single date,
 the dataset is downloaded directly. If `metadata.dates` is a vector of dates, each date
 is downloaded individually.
 
-Note: if called by multiple processes via MPI, `download_dataset` should only run on the root process.
+Note: if called by multiple processes via MPI, `download` should only run on the root process.
 
 Arguments
 =========
@@ -177,10 +279,11 @@ Arguments
 
     within julia. More detailed instructions for obtaining WebDAV credentials are at:
 
-        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
+        https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
-function download_dataset end # methods specific to datasets are added within each dataset module
-function inpainted_metadata_path end
+# `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
+# not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
+# within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
 
 """
     z_interfaces(dataset)
@@ -202,7 +305,7 @@ default_mask_value(dataset) = NaN
 """
     AbstractStaticDataset
 
-Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface 
+Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface
 (`all_dates`, `first_date`, `last_date`).
 """
 abstract type AbstractStaticDataset end
@@ -214,7 +317,7 @@ last_date(::AbstractStaticDataset,  args...) = nothing
 """
     AbstractStaticBathymetry <: AbstractStaticDataset
 
-Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO). 
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO).
 Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
 """
 abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
@@ -224,13 +327,85 @@ Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 
 # Fundamentals
 include("metadata.jl")
+include("set_region_data.jl")
+include("field_cache.jl")
 include("metadata_field.jl")
+include("tiled_regridding.jl")
+include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
+include("donor_pools.jl")
+include("gap_filling.jl")
+include("class_fractions.jl")
+include("time_average.jl")
 include("restoring.jl")
+include("earthdata.jl")
+include("figshare.jl")
 
 function metadata_time_step end
 function metadata_epoch end
+
+"""
+    variable_glossary :: Dict{Symbol, Symbol}
+
+Global map from *verbose* dataset variable names (the symbols a user passes to
+`Metadata` and `MetadataSet`) to the *short* model field-name symbols
+established in `docs/src/appendix/notation.md`. Used by `set!(model, mset)` to
+auto-route `mset.eastward_velocity` → `u = ...` etc.
+
+Verbose names absent from this map are silently ignored by `set!(model, mset)`
+(they remain fetchable via `download(mset)` and accessible via `mset.<name>`).
+Synonyms across dataset modules (e.g. `:u_velocity`, `:eastward_velocity`,
+`:eastward_wind` all → `:u`) are intentional: they serve as domain
+disambiguators when a single dataset (e.g. `ECCO4Monthly`) carries both ocean
+and atmosphere fields.
+
+Every value here is documented in `docs/src/appendix/notation.md` (or in
+[Breeze.jl's notation](https://numericalearth.github.io/BreezeDocumentation/stable/appendix/notation/)
+for the microphysics symbols).
+"""
+const variable_glossary = Dict{Symbol, Symbol}(
+    # Ocean & atmosphere state (notation.md existing rows)
+    :temperature                          => :T,
+    :air_temperature                      => :T,
+    :salinity                             => :S,
+    :u_velocity                           => :u,
+    :v_velocity                           => :v,
+    :eastward_velocity                    => :u,
+    :northward_velocity                   => :v,
+    :eastward_wind                        => :u,
+    :northward_wind                       => :v,
+    :sea_level_pressure                   => :p,
+    # Atmosphere moisture / microphysics (Breeze notation.md rows)
+    :specific_humidity                    => :qᵛ,
+    :air_specific_humidity                => :qᵛ,
+    :specific_cloud_liquid_water_content  => :qᶜˡ,
+    :specific_cloud_ice_water_content     => :qᶜⁱ,
+    :specific_rain_water_content          => :qʳ,
+    # Sea ice (notation.md `ℵ` row; `:h` matches ClimaSeaIce field name)
+    :sea_ice_thickness                    => :h,
+    :sea_ice_concentration                => :ℵ,
+    # Freshwater fluxes (notation.md "Net surface freshwater fluxes" subsection)
+    :rain_freshwater_flux                 => :Jʳⁿ,
+    :snow_freshwater_flux                 => :Jˢⁿ,
+    # Biogeochemistry (matches the short symbols dispatched in restoring.jl:49-61)
+    :dissolved_inorganic_carbon           => :DIC,
+    :alkalinity                           => :ALK,
+    :nitrate                              => :NO₃,
+    :phosphate                            => :PO₄,
+    :dissolved_organic_phosphorus         => :DOP,
+    :particulate_organic_phosphorus       => :POP,
+    :dissolved_iron                       => :Fe,
+    :dissolved_silicate                   => :SiO₂,
+    :dissolved_oxygen                     => :O₂,
+    # Land surface variables
+    :sand_fraction                        => :sand,
+    :silt_fraction                        => :silt,
+    :clay_fraction                        => :clay,
+    :bulk_density                         => :ρ_soil,
+    :organic_carbon_density               => :ρ_soc,
+    :soil_organic_carbon                  => :SOC
+)
 
 # Only temperature and salinity need a thorough inpainting because of stability,
 # other variables can do with only a couple of passes. Sea ice variables
@@ -245,35 +420,135 @@ function default_inpainting(metadata)
     end
 end
 
+include("prescribed_radiation.jl")
+include("boundary_prescribed_component.jl")
+
 # Datasets
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
+include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
+include("SeaWiFS/SeaWiFS.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
-include("OSPapa/OSPapa.jl")
+include("GloFAS/GloFAS.jl")
+include("SoilGrids/SoilGrids.jl")
+include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
+include("CopernicusDEM/CopernicusDEM.jl")
+include("ASTERGED/ASTERGED.jl")
+include("GloBFP3D/GloBFP3D.jl")
+include("GHSL/GHSL.jl")
+include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("MODISLand/MODISLand.jl")
+include("WorldCover/WorldCover.jl")
 
 using .ETOPO
 using .ECCO
 using .GLORYS
+using .AVISO
 using .ERA5
+using .SeaWiFS
 using .EN4
 using .ORCA
 using .WOA
 using .JRA55
-using .OSPapa
+using .GloFAS
+using .OpenLandMap
 using .IBCSO
 using .GEBCO
 using .IBCAO
+using .CopernicusDEM
+using .ASTERGED
+using .GloBFP3D
+using .GHSL
+using .CopernicusLandAlbedo
+using .MODISLand
+using .WorldCover
+
+function dataset_modules()
+    modules = Module[]
+
+    for name in names(DataWrangling; all = true, imported = false)
+        isdefined(DataWrangling, name) || continue
+        child = getfield(DataWrangling, name)
+        child isa Module || continue
+        child === DataWrangling && continue
+        parentmodule(child) === DataWrangling || continue
+        push!(modules, child)
+    end
+
+    sort!(modules; by = string)
+    return modules
+end
+
+function is_supported_dataset_constructor(dataset_constructor)
+    dataset_constructor isa DataType || return false
+    isconcretetype(dataset_constructor) || return false
+    applicable(dataset_constructor) || return false
+
+    dataset = try
+        dataset_constructor()
+    catch
+        return false
+    end
+
+    return applicable(default_download_directory, dataset)
+end
+
+function dataset_constructor_list()
+    constructors = DataType[]
+    seen = Set{DataType}()
+
+    for mod in dataset_modules()
+        for name in names(mod)
+            isdefined(mod, name) || continue
+            constructor = getfield(mod, name)
+            is_supported_dataset_constructor(constructor) || continue
+            constructor in seen && continue
+            push!(seen, constructor)
+            push!(constructors, constructor)
+        end
+    end
+
+    sort!(constructors; by = string)
+    return constructors
+end
+
+function dataset_constructor_docstring()
+    constructors = dataset_constructor_list()
+    names = ["`$(nameof(constructor))()`" for constructor in constructors]
+    N = length(names)
+
+    if N == 0
+        return "No dataset constructors are currently available."
+    elseif N == 1
+        return only(names)
+    else
+        return string(join(names[1:N-1], ", "), ", and ", names[N])
+    end
+end
+
+"""
+    supported_datasets()
+
+Return the dataset constructors currently supported by [`Metadata`](@ref).
+
+Currently, these are: $(dataset_constructor_docstring()).
+
+!!! info "Importing datasets"
+    Some of the above datasets are not exported and need to be explicitly imported
+    before, e.g., passed to [`Metadata`](@ref).
+"""
+supported_datasets() = dataset_constructor_list()
 
 # Fallback: if no download extension is loaded, check that all files already exist
-function download_dataset(metadata::Metadata)
+function Downloads.download(metadata::Metadata)
     error("No download method for $metadata is available (is the backend package loaded?)")
 end
 

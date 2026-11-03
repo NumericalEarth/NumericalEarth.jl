@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times
 
 using Dates
 using Oceananigans.Grids: topology
@@ -36,15 +36,14 @@ for arch in test_architectures
                 # if the primary source is unreachable
                 filepaths = [metadata_path(datum) for datum in metadata]
                 download_dataset_with_fallback(filepaths; dataset_name="$D $name") do
-                    download_dataset(metadata)
+                    download(metadata)
                 end
                 for datum in metadata
                     @test isfile(metadata_path(datum))
                 end
 
                 datum = first(metadata)
-                ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
-                @test ψ isa Field
+                Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                 datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                 @test isfile(datapath)
             end

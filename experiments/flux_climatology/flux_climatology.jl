@@ -191,7 +191,7 @@ heat_capacity(ocean::Simulation{<:PrescribedOcean}) = 3995.6
 ##### A prescribed atmosphere...
 #####
 
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(1000))
+atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=1000)
 
 #####
 ##### A prescribed earth...

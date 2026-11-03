@@ -1,43 +1,32 @@
 module JRA55
 
-export JRA55FieldTimeSeries,
-       JRA55PrescribedAtmosphere,
+export JRA55PrescribedAtmosphere,
        JRA55PrescribedLand,
        JRA55PrescribedRadiation,
        RepeatYearJRA55,
        MultiYearJRA55
 
-using Oceananigans
-using Oceananigans.Units
-
-using Oceananigans.DistributedComputations
-using Oceananigans.DistributedComputations: child_architecture
+using Adapt: Adapt
+using CFTime: CFTime
+using Dates: Dates, DateTime, Day, Hour
+using Downloads: Downloads
+using Oceananigans: Oceananigans
+using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Grids: λnodes, φnodes, on_architecture
-using Oceananigans.Fields: interpolate!
-using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, AbstractInMemoryBackend, FlavorOfFTS, time_indices
+using Oceananigans.DistributedComputations: DistributedComputations, @root, Distributed, child_architecture
+using Oceananigans.Grids: Center
+using Oceananigans.OutputReaders: Cyclical, time_indices, FieldTimeSeries, FlavorOfFTS
+using Oceananigans.Units: Units
+using NCDatasets: NCDatasets, Dataset
 
-using NumericalEarth
-
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
-
-using GPUArraysCore: @allowscalar
-
-using NCDatasets
-using JLD2
-using Dates
-using Scratch
-
-using Oceananigans: location
-import Oceananigans.Fields: set!
-import Oceananigans.OutputReaders: new_backend, update_field_time_series!
-using Downloads: download
+using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, all_dates, set_region_data!, prescribed_radiation
+using ...NumericalEarth: NumericalEarth
 
 download_JRA55_cache::String = ""
 
 function __init__()
-    global download_JRA55_cache = @get_scratch!("JRA55")
+    global download_JRA55_cache = DataWrangling.download_cache("JRA55")
+    return nothing
 end
 
 include("JRA55_metadata.jl")

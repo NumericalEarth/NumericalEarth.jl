@@ -2,27 +2,26 @@ module IBCSO
 
 export IBCSOv2
 
-using Downloads
-using Oceananigans
+using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                       download_with_retries
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download_dataset,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis,
     validate_dataset_coverage
 
-
 download_IBCSO_cache::String = ""
 function __init__()
-    global download_IBCSO_cache = @get_scratch!("IBCSO")
+    global download_IBCSO_cache = DataWrangling.download_cache("IBCSO")
+    return nothing
 end
 
 IBCSO_bathymetry_variable_names = Dict(
@@ -57,7 +56,7 @@ dataset_variable_name(data::IBCSOMetadatum) = IBCSO_bathymetry_variable_names[da
 
 const IBCSO_pangaea_url = "https://download.pangaea.de/dataset/937574/files/IBCSO_v2_bed_WGS84.nc"
 
-metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url
+DataWrangling.metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url
 
 # The expected NetCDF filename inside the ZIP or from PANGAEA
 const IBCSO_nc_filename = "IBCSO_v2_bed_WGS84.nc"
@@ -68,17 +67,17 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     if φ_north > -50
         error("IBCSOv2 only covers the Southern Ocean (south of 50°S). " *
               "The grid extends to $(round(φ_north, digits=1))°. " *
-              "Use ETOPO2022() or GEBCO2024() for domains that include latitudes north of 50°S.")
+              "Use ETOPO2022() or GEBCO2026() for domains that include latitudes north of 50°S.")
     end
 end
 
-function download_dataset(metadatum::IBCSOMetadatum)
+function Downloads.download(metadatum::IBCSOMetadatum)
     filepath = metadata_path(metadatum)
     download_dir = metadatum.dir
 
     @root if !isfile(filepath)
         @info "Downloading IBCSO data: $(metadatum.name) to $download_dir..."
-        Downloads.download(IBCSO_pangaea_url, filepath; progress=download_progress)
+        download_with_retries(IBCSO_pangaea_url, filepath; progress=DownloadProgress())
     end
 
     return filepath

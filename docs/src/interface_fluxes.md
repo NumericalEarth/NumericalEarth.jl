@@ -10,11 +10,62 @@ computing turbulent fluxes between model components.
 
 ## Component interfaces we consider
 
-The `EarthSystemModel` has atmosphere, ocean, and sea ice components (and will someday also have land and radiation components).
+The `EarthSystemModel` has atmosphere, ocean, sea ice, land, and radiation components.
 We envision that the tutorial will eventually cover all turbulent flux computations; for the time being we
 focus on atmosphere-ocean fluxes.
 Future expansions of this tutorial should cover atmosphere-sea ice fluxes, ocean-sea ice fluxes, ocean-land fluxes,
 and surface optical computations for radiation.
+
+## Land surface configuration and storage
+
+The interface's `formulation.state` specifies how to compute the interface state. For an
+ordinary surface it holds separate `temperature` and `specific_humidity` formulations in
+a named tuple. A `CanopyInterface` occupies `formulation.state` directly and solves
+the coupled canopy and ground balances. The computed temperatures, humidity, and fluxes
+are stored on the interface.
+
+`SlabLand` stores prognostic canopy-air state or ground temperature through `surface_storage`.
+Use `PrognosticCanopyAir` for canopy-air temperature and humidity, `PrognosticSkin` for
+ground temperature, or `nothing` (the default) for diagnostic interface balances.
+
+```@example interface_fluxes
+using NumericalEarth
+using Oceananigans
+
+land_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
+land = SlabLand(land_grid; surface_storage=PrognosticCanopyAir())
+set!(land; T=298, M=45)
+soil_humidity = DryLayerHumidity(
+    dry_layer_depth = StorageBasedDryLayerDepth(maximum_dry_layer_depth = 0.015,
+                                               dry_layer_onset_saturation = 0.5),
+    vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-3,
+                                                molecular_diffusivity = 2.4e-5))
+canopy = CanopyInterface(; soil_humidity)
+atmosphere = PrescribedAtmosphere(land_grid)
+land_model = AtmosphereLandModel(atmosphere, land; atmosphere_land_interface_state=canopy,
+                                radiation=PrescribedRadiation(land_grid))
+```
+
+The interface solve computes step-mean canopy fluxes and an analytical canopy-air update
+using fixed effective conductances and source states over each time step. Prognostic ground
+temperature uses backward Euler with Newton refinement in the interface solve. The land
+step applies each candidate update once. Canopy-air and ground heat storage
+are checkpointed with the land. Checkpoints also preserve interface temperatures and flux
+partitions from the completed step so diagnostics remain consistent immediately after pickup.
+
+For vegetated and bare tiles, pass
+`atmosphere_land_interface = TiledLandInterface(grid, atmosphere, land; vegetated = canopy, cover_fraction = 0.6)`.
+The bare tile defaults to a soil skin sharing the canopy's ground heat flux and soil humidity.
+Pass the same `cover_fraction` to `InterceptingHydrology`. Separate tile roughnesses can be
+supplied through the `vegetated_fluxes` and `bare_fluxes` keywords.
+
+Soil retention curves, porosity, and water storage remain in land hydrology. The interface
+receives saturation, derived moisture-stress endpoints, and vapor diffusivity from land.
+The interface's `SoilConductiveFlux` specifies the conductivity and exchange distance of the
+unresolved ground-to-bulk heat-transfer path. `DryLayerHumidity` uses that same distance
+for its evaporation-front temperature. Surface-resistance coefficients also belong to the
+interface's exchange formulations; `ExponentialSoilResistance` evaluates its resistance
+using the land's current saturation.
 
 ## Turbulent exchanges between the atmosphere and underlying media
 
@@ -137,9 +188,31 @@ A comprehensive example is given below, but we note briefly here that
 ```@example interface_fluxes
 using NumericalEarth
 
-coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3,
-                                            heat_transfer_coefficient=2e-3,
-                                            vapor_flux_coefficient=1e-3)
+coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 1e-3))
+```
+
+Alternatively, the drag coefficient can be specified as a wind-speed-dependent polynomial
+following Large & Yeager (2004). In this case `CoefficientBasedFluxes` evaluates the polynomial
+at each iteration rather than using a constant:
+
+```@example interface_fluxes
+using NumericalEarth.EarthSystemModels.InterfaceComputations: PolynomialNeutralDragCoefficient
+
+poly_drag = PolynomialNeutralDragCoefficient()
+poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = (poly_drag, 1e-3, 1e-3))
+```
+
+For the full Large & Yeager (2004) bulk algorithm with stability corrections,
+use `LargeYeagerTransferCoefficients`. This computes all three transfer coefficients
+(drag, heat, moisture) from the neutral drag polynomial with Monin-Obukhov
+stability corrections (L&Y eqs. 6c-6d, 10a-10c):
+
+```@example interface_fluxes
+using NumericalEarth.EarthSystemModels.InterfaceComputations: LargeYeagerTransferCoefficients
+
+ly = LargeYeagerTransferCoefficients()
+ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
+                                   solver_stop_criteria = FixedIterations(5))
 ```
 
 ### Similarity theory for neutral boundary layers
@@ -313,7 +386,7 @@ ocean_grid = RectilinearGrid(size=(Nx, Ny, 1); x, y, z, topology=(Periodic, Peri
 
 # Build the atmosphere
 atmosphere = PrescribedAtmosphere(atmos_grid, surface_layer_height=10)
-interior(atmosphere.tracers.T) .= 273.15 + T₀ # K
+interior(atmosphere.temperature) .= 273.15 + T₀ # K
 interior(atmosphere.velocities.u, :, :, 1, 1) .= uᵃᵗ # m/s
 
 kw = (momentum_advection=nothing, tracer_advection=nothing, closure=nothing)
@@ -335,13 +408,18 @@ neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing; 
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
 increased_roughness_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
-coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
+coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 2e-3))
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=coefficient_fluxes)
 coefficient_model = OceanOnlyModel(ocean; atmosphere, interfaces)
+
+ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                   solver_stop_criteria = FixedIterations(5))
+interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=ly_fluxes)
+ly_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 ```
 
 Note that `EarthSystemModel` computes fluxes upon instantiation, so after constructing
-the two models we are ready to analyze the results.
+the models we are ready to analyze the results.
 We first verify that the similarity model friction velocity has been computed successfully,
 
 ```@example interface_fluxes
@@ -370,9 +448,21 @@ Cᴰ_coeff = @. (u★_coeff / uᵃᵗ)^2
 extrema(Cᴰ_coeff)
 ```
 
-We'll compare the computed fluxes and drag coefficients from our two models with
-a polynomial expression due to [large2009global](@citet), and
-an expression reported by [edson2013exchange](@citet) that was developed at ECMWF,
+We also extract the drag coefficient from the Large & Yeager transfer coefficient model:
+
+```@example interface_fluxes
+u★_ly = ly_model.interfaces.atmosphere_ocean_interface.fluxes.friction_velocity
+u★_ly = interior(u★_ly, :, 1, 1)
+Cᴰ_ly = @. (u★_ly / uᵃᵗ)^2
+extrema(Cᴰ_ly)
+```
+
+We'll compare the computed fluxes and drag coefficients from our models with
+two independent reference curves: a simpler cubic-in-``u`` re-fit of the neutral
+drag coefficient given by [large2009global](@citet) (equation 10 of the CORE-II
+forcing paper, a smoother alternative to the 2004 rational polynomial used by
+`LargeYeagerTransferCoefficients` above), and an expression reported by
+[edson2013exchange](@citet) that was developed at ECMWF,
 
 ```@example interface_fluxes
 # From Large and Yeager (2009), equation 10
@@ -406,16 +496,18 @@ Cᴰ_rough = @. (u★_rough / uᵃᵗ)^2
 
 fig = Figure(size=(800, 400))
 axu = Axis(fig[1:2, 1], xlabel="uᵃᵗ (m s⁻¹) at 10 m", ylabel="u★ (m s⁻¹)")
-lines!(axu, uᵃᵗ, u★, label="NumericalEarth default")
-lines!(axu, uᵃᵗ, u★_rough, label="Increased roughness model")
-lines!(axu, uᵃᵗ, u★_LY, label="Large and Yeager (2009) polynomial fit")
-lines!(axu, uᵃᵗ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
+lines!(axu, uᵃᵗ, u★, label="SimilarityTheoryFluxes (default)")
+lines!(axu, uᵃᵗ, u★_rough, label="SimilarityTheoryFluxes (increased roughness)")
+lines!(axu, uᵃᵗ, u★_ly, label="LargeYeagerTransferCoefficients (L&Y 2004)")
+lines!(axu, uᵃᵗ, u★_LY, label="Large and Yeager (2009) polynomial fit", linestyle=:dash)
+lines!(axu, uᵃᵗ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)", linestyle=:dash)
 
 axd = Axis(fig[1:2, 2], xlabel="uᵃᵗ (m s⁻¹) at 10 m", ylabel="1000 × Cᴰ")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_default, label="NumericalEarth default")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_rough, label="Increased roughness model")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_default, label="SimilarityTheoryFluxes (default)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_rough, label="SimilarityTheoryFluxes (increased roughness)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_ly, label="LargeYeagerTransferCoefficients (L&Y 2004)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit", linestyle=:dash)
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)", linestyle=:dash)
 
 Legend(fig[3, 1:2], axd, nbanks = 2)
 
@@ -581,7 +673,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ShebaMomentumStabilityFunction,     # Grachev et al. 2007
     ShebaScalarStabilityFunction,       # Grachev et al. 2007
     PaulsonMomentumStabilityFunction,   # Paulson 1970
-    PaulsonScalarStabilityFunction      # Paulson 1970
+    PaulsonScalarStabilityFunction,     # Paulson 1970
+    FreeConvectionMomentumStabilityFunction,      # Zeng et al. 1998
+    FreeConvectionScalarStabilityFunction         # Zeng et al. 1998
 
 edson_momentum   = EdsonMomentumStabilityFunction()
 edson_scalar     = EdsonScalarStabilityFunction()
@@ -589,6 +683,8 @@ sheba_momentum   = ShebaMomentumStabilityFunction()
 sheba_scalar     = ShebaScalarStabilityFunction()
 paulson_momentum = PaulsonMomentumStabilityFunction()
 paulson_scalar   = PaulsonScalarStabilityFunction()
+free_convection_momentum    = FreeConvectionMomentumStabilityFunction()
+free_convection_scalar      = FreeConvectionScalarStabilityFunction()
 
 ζstep = 0.01
 ζ = -4:ζstep:4
@@ -603,11 +699,13 @@ axs = Axis(fig[1, 2], xlabel="Stability parameter ζ", ylabel="Scalar auxiliary 
 lines!(axm, ζ,  edson_momentum.(ζ), label="Edson et al. (2013)", alpha=0.7)
 lines!(axm, ζ⁺, sheba_momentum.(ζ⁺), label="Grachev et al. (2007)", alpha=0.7)
 lines!(axm, ζ⁻, paulson_momentum.(ζ⁻), label="Paulson (1970)", alpha=0.7)
+lines!(axm, ζ⁻, free_convection_momentum.(ζ⁻), label="Zeng et al. (1998)", alpha=0.7)
 axislegend(axm, position=:lb)
 
 lines!(axs, ζ,  edson_scalar.(ζ), label="Edson et al. (2013)", alpha=0.7)
 lines!(axs, ζ⁺, sheba_scalar.(ζ⁺), label="Grachev et al. (2007)", alpha=0.7)
 lines!(axs, ζ⁻, paulson_scalar.(ζ⁻), label="Paulson (1970)", alpha=0.7)
+lines!(axs, ζ⁻, free_convection_scalar.(ζ⁻), label="Zeng et al. (1998)", alpha=0.7)
 
 for ax in (axm, axs)
     ylims!(ax, -14, 4)
@@ -641,7 +739,7 @@ Note that if a skin temperature model is used, then we obtain a four-variable sy
 u_⋆^{n+1} = \, Δ u \, \, Ξ_u \left (h, \ell_u^n, L_⋆^n \right ) \\[2ex]
 θ_⋆^{n+1} = \, Δ θ^n \, \, Ξ_θ \left (h, \ell_θ^n, L_⋆^n \right ) \\[2ex]
 q_⋆^{n+1} = \, Δ q^n \, \, Ξ_q \left (h, \ell_q^n, L_⋆^n \right ) \\[2ex]
-T_s^{n+1} = F_T \left (θ_⋆, q_⋆, I_{sw}, I_{lw}, \cdots \right )
+T^{\mathrm{in}\,n+1} = F_T \left (θ_⋆, q_⋆, I_{sw}, I_{lw}, \cdots \right )
 ```
 
 where ``F_T`` denotes an estimate of the surface temperature that, in general, requires all incoming heat fluxes
@@ -652,25 +750,25 @@ that enters into the air-surface specific humidity difference ``Δ q`` also chan
 ```@example interface_fluxes
 using NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
-ρᵃᵗ = 1.2 # guess
+pᵃᵗ = 101325 # guess (Pa)
 Tᵒᶜ = 273.15 + 20 # in Kelvin
 Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
-q_formulation = interfaces.atmosphere_ocean_interface.properties.specific_humidity_formulation
-qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, ρᵃᵗ, Tᵒᶜ, Sᵒᶜ)
-@show qₛ
+q_formulation = interfaces.atmosphere_ocean_interface.formulation.state.specific_humidity
+qⁱⁿ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+@show qⁱⁿ
 ```
 
 We then set the atmospheric state:
 
 ```@example interface_fluxes
 interior(atmosphere.pressure) .= 101352
-interior(atmosphere.tracers.q) .= qₛ
+interior(atmosphere.specific_humidity) .= qⁱⁿ
 
 Tᵃᵗ = 273.15 .+ range(-40, stop=40, length=Ny)
 Tᵃᵗ = reshape(Tᵃᵗ, 1, Ny)
-interior(atmosphere.tracers.T) .= Tᵃᵗ
+interior(atmosphere.temperature) .= Tᵃᵗ
 
 # Build a model with the default (Edson) stability functions to show non-neutral effects
 stability_interfaces = ComponentInterfaces(atmosphere, ocean)
@@ -715,6 +813,49 @@ u_\star = \sqrt{C_D | Δ \bm{u} | \, U} \\
 q_\star = \frac{C_q}{\sqrt{C_D}} \, Δ q \, \sqrt{\frac{U}{| Δ \bm{u} |}} \\
 ```
 
+### Surface-layer diagnostics
+
+The same vertical profiles from similarity theory are now evaluated in the other direction. Once
+the solve has converged, ``u_\star``, ``\theta_\star``, and ``q_\star`` fix the state at every
+height inside the surface layer, so the observation-height diagnostics -- the 10 m wind, and the
+2 m temperature and specific humidity -- are one non-iterative evaluation away,
+
+```math
+\varphi(z) = \varphi_s + \frac{\varphi_\star}{\kappa}
+    \left [ \log \left ( \frac{z - d}{\ell_\varphi} \right )
+    - \psi_\varphi \left ( \frac{z - d}{L_\star} \right )
+    + \psi_\varphi \left ( \frac{\ell_\varphi}{L_\star} \right ) \right ] \, ,
+```
+
+where ``d`` is the zero-plane displacement. `surface_layer_diagnostics` returns these as lazy
+`KernelFunctionOperation`s over the stored interface state, so they compose with other operations
+and are re-evaluated wherever they are computed:
+
+```@example interface_fluxes
+diagnostics = surface_layer_diagnostics(stability_model,
+                                        stability_model.interfaces.atmosphere_ocean_interface)
+
+# fields are computed on demand
+u₁₀ = Field(diagnostics.u)
+T₂ = Field(diagnostics.T);
+```
+
+Three conventions:
+
+- **The temperature is in situ.** ``\theta_\star`` scales a potential temperature referenced to
+  ``z = 0``, so the diagnostic subtracts the adiabatic increment ``g z / c_p^m`` at the geometric
+  height ``z``.
+- **Subgrid velocity enhancements stay in the wind.** With `subgrid_velocities` active, ``u_\star``
+  was solved against ``U^2 = Δ u^2 + Δ v^2 + U_{sg}^2``, and the diagnostic does not undo that, so
+  ``u`` and ``v`` at ``z = h`` exceed the resolved wind. This effect will be more pronounced in
+  low wind speed regimes. ``T`` and ``q`` are unaffected: their scales are built from the resolved
+  ``Δ \theta`` and ``Δ q``.
+- **The direction comes from the stress**, ``- \rho \bm{\tau} / | \rho \bm{\tau} |``, and over the
+  ocean the interface velocity is the surface current rather than zero.
+
+A height inside the roughness sublayer, ``z - d \le \ell_\varphi``, has no similarity profile and
+returns `NaN`; a height at or below ``d`` is an error.
+
 ## Sea ice-ocean fluxes
 
 When sea ice is present, the exchange of heat, salt, and momentum between the ocean and ice is critical for both
@@ -740,13 +881,13 @@ the ocean warms the ice). The formulation used to compute this heat flux can sig
 ### Frazil ice formation
 
 Both formulations handle frazil ice formation identically. When ocean temperature drops below the local freezing point
-``T_m(S)`` at any depth, the temperature is reset to the freezing point and the corresponding heat is extracted:
+``T_m(S, z)``, which decreases with salinity and depth, the temperature is reset to the freezing point and the corresponding heat is extracted:
 
 ```math
-Q_f = -\sum_{k=1}^{N_z} \rho_o c_o (T_m(S_k) - T_k) \frac{\Delta z_k}{\Delta t}
+Q_f = -\sum_{k=1}^{N_z} \rho_o c_o (T_m(S_k, z_k) - T_k) \frac{\Delta z_k}{\Delta t}
 ```
 
-where the sum is over all vertical levels where ``T_k < T_m(S_k)``. This heat flux (negative, indicating heat transfer
+where the sum is over all vertical levels where ``T_k < T_m(S_k, z_k)``. This heat flux (negative, indicating heat transfer
 from ice to ocean) represents the latent heat released during frazil ice formation.
 
 ### Bulk heat flux formulation (`IceBathHeatFlux`)
@@ -876,7 +1017,7 @@ using Oceananigans.Fields: ZeroField, ConstantField
 # Formulations
 flux¹ = IceBathHeatFlux()
 flux² = ThreeEquationHeatFlux()
-flux³ = ThreeEquationHeatFlux(ConductiveFlux(2.0), ConstantField(-40.0), 0.0095, 0.0095/35, 0.02)
+flux³ = ThreeEquationHeatFlux(ConductiveFlux(conductivity=2), ConstantField(-40), 0.0095, 0.0095/35, 0.02)
 
 # Parameters
 liquidus = LinearLiquidus()
@@ -890,10 +1031,10 @@ ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = 0.0, ℵ = 1.0, T = Tˢⁱ)
 
 data = map(Tᵒᶜ) do T
     ocean_state = (; T, S = Sᵒᶜ)
-    _, q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    _, q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    _, q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    (; T★¹, S★¹, q¹ = q¹ / ρˢⁱ * 86400e3, T★², S★², q² = q² / ρˢⁱ * 86400e3, T★³, S★³, q³ = q³ / ρˢⁱ * 86400e3)
+    Q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    Q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    Q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
+    (; T★¹, S★¹, Q¹, T★², S★², Q², T★³, S★³, Q³)
 end
 
 fig = Figure(size=(900, 750))
@@ -911,10 +1052,10 @@ lines!(ax2, Tᵒᶜ, [d.S★³ for d in data], linewidth=2)
 hlines!(ax2, [Sᵒᶜ], color=:gray, linestyle=:dash)
 hlines!(ax2, [Sˢⁱ], color=:gray, linestyle=:dot)
 
-ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Melt rate q (mm/day)")
-lines!(ax3, Tᵒᶜ, [d.q¹ for d in data], linewidth=2)
-lines!(ax3, Tᵒᶜ, [d.q² for d in data], linewidth=2)
-lines!(ax3, Tᵒᶜ, [d.q³ for d in data], linewidth=2)
+ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Heat flux (W/m²)")
+lines!(ax3, Tᵒᶜ, [d.Q¹ for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.Q² for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.Q³ for d in data], linewidth=2)
 hlines!(ax3, [0], color=:gray, linestyle=:dash)
 
 Legend(fig[3, 1:2], [l1, l2, l3],
@@ -937,9 +1078,9 @@ The plots reveal key differences between the formulations:
    (during rapid melting). The conductive flux case shows enhanced freezing (lower ``S_★``) due to the
    additional heat sink from the cold ice.
 
-3. **Melt rate**: The three-equation formulation captures the feedback between interface salinity, freezing point
+3. **Heat flux**: The three-equation formulation captures the feedback between interface salinity, freezing point
    depression, and heat flux. When conductive flux is included, the cold ice interior extracts heat from the
-   interface, shifting the melt rate toward freezing (more negative values) across all ocean temperatures.
+   interface, shifting the heat flux toward freezing (more negative values) across all ocean temperatures.
 
 ### Configuring sea ice-ocean fluxes
 

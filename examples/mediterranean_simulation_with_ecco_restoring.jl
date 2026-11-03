@@ -71,7 +71,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 #
 # The model is initialized with temperature and salinity fields from the ECCO dataset,
 # using the function `ECCO_restoring_forcing` to apply restoring forcings for these tracers.
-# This allows us to nudge the model towards realistic temperature and salinity profiles.
+# This allows us to nudge the model toward realistic temperature and salinity profiles.
 
 start_date = DateTime(1993, 1, 1)
 end_date   = DateTime(1993, 12, 1)
@@ -92,8 +92,8 @@ ocean = ocean_simulation(grid; forcing = (T = FT, S = FS))
 # In this case, our ECCO dataset has access to a temperature and a salinity
 # field, so we initialize temperature and salinity from ECCO.
 
-set!(ocean.model, T = ECCOMetadatum(:temperature; date=start_date),
-                  S = ECCOMetadatum(:salinity;    date=start_date))
+set!(ocean.model, MetadataSet(:temperature, :salinity;
+                              dataset = ECCO4Monthly(), date = start_date))
 
 fig = Figure()
 ax  = Axis(fig[1, 1])
@@ -143,7 +143,7 @@ ocean.stop_time = 200days
 ocean.output_writers[:surface_fields] = JLD2Writer(ocean.model, merge(model.velocities, model.tracers);
                                                    indices = (:, :, Nz),
                                                    schedule = TimeInterval(1days),
-                                                   overwrite_existing = true,
+                                                   overwrite_files = true,
                                                    including = [:grid],
                                                    filename = "med_surface_field")
 

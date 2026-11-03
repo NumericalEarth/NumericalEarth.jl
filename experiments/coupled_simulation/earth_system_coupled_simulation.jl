@@ -79,9 +79,8 @@ salinity    = ECCOMetadata(:salinity;    dir="./")
 ice_thickness     = ECCOMetadata(:sea_ice_thickness; dir="./")
 ice_concentration = ECCOMetadata(:sea_ice_concentration; dir="./")
 
-jra55_backend = JRA55NetCDFBackend(20)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend,
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch;
                                       ocean_surface = SurfaceRadiationProperties(LatitudeDependentAlbedo(), 0.97),
                                       sea_ice_surface = SurfaceRadiationProperties(0.6, 1.0))
 
@@ -89,7 +88,7 @@ set!(ocean.model, T=temperature, S=salinity)
 set!(sea_ice.model.ice_thickness,     ice_thickness,     inpainting=NearestNeighborInpainting(1))
 set!(sea_ice.model.ice_concentration, ice_concentration, inpainting=NearestNeighborInpainting(1))
 
-earth_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+earth_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 earth = Simulation(earth_model; Δt=30minutes, stop_iteration=10, stop_time=30days)
 
 u, v, _ = ocean.model.velocities
@@ -104,20 +103,20 @@ h = sea_ice.model.ice_thickness
 earth.output_writers[:surface_tracers] = JLD2Writer(ocean.model, (; T, S, s),
                                                     schedule = TimeInterval(12hours),
                                                     indices = (:, :, grid.Nz),
-                                                    overwrite_existing = true,
+                                                    overwrite_files = true,
                                                     including = [:grid],
                                                     filename = "surface_fields.jld2")
 
 
 earth.output_writers[:sea_ice_variables] = JLD2Writer(sea_ice.model, (; h, ℵ),
                                                       schedule = TimeInterval(12hours),
-                                                      overwrite_existing = true,
+                                                      overwrite_files = true,
                                                       filename = "sea_ice_fields.jld2")
 
 
 earth.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η),
                                                  schedule = TimeInterval(12hours),
-                                                 overwrite_existing = true,
+                                                 overwrite_files = true,
                                                  filename = "free_surface.jld2")
 
 Q  = earth.model.interfaces.net_fluxes.ocean_surface.T
@@ -127,7 +126,7 @@ PE = earth.model.interfaces.net_fluxes.ocean_surface.S
 
 earth.output_writers[:fluxes] = JLD2Writer(ocean.model, (; Q, τˣ, τʸ, PE),
                                                  schedule = TimeInterval(12hours),
-                                                 overwrite_existing = true,
+                                                 overwrite_files = true,
                                                  including = [:grid],
                                                  filename = "surface_fluxes.jld2")
 

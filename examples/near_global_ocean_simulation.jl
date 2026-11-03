@@ -62,9 +62,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 
 # Let's see what the bathymetry looks like:
 
-h = grid.immersed_boundary.bottom_height
-
-fig, ax, hm = heatmap(h, colormap=:deep, colorrange=(-depth, 0))
+fig, ax, hm = heatmap(bottom_height_field(grid), colormap=:deep, colorrange=(-depth, 0))
 Colorbar(fig[0, 1], hm, label="Bottom height (m)", vertical=false)
 save("bathymetry.png", fig)
 nothing #hide
@@ -82,21 +80,18 @@ ocean = ocean_simulation(grid)
 ocean.model
 
 # We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
-
-set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                  S=Metadatum(:salinity, dataset=ECCO4Monthly()))
+date = DateTime(1992, 1, 1)
+set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
 
 # ### Prescribed atmosphere and radiation
 #
 # Next we build a prescribed atmosphere state and radiation component,
 # which together drive the ocean simulation. The atmospheric data and
 # downwelling shortwave / longwave radiation are both prescribed using JRA55.
-# The number of snapshots loaded into memory is set by the backend.
 
-jra55_backend = JRA55NetCDFBackend(41)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend)
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch)
+land       = JRA55PrescribedLand(grid)
 
 # ## The coupled simulation
 
@@ -152,7 +147,7 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             filename = "near_global_surface_fields",
                                             indices = (:, :, grid.Nz),
                                             with_halos = true,
-                                            overwrite_existing = true,
+                                            overwrite_files = true,
                                             array_type = Array{Float32})
 
 # ### Running the simulation
@@ -174,7 +169,7 @@ Nt = length(times)
 
 n = Observable(Nt)
 
-land = interior(T.grid.immersed_boundary.bottom_height) .>= 0
+land = view(T.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
 
 Tn = @lift begin
     Tn = interior(T[$n])
@@ -208,7 +203,7 @@ title = @lift string("Near-global 1/4 degree ocean simulation after ",
 
 λ, φ, _ = nodes(T) # T, e, and s all live on the same grid locations
 
-fig = Figure(size = (1000, 1500))
+fig = Figure(size = (800, 1200))
 
 axs = Axis(fig[1, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 axT = Axis(fig[2, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")

@@ -1,7 +1,7 @@
-using NumericalEarth.Atmospheres: interp_atmos_time_series
+using ..Atmospheres: interp_atmos_time_series
 
 """Interpolate the prescribed downwelling radiation onto the exchange grid."""
-function interpolate_state!(exchanger, grid, radiation::PrescribedRadiation, coupled_model)
+function EarthSystemModels.interpolate_state!(exchanger, grid, radiation::PrescribedRadiation, coupled_model)
     arch = architecture(grid)
     clock = coupled_model.clock
 
@@ -62,8 +62,9 @@ end
     ℐꜜˢʷ = interp_atmos_time_series(downwelling.shortwave, args...)
     ℐꜜˡʷ = interp_atmos_time_series(downwelling.longwave,  args...)
 
+    # Prescribed downwelling magnitudes become positive-upward fluxes.
     @inbounds begin
-        state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ
-        state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ
+        state.ℐꜜˢʷ[i, j, 1] = -ℐꜜˢʷ
+        state.ℐꜜˡʷ[i, j, 1] = -ℐꜜˡʷ
     end
 end
