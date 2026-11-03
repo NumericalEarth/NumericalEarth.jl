@@ -8,13 +8,13 @@ import Thermodynamics.Parameters:
     LH_s0,          # Sublimation enthalpy at the reference temperature
     LH_f0,          # Fusion enthalpy at the reference temperature
     cp_d,           # Heat capacity of dry air at constant pressure
-    cp_v,           # Isobaric specific heat capacity of gaseous water vapor
-    cp_l,           # Isobaric specific heat capacity of liquid water
-    cp_i,           # Isobaric specific heat capacity of water ice
-    cv_v,           # Heat capacity of dry air at constant volume
-    cv_l,           # Isobaric specific heat capacity of liquid water
-    cv_i,           # Isobaric specific heat capacity of liquid water
-    e_int_v0,       # what? something about reference internal energy of water vapor
+    cp_v,           # Isobaric (constant pressure) specific heat capacity of gaseous water vapor
+    cp_l,           # Isobaric (constant pressure) specific heat capacity of liquid water
+    cp_i,           # Isobaric (constant pressure) specific heat capacity of water ice
+    cv_v,           # Isochoric (constant volume) specific heat capacity of gaseous water vapor
+    cv_l,           # Isochoric (constant volume) specific heat capacity of liquid water
+    cv_i,           # Isochoric (constant volume) specific heat capacity of water ice
+    e_int_v0,       # Internal energy of vaporization at reference temperature `T_0`.
     T_freeze,       # Freezing temperature of _pure_ water
     T_triple,       # Triple point temperature of _pure_ water
     press_triple,   # Triple point pressure of pure water
@@ -56,15 +56,7 @@ Construct a set of parameters that define the density of moist air,
 
 where ``p`` is pressure, ``T`` is temperature, ``q`` defines the partition
 of total mass into vapor, liquid, and ice mass fractions, and
-``Rᵐ`` is the effective specific gas constant for the mixture,
-
-```math
-Rᵐ(q) =
-```
-
-where
-
-For more information see [reference docs].
+``Rᵐ`` is the effective specific gas constant for the mixture.
 """
 function ConstitutiveParameters(FT = Oceananigans.defaults.FloatType;
                                 gas_constant       = 8.3144598,
@@ -79,7 +71,7 @@ end
 const CP{FT} = ConstitutiveParameters{FT} where FT
 
 @inline gas_constant(p::CP)   = p.gas_constant
-@inline molmass_dryair(p::CP) = p.dry_air_molar_mass
+@inline EarthSystemModels.molmass_dryair(p::CP) = p.dry_air_molar_mass
 @inline molmass_water(p::CP)  = p.water_molar_mass
 @inline Rv_over_Rd(p::CP)     = molmass_dryair(p) / molmass_water(p)
 @inline R_v(p::CP)            = gas_constant(p) / molmass_water(p)
@@ -97,7 +89,7 @@ function Base.summary(p::HeatCapacityParameters{FT}) where FT
                     "κᵈ=", prettysummary(p.dry_air_adiabatic_exponent),
                   ", cᵖᵛ=", prettysummary(p.water_vapor_heat_capacity),
                   ", cᵖˡ=", prettysummary(p.liquid_water_heat_capacity),
-                  ", cᵖⁱ=", prettysummary(p.water_ice_heat_capacity))
+                  ", cᵖⁱ=", prettysummary(p.water_ice_heat_capacity), ')')
 end
 
 Base.show(io::IO, p::HeatCapacityParameters) = print(io, summary(p))
@@ -238,7 +230,7 @@ const ATP = AtmosphereThermodynamicsParameters
 @inline R_d(p::ATP)            = R_d(p.constitutive)
 @inline R_v(p::ATP)            = R_v(p.constitutive)
 @inline gas_constant(p::ATP)   = gas_constant(p.constitutive)
-@inline molmass_dryair(p::ATP) = molmass_dryair(p.constitutive)
+@inline EarthSystemModels.molmass_dryair(p::ATP) = molmass_dryair(p.constitutive)
 @inline molmass_water(p::ATP)  = molmass_water(p.constitutive)
 @inline Rv_over_Rd(p::ATP)     = Rv_over_Rd(p.constitutive)
 @inline LH_v0(p::ATP)          = LH_v0(p.phase_transitions)
@@ -262,5 +254,4 @@ const ATP = AtmosphereThermodynamicsParameters
 
 @inline kappa_d(p::ATP)        = kappa_d(p.heat_capacity)
 @inline cp_d(p::ATP)           = R_d(p) / kappa_d(p)
-@inline cv_d(p::ATP)           = cp_d(p) - R_d(p)
 @inline cv_v(p::ATP)           = cp_v(p) - R_v(p)

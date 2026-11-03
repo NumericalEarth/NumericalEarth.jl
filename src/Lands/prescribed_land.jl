@@ -3,11 +3,14 @@
 # coupling would require additional fields (e.g. albedo, skin temperature); see
 # https://github.com/NumericalEarth/NumericalEarth.jl/issues/30 for the related
 # discussion of moving surface albedo to a radiation component.
-mutable struct PrescribedLand{G, T, F, TI} <: AbstractPrescribedComponent
+mutable struct PrescribedLand{G, T, F, TI, R} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
-    freshwater_flux :: F   # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)
+    freshwater_flux :: F     # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)
     times :: TI
+    river_routing :: R       # `nothing`, or a `NamedTuple` of `RiverRouting` (one per
+                             # freshwater component) mapping native river mouths to
+                             # coastal ocean cells (see river_routing.jl)
 end
 
 function Base.summary(pl::PrescribedLand)
@@ -25,15 +28,17 @@ function Base.show(io::IO, pl::PrescribedLand)
 end
 
 """
-    PrescribedLand(freshwater_flux; clock=nothing)
+    PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
 
-Return a `PrescribedLand` component from a `NamedTuple` of `FieldTimeSeries`
-representing freshwater fluxes (e.g. rivers, icebergs).
+Return a `PrescribedLand` from a `NamedTuple` of `FieldTimeSeries` freshwater fluxes (e.g. rivers, icebergs).
 
-If `clock` is not provided, defaults to a `Clock` whose time type matches the
-element type of `freshwater_flux`.
+Keyword Arguments
+=================
+- `clock`: the component's `Clock`. Default: `nothing`, a `Clock` matching the element type of `freshwater_flux`.
+- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), one per component, scattering each onto coastal ocean cells conserving volume
+  (see [`GloFASPrescribedLand`](@ref), [`JRA55PrescribedLand`](@ref)). Default: `nothing`, which interpolates the flux pointwise onto the ocean grid.
 """
-function PrescribedLand(freshwater_flux; clock=nothing)
+function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     first_flux = first(freshwater_flux)
     grid = first_flux.grid
     times = first_flux.times
@@ -42,7 +47,7 @@ function PrescribedLand(freshwater_flux; clock=nothing)
         clock = Clock{eltype(first_flux)}(time=0)
     end
 
-    land = PrescribedLand(grid, clock, freshwater_flux, times)
+    land = PrescribedLand(grid, clock, freshwater_flux, times, river_routing)
     update_state!(land)
     return land
 end
@@ -63,8 +68,13 @@ end
     return nothing
 end
 
-# No net fluxes to update for prescribed land
+# No net fluxes to update for prescribed land; and there's no SlabLand-style
+# closure to build an atmosphere-land flux interface from, so the dispatch
+# returns nothing for this land type.
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
+EarthSystemModels.InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land::PrescribedLand; kw...) = nothing
+
+EarthSystemModels.adopt_clock(land::PrescribedLand, clock) = EarthSystemModels.reclock(land, clock)
 
 #####
 ##### Checkpointing

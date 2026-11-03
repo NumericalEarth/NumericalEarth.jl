@@ -4,14 +4,14 @@ export ETOPO2022
 
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticBathymetry, Metadatum,
-                       metadata_path, metadata_url
+                       metadata_path, metadata_url, download_with_retries
 
 download_ETOPO_cache::String = ""
 function __init__()
-    global download_ETOPO_cache = @get_scratch!("ETOPO")
+    global download_ETOPO_cache = DataWrangling.download_cache("ETOPO")
+    return nothing
 end
 
 ETOPO_bathymetry_variable_names = Dict(:bottom_height => "z",)
@@ -40,7 +40,7 @@ function Downloads.download(metadatum::ETOPOMetadatum)
 
     @root if !isfile(filepath)
         @info "Downloading ETOPO data: $(metadatum.name) in $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=DownloadProgress())
+        download_with_retries(fileurl, filepath; progress=DownloadProgress())
     end
     return filepath
 end

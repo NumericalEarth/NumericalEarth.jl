@@ -7,11 +7,10 @@ Fluxes of heat, momentum, and freshwater are computed across the interfaces of i
 or coefficient-based "bulk formula".
 NumericalEarth builds off Oceananigans, which provides tools for gridded finite-volume computations on CPUs and GPUs and building ocean-flavored fluid dynamics simulations. ClimaSeaIce, which provides software for both stand-alone and coupled sea ice simulations, is also built with Oceananigans.
 
-NumericalEarth's core abstraction is [`EarthSystemModel`](@ref), which encapsulates the ocean, sea ice, and atmosphere state, and interfacial flux parameterizations.
-NumericalEarth also implements [`ocean_simulation`](@ref), a utility for building realistic, hydrostatic ocean simulations with Oceananigans ensuring compatibility with `EarthSystemModel`.
+NumericalEarth's core abstraction is [`EarthSystemModel`](@ref), which encapsulates the ocean, sea ice, atmosphere, and their interfacial flux parameterizations.
+The package also provides [`ocean_simulation`](@ref) and [`sea_ice_simulation`](@ref), utilities for building component simulations that can be run standalone or coupled through [`EarthSystemModel`](@ref).
 
-NumericalEarth is written in Julia by the [Climate Modeling Alliance](https://clima.caltech.edu)
-and heroic external collaborators.
+NumericalEarth is written in Julia. The effort started by the [Climate Modeling Alliance](https://clima.caltech.edu) and heroic external collaborators and evolved into a community effort.
 
 ## Installation
 
@@ -36,7 +35,14 @@ Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev=
 
 ## Quick start
 
-The following script implements a near-global ocean simulation initialized from the [ECCO state estimate](https://doi.org/10.5194/gmd-8-3071-2015) and coupled to a prescribed atmosphere derived from the [JRA55-do reanalysis](https://www.sciencedirect.com/science/article/pii/S146350031830235X):
+NumericalEarth can be used in four complementary ways:
+
+1. Build a standalone ocean simulation with [`ocean_simulation`](@ref).
+2. Build a standalone atmosphere simulation with [`atmosphere_simulation`](@ref).
+3. Build a standalone sea ice simulation with [`sea_ice_simulation`](@ref).
+4. Couple ocean, atmosphere, sea ice, and other components with [`EarthSystemModel`](@ref), `OceanOnlyModel`, `OceanSeaIceModel`, or `AtmosphereOceanModel`.
+
+The following script implements a near-global ocean simulation initialized from the [ECCO state estimate](https://doi.org/10.5194/gmd-8-3071-2015) and coupled to a prescribed atmosphere derived from the [JRA55-do reanalysis](@cite tsujino2018jra):
 
 ```julia
 using Oceananigans

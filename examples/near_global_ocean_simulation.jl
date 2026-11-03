@@ -62,9 +62,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 
 # Let's see what the bathymetry looks like:
 
-h = grid.immersed_boundary.bottom_height
-
-fig, ax, hm = heatmap(h, colormap=:deep, colorrange=(-depth, 0))
+fig, ax, hm = heatmap(bottom_height_field(grid), colormap=:deep, colorrange=(-depth, 0))
 Colorbar(fig[0, 1], hm, label="Bottom height (m)", vertical=false)
 save("bathymetry.png", fig)
 nothing #hide
@@ -94,7 +92,7 @@ set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), d
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
 radiation  = JRA55PrescribedRadiation(arch)
-land       = JRA55PrescribedLand(arch)
+land       = JRA55PrescribedLand(grid)
 
 # ## The coupled simulation
 
@@ -150,7 +148,7 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             filename = "near_global_surface_fields",
                                             indices = (:, :, grid.Nz),
                                             with_halos = true,
-                                            overwrite_existing = true,
+                                            overwrite_files = true,
                                             array_type = Array{Float32})
 
 # ### Running the simulation
@@ -181,7 +179,7 @@ sn = @lift sqrt(u[$n]^2 + v[$n]^2)
 title = @lift string("Near-global 1/4 degree ocean simulation after ",
                      prettytime(times[$n] - times[1]))
 
-fig = Figure(size = (1000, 1500))
+fig = Figure(size = (800, 1200))
 
 axs = Axis(fig[1, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 axT = Axis(fig[2, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
