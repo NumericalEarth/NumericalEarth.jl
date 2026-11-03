@@ -676,6 +676,28 @@ end
     @test length(moving.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
+@testset "Breeze nested_atmosphere_model forwards time_step_ratio" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                         longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                         z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:4.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280 + t)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
+    lockstep = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates)
+    refined  = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, time_step_ratio = 3)
+    @test lockstep.time_step_ratio == 1
+    @test refined.time_step_ratio == 3
+end
+
 # A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
 # `scalar_advection` that omits them would leave them on the model default, unbounded `Centered(order=2)`.
 @testset "Breeze nested_atmosphere_model: closure tracers get bounded WENO advection" begin
@@ -1236,3 +1258,102 @@ end
     @test parent.clock.time == nested.child.clock.time == 4
 end
 
+
+nest_test_model(extent) =
+    NonhydrostaticModel(RectilinearGrid(size = (4, 4, 4), x = (-extent, extent), y = (-extent, extent),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded)))
+
+@testset "NestedModel: the default ratio keeps parent and child in lockstep" begin
+    Δt = 0.1
+    nested = NestedModel(nest_test_model(2), nest_test_model(1))
+
+    @test nested.time_step_ratio == 1
+
+    for _ in 1:4
+        time_step!(nested, Δt)
+    end
+
+    @test nested.child.clock.iteration == 4
+    @test nested.parent.clock.iteration == 4
+    @test nested.parent.clock.time ≈ 4Δt
+end
+
+@testset "NestedModel: time_step_ratio = 2 steps the parent every other child step, by 2Δt" begin
+    Δt = 0.1
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); time_step_ratio = 2)
+
+    time_step!(nested, Δt)
+    @test nested.child.clock.iteration == 1
+    @test nested.parent.clock.iteration == 0
+    @test nested.parent.clock.time == 0
+
+    time_step!(nested, Δt)
+    @test nested.parent.clock.iteration == 1
+    @test nested.parent.clock.time ≈ 2Δt
+
+    time_step!(nested, Δt)
+    time_step!(nested, Δt)
+    @test nested.child.clock.iteration == 4
+    @test nested.parent.clock.iteration == 2
+    @test nested.parent.clock.time ≈ nested.child.clock.time
+end
+
+@testset "NestedModel: time_step_ratio compounds through a three-level telescope" begin
+    Δt = 0.1
+    coarse, medium, fine = nest_test_model(4), nest_test_model(2), nest_test_model(1)
+    telescope = NestedModel(NestedModel(coarse, medium; time_step_ratio = 2), fine; time_step_ratio = 2)
+
+    for _ in 1:4
+        time_step!(telescope, Δt)
+    end
+
+    @test fine.clock.iteration   == 4
+    @test medium.clock.iteration == 2
+    @test coarse.clock.iteration == 1
+    for model in (fine, medium, coarse)
+        @test model.clock.time ≈ 4Δt
+    end
+end
+
+@testset "NestedModel: time_step_ratio = 2 holds under a varying Δt" begin
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); time_step_ratio = 2)
+
+    Δt = 0.1
+    for _ in 1:6
+        time_step!(nested, Δt)
+        Δt *= 1.1
+    end
+
+    @test nested.child.clock.iteration == 6
+    @test nested.parent.clock.iteration == 3
+    @test nested.parent.clock.time ≈ nested.child.clock.time
+end
+
+@testset "time_step_ratio: rounded refinement factor from a pair of grids" begin
+    nest_grid(extent, size) =
+        LatitudeLongitudeGrid(; size, longitude = (-98 - extent/2, -98 + extent/2),
+                              latitude = (36 - extent/2, 36 + extent/2), z = (0, 1e4),
+                              topology = (Bounded, Bounded, Bounded))
+
+    coarse = nest_grid(8, (32, 32, 4))
+    medium = nest_grid(4, (32, 32, 4))
+    fine   = nest_grid(2, (32, 32, 4))
+
+    @test time_step_ratio(coarse, fine) == 4
+    @test time_step_ratio(medium, fine) == 2
+    @test time_step_ratio(fine, fine)   == 1
+    @test time_step_ratio(fine, coarse) == 1
+end
+
+@testset "NestedModel: a prescribed parent follows the child's clock whatever the ratio" begin
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 10.0])
+    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); time_step_ratio = 3)
+
+    for _ in 1:3
+        time_step!(nested, 1.0)
+    end
+
+    @test parent.clock.time == nested.child.clock.time == 3
+    @test parent.clock.iteration == nested.child.clock.iteration == 3
+end
