@@ -1443,6 +1443,20 @@ end
     end
 end
 
+@testset "nested_atmosphere_model: time_step_ratio refines a live Breeze parent" begin
+    parent = live_telescope_root(4.0)
+    nest = telescope_nest(parent, 2.0; time_step_ratio = 2)
+
+    run!(Simulation(nest; Δt = 0.5, stop_iteration = 4))
+
+    @test nest.child.clock.iteration == 4
+    @test parent.clock.iteration == 2
+    @test parent.clock.time ≈ nest.child.clock.time
+    for field in prognostic_fields(nest.child)
+        @test all(isfinite, Array(interior(field)))
+    end
+end
+
 function telescope_land(extent)
     grid = LatitudeLongitudeGrid(size = (8, 8), longitude = (-98 - extent / 2, -98 + extent / 2),
                                  latitude = (36 - extent / 2, 36 + extent / 2), halo = (5, 5),
