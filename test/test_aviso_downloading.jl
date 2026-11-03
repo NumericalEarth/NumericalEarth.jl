@@ -55,7 +55,6 @@ end
     for arch in test_architectures
         datum = first(metadata)
         source = Field(datum, arch; inpainting=nothing)
-        @test source isa Field
         @test size(interior(source), 3) == 1
         @test topology(source.grid) == (Bounded, Bounded, Flat)
         @test all(isfinite.(Array(interior(source))))
@@ -70,7 +69,6 @@ end
         @test all(isfinite.(Array(interior(target))))
 
         fts = FieldTimeSeries(metadata, arch; inpainting=nothing)
-        @test fts isa FieldTimeSeries
         @test size(interior(fts), 3) == 1
         @test length(fts.times) == length(dates)
         @test time_indices(fts) == Tuple(1:length(dates))

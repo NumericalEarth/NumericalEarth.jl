@@ -5,14 +5,14 @@ export AVISOMetadata, AVISOMetadatum, AVISODaily, AVISOMonthly
 using Dates: Dates, DateTime, Day, Month
 using Oceananigans.Fields: Center
 using NCDatasets: Dataset
-using Scratch: @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, first_date
 
 download_AVISO_cache::String = ""
 function __init__()
-    global download_AVISO_cache = @get_scratch!("AVISO")
+    global download_AVISO_cache = DataWrangling.download_cache("AVISO")
+    return nothing
 end
 
 abstract type AVISODataset end
@@ -39,6 +39,8 @@ Base.size(::AVISODataset, variable) = (2880, 1440, 1)
 DataWrangling.all_dates(::AVISODaily, variable) = AVISO_FIRST_DATE : Day(1) : AVISO_DAILY_LAST_DATE
 DataWrangling.all_dates(::AVISOMonthly, variable) = AVISO_FIRST_DATE : Month(1) : AVISO_MONTHLY_LAST_DATE
 
+DataWrangling.averaging_window(metadatum::Metadatum{<:AVISOMonthly}) = DataWrangling.calendar_month_window(metadatum)
+
 const AVISO_dataset_variable_names = Dict(
     :free_surface => "adt",
     :sea_level_anomaly => "sla",
@@ -46,6 +48,7 @@ const AVISO_dataset_variable_names = Dict(
     :meridional_geostrophic_velocity => "vgos",
 )
 
+# The monthly Multi-Year product only distributes the sea level anomaly.
 const AVISO_monthly_dataset_variable_names = Dict(
     :sea_level_anomaly => "sla",
 )
@@ -96,12 +99,6 @@ function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
 
-function inpainted_metadata_filename(metadata::Metadatum{<:AVISODataset})
-    return replace(metadata.filename, ".nc" => "_inpainted.jld2")
-end
-
-DataWrangling.inpainted_metadata_path(metadata::Metadatum{<:AVISODataset}) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
-
 const AVISOMetadata{D} = Metadata{<:AVISODataset, D}
 const AVISOMetadatum = Metadatum{<:AVISODataset}
 
@@ -115,7 +112,7 @@ DataWrangling.metaprefix(::AVISOMetadatum) = "AVISOMetadatum"
 copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D")
 copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1M-m")
 
-# Pin the catalogue version advertised by the product data-access page. This is
+# Pin the catalog version advertised by the product data-access page. This is
 # important during Copernicus double-distribution transitions, when resolving
 # the bare dataset id can select a version with a different variable table.
 copernicusmarine_dataset_version(::AVISODataset) = get(ENV, "AVISO_DATASET_VERSION", "202411")

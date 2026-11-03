@@ -19,13 +19,9 @@ using NumericalEarth.EarthSystemModels: OceanSeaIceModel, update_state!
 using NumericalEarth.Oceans: ocean_simulation
 using NumericalEarth.SeaIces: sea_ice_simulation
 
-# Diagnostic-side override: ClimaSeaIce's slab mass balance uses a
-# T-dependent latent heat. A single state-based
-# `Eᵢₛ = −ℵ * ρᵢ * ℒ * h * Az` cannot match both freeze at the ice-base
-# temperature and top-melt at 0 ᵒC under `ℒ(T)`. Overriding `latent_heat`
-# to the constant `pt.reference_latent_heat` isolates coupler-side
-# bookkeeping errors from this intrinsic mismatch. The override is local to
-# this test's process; it does not touch any package source.
+# A single state-based `Eᵢₛ = −ℵ ρᵢ ℒ h Az` cannot match both freeze at the ice-base temperature
+# and top-melt at 0 ᵒC under a T-dependent `ℒ(T)`, so `latent_heat` is overridden to the constant
+# `pt.reference_latent_heat` to isolate coupler-side bookkeeping errors.
 
 @inline function ClimaSeaIce.SeaIceThermodynamics.latent_heat(
         pt::ClimaSeaIce.SeaIceThermodynamics.PhaseTransitions, T)
@@ -214,11 +210,8 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
 
     record!(history, coupled_model, 0, 0.0, 0.0, 0.0)
 
-    # The phase-boundary `update_state!` would zero the pending frazil flux
-    # written at the end of the previous phase's final step, stranding the
-    # latent energy that was already deposited into the ocean by that same
-    # frazil mutation. We preserve `𝒬ᶠʳᶻ` across the refresh and add it
-    # back into the sea-ice bottom heat flux that the slab will read.
+    # `𝒬ᶠʳᶻ` is preserved across the phase-boundary refresh and added back into the sea-ice bottom
+    # heat flux, so the latent energy the frazil already deposited into the ocean is not stranded.
     function run_phase!(coupled_model, spec, phase_id; Nsteps, Δt, history, atmosphere, radiation)
         set_forcing!(atmosphere, radiation;
                      T_air = spec.T_air, q_air = spec.q_air,
@@ -308,7 +301,7 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
 
     # --- Salt budget ---
     #
-    # On a mutable grid the volume the freshwater adds carries Sᴺ Jʷ back in, cancelling the virtual
+    # On a mutable grid the volume the freshwater adds carries Sᴺ Jʷ back in, canceling the virtual
     # salt flux at every Runge-Kutta stage, so the salt content follows the sea-ice salt alone. A
     # static grid admits no volume and the virtual flux stands: the surface salinity it sees sweeps
     # from Sᴺ[n] to Sᴺ[n+1] across the step while the assembled Jʷ stays frozen, so the trapezoid in

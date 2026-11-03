@@ -6,7 +6,7 @@
 ##### Like `ForceRestoreEnergy`, this closure restores the bulk land temperature
 ##### toward a prescribed deep climatology, but with two refinements:
 #####
-##### 1. The areal heat capacity `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` is recomputed every
+##### 1. The areal heat capacity `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` is recomputed every
 #####    step, so a wetting/drying slab has the correct thermal inertia.
 ##### 2. The energy budget is written conservatively as
 #####
@@ -15,13 +15,13 @@
 #####    with `eˡ = cˡ(Tˡᵃ − Tᵣ)` the internal energy of slab liquid, and `Tˡᵃ`
 #####    is updated via
 #####
-#####        dTˡᵃ/dt = [dEˡᵃ/dt − eˡ dMˡᵃ/dt] / C(Mˡᵃ),
+#####        dTˡᵃ/dt = [dEˡᵃ/dt − eˡ dMˡᵃ/dt] / cˡᵃ(Mˡᵃ),
 #####
 #####    so adding/removing water *at the slab temperature* leaves `Tˡᵃ`
 #####    unchanged. `dMˡᵃ/dt` is consumed from `land.diagnostics.water_storage_tendency`
 #####    written by the hydrology step.
 #####
-##### The internal energies carried by the boundary liquid fluxes are upwinded:
+##### The internal energies carried by the boundary liquid water fluxes are upwinded:
 ##### with `advect_deep_liquid_energy = true`, capillary rise brings in
 ##### `eᵇ = cˡ(Tᵈᵉᵉᵖ − Tᵣ)` and drainage exports `eᵇ = eˡ`; with
 ##### `advect_surface_liquid_energy = true`, infiltrating precipitation carries
@@ -34,8 +34,8 @@
 ##### `surface_energy_flux` via the interface balance.
 #####
 ##### `Tᵈᵉᵉᵖ` may be a `Number`, `AbstractField`, or any state-indexable
-##### property (e.g. a `FieldTimeSeries`); `Λᵈᵉᵉᵖ` may be a `Number` or
-##### `AbstractField`.
+##### property (e.g. a `FieldTimeSeries`); `cᵈʳʸ` and `Λᵈᵉᵉᵖ` may be
+##### `Number`s or `AbstractField`s.
 #####
 
 """
@@ -54,16 +54,19 @@ treatment of water-energy advection across the slab boundaries.
 
 Use either `deep_conductance` (`Λᵈᵉᵉᵖ`, W m⁻² K⁻¹) or `deep_time_scale` (`τᵈᵉᵉᵖ`,
 s) to set the deep restoring strength; exactly one must be supplied. With
-`deep_time_scale`, the effective conductance is `C(Mˡᵃ)/τᵈᵉᵉᵖ` (matches
+`deep_time_scale`, the effective conductance is `cˡᵃ(Mˡᵃ)/τᵈᵉᵉᵖ` (matches
 [`ForceRestoreEnergy`](@ref)).
+
+`dry_heat_capacity` accepts a `Number` (uniform) or a per-cell `AbstractField` —
+for example pavement carrying building thermal mass next to soil that does not.
 
 `reference_temperature` is the reference for internal energy `eˡ(T) = cˡ(T − Tᵣ)`.
 The temperature update is invariant to `Tᵣ`: fluxes whose advective switch is
 disabled enter and leave at the slab temperature, so `Tᵣ` cancels exactly (up
 to the positivity floor on `Mˡᵃ`). A standard choice is the triple point 273.15 K.
 """
-struct WaterCoupledEnergy{FT, TD, ΛD, Tau} <: AbstractEnergyBalance
-    dry_heat_capacity            :: FT
+struct WaterCoupledEnergy{CD, FT, TD, ΛD, Tau} <: AbstractEnergyBalance
+    dry_heat_capacity            :: CD
     liquid_heat_capacity         :: FT
     reference_temperature        :: FT
     deep_temperature             :: TD
@@ -87,18 +90,13 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
             "WaterCoupledEnergy requires exactly one of " *
             "`deep_conductance` (Λᵈᵉᵉᵖ, W m⁻² K⁻¹) or `deep_time_scale` (τᵈᵉᵉᵖ, s)."))
     end
-    # The surface-advective term needs the temperature of incoming liquid
-    # precipitation, which the atmosphere–land flux assembly does not write.
     if advect_surface_liquid_energy
-        throw(ArgumentError(
-            "advect_surface_liquid_energy=true is not yet supported: the " *
-            "atmosphere–land flux assembly does not write " *
-            "`land.fluxes.liquid_precipitation_temperature`."))
+        throw(ArgumentError("advect_surface_liquid_energy requires `land.fluxes.liquid_precipitation_temperature`, which is unset"))
     end
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)
     Td = deep_temperature isa Number ? convert(FT, deep_temperature) : deep_temperature
-    return WaterCoupledEnergy(convert(FT, dry_heat_capacity),
+    return WaterCoupledEnergy(normalize_property(FT, dry_heat_capacity),
                               convert(FT, liquid_heat_capacity),
                               convert(FT, reference_temperature),
                               Td, Λ, τ,
@@ -128,14 +126,14 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
 ##### Helpers
 #####
 
-@inline function deep_conductance_value(energy::WaterCoupledEnergy, C, i, j, grid, time)
-    FT = eltype(grid)
+@inline function deep_conductance_value(energy::WaterCoupledEnergy, cˡᵃ, i, j, grid, time)
+    FT = typeof(cˡᵃ)
     Λ  = energy.deep_conductance
     τ  = energy.deep_time_scale
     if Λ === nothing
-        return C / convert(FT, τ)
+        return cˡᵃ / convert(FT, τ)
     else
-        return property_value(Λ, i, j, 1)
+        return stateindex(Λ, i, j, 1)
     end
 end
 
@@ -155,8 +153,8 @@ end
         Tᵢⱼ  = prognostic.T[i, j, 1]
         Mᵢⱼ  = prognostic.M[i, j, 1]
         dMdt = diagnostics.water_storage_tendency[i, j, 1]
-        Jˡᵇ  = diagnostics.deep_liquid_flux[i, j, 1]
-        Jˡˢ  = diagnostics.surface_liquid_flux[i, j, 1]
+        Jˡᵇ  = diagnostics.deep_liquid_water_flux[i, j, 1]
+        Jˡˢ  = diagnostics.surface_liquid_water_flux[i, j, 1]
         Rˡᵃᵗ = diagnostics.subsurface_runoff[i, j, 1]
         Jᴱs  = fluxes.surface_energy_flux[i, j, 1]
         Jᵛ   = fluxes.vapor_flux[i, j, 1]
@@ -165,11 +163,11 @@ end
 
     cˡ   = energy.liquid_heat_capacity
     Tᵣ   = energy.reference_temperature
-    Cdry = property_value(energy.dry_heat_capacity, i, j, 1)
-    C    = Cdry + cˡ * max(Mᵢⱼ, 0)
+    cᵈʳʸ = stateindex(energy.dry_heat_capacity, i, j, 1)
+    cˡᵃ  = cᵈʳʸ + cˡ * max(Mᵢⱼ, 0)
 
     Tᵈ = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))
-    Λᵈ = deep_conductance_value(energy, C, i, j, grid, time)
+    Λᵈ = deep_conductance_value(energy, cˡᵃ, i, j, grid, time)
 
     # Internal energy of slab liquid; the boundary fluxes upwind to it. A flux
     # whose advective switch is off carries eˡ — it exchanges mass but no heat —
@@ -184,7 +182,7 @@ end
     # temperature; the latent heat of evaporation is already inside Jᴱs.
     dEdt = Λᵈ * (Tᵈ - Tᵢⱼ) + eᵇ * Jˡᵇ - eˢ * Jˡˢ - Jᴱs - eˡ * Jᵛ - eˡ * Rˡᵃᵗ
 
-    return (dEdt - eˡ * dMdt) / C
+    return (dEdt - eˡ * dMdt) / cˡᵃ
 end
 
 time_step!(energy::WaterCoupledEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)

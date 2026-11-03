@@ -2,9 +2,13 @@ include("runtests_setup.jl")
 
 using ArchGDAL  # activates NumericalEarthArchGDALExt (the Mollweide → EPSG:4326 warp)
 
-using NumericalEarth.DataWrangling: BoundingBox
+using NCDatasets: NCDataset
+
+using NumericalEarth.DataWrangling: BoundingBox, native_grid
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltH, GHSBuiltS
 using NumericalEarth.Lands: urban_roughness, MorphometricRoughness
+
+using Oceananigans.Grids: λnodes, φnodes
 
 # GHSL needs no credentials, but each tile archive is tens to hundreds of MB.
 # Excluded from CI in runtests.jl; run manually.
@@ -23,6 +27,24 @@ const ghsl_region = BoundingBox(longitude = (-0.11, -0.07), latitude = (51.505, 
         rm(metadata_path(metadatum); force = true)
         download(metadatum)
         @test isfile(metadata_path(metadatum))
+
+        # The file must land on the grid the read path locates its cells with: same cell
+        # count, same cell centers to well within a cell.
+        grid = native_grid(metadatum)
+        λ, φ = NCDataset(metadata_path(metadatum)) do ds
+            (Array(ds["lon"][:]), Array(ds["lat"][:]))
+        end
+
+        λc = collect(λnodes(grid, Center()))
+        φc = collect(φnodes(grid, Center()))
+        Δλ = λc[2] - λc[1]
+        Δφ = φc[2] - φc[1]
+
+        @test length(λ) == length(λc)
+        @test length(φ) == length(φc)
+        @test maximum(abs.(λ .- λc)) < Δλ / 100
+        @test maximum(abs.(φ .- φc)) < Δφ / 100
+        @test size(Field(metadatum, CPU()))[1:2] == size(grid)[1:2]
     end
 
     λᵖ = Field(fraction, CPU())

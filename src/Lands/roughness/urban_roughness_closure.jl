@@ -128,7 +128,7 @@ regressions of [Kanda et al. (2013)](@cite Kanda2013).
 * `roughness_constants` (`a₁, b₁, c₁`) — roughness rescaling, their eq. 12.
   Default `(0.71, 20.21, -0.77)`; their Method 2 gives `(0.93, 8.93, 4.68)`.
 * `height_spread_constants` (`s₁, s₀`) — `σʰ = s₁·h + s₀` (m), their eq. 2.
-  Default `(1.05, -3.7)`, whose zero crossing near `h = 3.5` m is about one storey.
+  Default `(1.05, -3.7)`, whose zero crossing near `h = 3.5` m is about one story.
 * `maximum_height_constants` (`m₁, m₂`) — `hᵐᵃˣ = m₁·(σʰ)^m₂` (m), their eq. 3.
   Default `(12.51, 0.77)`. The most scattered of the four, since a city's tallest
   building is often an outlying landmark.
@@ -227,7 +227,7 @@ end
 $(TYPEDSIGNATURES)
 
 Height standard deviation `σʰ` (m) of a cell of mean element height `h`, from the affine
-regression `σʰ = s₁·h + s₀`, floored at zero below its one-storey zero crossing.
+regression `σʰ = s₁·h + s₀`, floored at zero below its one-story zero crossing.
 """
 @inline function height_spread(v::VariableHeight, h)
     s₁, s₀ = v.height_spread_constants
@@ -257,17 +257,7 @@ plan-area index `λᵖ` and mean height `h`.
 @inline function apply_height_distribution(v::VariableHeight, ℓᵐ, d, λᵖ, h)
     σʰ = height_spread(v, h)
     hᵐᵃˣ = maximum_element_height(v, h, σʰ)
-
-    a₀, b₀, c₀ = v.displacement_constants
-    a₁, b₁, c₁ = v.roughness_constants
-
-    ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
-
-    # `hᵐᵃˣ`, not `h`, bounds the displacement: over a height-heterogeneous city `d`
-    # routinely exceeds the mean building height.
-    d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀), hᵐᵃˣ)
-
-    return ℓᵐ, d
+    return apply_height_distribution(v, ℓᵐ, d, λᵖ, h, σʰ, hᵐᵃˣ)
 end
 
 """
@@ -283,6 +273,9 @@ height spread `σʰ` and tallest element `hᵐᵃˣ` are measured rather than re
     a₁, b₁, c₁ = v.roughness_constants
 
     ℓᵐ = height_spread_roughness(ℓᵐ, λᵖ, h, σʰ, a₁, b₁, c₁)
+
+    # `hᵐᵃˣ`, not `h`, bounds the displacement: over a height-heterogeneous city `d`
+    # routinely exceeds the mean building height.
     d = min(maximum_height_displacement(λᵖ, h, σʰ, hᵐᵃˣ, a₀, b₀, c₀), hᵐᵃˣ)
 
     return ℓᵐ, d

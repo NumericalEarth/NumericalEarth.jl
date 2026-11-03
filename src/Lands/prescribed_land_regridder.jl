@@ -1,5 +1,6 @@
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::PrescribedLand, grid)
-    state = (; freshwater_flux = Field{Center, Center, Nothing}(grid))
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::PrescribedLand, grid; kw...)
+    state = (; runoff_freshwater_flux  = Field{Center, Center, Nothing}(grid),
+               iceberg_freshwater_flux = Field{Center, Center, Nothing}(grid))
     return ComponentExchanger(state, nothing)
 end
 

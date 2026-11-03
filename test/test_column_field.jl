@@ -10,8 +10,9 @@ using Oceananigans
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: location
 using Oceananigans.Grids: λnodes, φnodes, topology, Flat, Bounded, Periodic
+using NCDatasets: NCDataset
 
-# Test coordinates for end-to-end Column tests (ECCO4 ocean point)
+# Test coordinates for end-to-end Column tests (an ocean point of the synthetic dataset)
 const test_longitude = 12.0
 const test_latitude = -50.0
 
@@ -33,7 +34,7 @@ const test_latitude = -50.0
     @test (i⁻, i⁺) == (3, 4)
     @test w == 1.0
 
-    # On the right-most centre: weight = 1.
+    # On the right-most center: weight = 1.
     i⁻, i⁺, w = bracket_with_weight(coords, 3.5)
     @test (i⁻, i⁺) == (3, 4)
     @test w ≈ 1.0
@@ -47,7 +48,7 @@ const test_latitude = -50.0
 end
 
 @testset "bracket_with_weight (cyclic wrap)" begin
-    coords = collect(0.5:1.0:359.5)  # global 1° centres
+    coords = collect(0.5:1.0:359.5)  # global 1° centers
     n = length(coords)
 
     # Interior point — period is a no-op there.
@@ -74,7 +75,7 @@ end
 end
 
 @testset "NaN-aware blend" begin
-    # 2x2x1 synthetic data; column at the centre point with equal weights.
+    # 2x2x1 synthetic data; column at the center point with equal weights.
     c = ColumnInfo(1, 2, 1, 2, 0.5f0, 0.5f0, Linear())
     FT = Float32
 
@@ -86,9 +87,9 @@ end
     data_nan = fill(NaN32, 2, 2, 1)
     @test isnan(blend(c.ℑ, data_nan, c, 1, nothing, FT))
 
-    # Partial: bottom-right corner is NaN, weights renormalise over the rest.
+    # Partial: bottom-right corner is NaN, weights renormalize over the rest.
     # Weights become (0.25, 0.25, 0.25, 0); Σw = 0.75; sum = 1+2+3 = 6;
-    # result = 6 / 0.75 = 2.0 in 1/2/3 → renormalised mean.
+    # result = 6 / 0.75 = 2.0 in 1/2/3 → renormalized mean.
     data_part = reshape(Float32[1 2; 3 NaN32], 2, 2, 1)
     @test blend(c.ℑ, data_part, c, 1, nothing, FT) ≈ 2.0f0
 
@@ -120,7 +121,7 @@ end
 
         @testset "Column Field with Linear interpolation on $A" begin
             col = Column(test_longitude, test_latitude; interpolation=Linear())
-            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            md = Metadatum(:temperature; dataset=SyntheticOcean(), region=col)
             field = Field(md, arch)
 
             @test field.grid isa RectilinearGrid
@@ -135,7 +136,7 @@ end
 
         @testset "Column Field with Nearest interpolation on $A" begin
             col = Column(test_longitude, test_latitude; interpolation=Nearest())
-            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            md = Metadatum(:temperature; dataset=SyntheticOcean(), region=col)
             field = Field(md, arch)
 
             @test field.grid isa RectilinearGrid
@@ -148,7 +149,7 @@ end
 
         @testset "set! with Column metadata on $A" begin
             col = Column(test_longitude, test_latitude)
-            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            md = Metadatum(:temperature; dataset=SyntheticOcean(), region=col)
 
             # Build a target column field
             column_grid = native_grid(md, arch)
@@ -165,8 +166,8 @@ end
             col_lin = Column(test_longitude, test_latitude; interpolation=Linear())
             col_near = Column(test_longitude, test_latitude; interpolation=Nearest())
 
-            md_lin = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_lin)
-            md_near = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_near)
+            md_lin = Metadatum(:temperature; dataset=SyntheticOcean(), region=col_lin)
+            md_near = Metadatum(:temperature; dataset=SyntheticOcean(), region=col_near)
 
             field_lin = Field(md_lin, arch)
             field_near = Field(md_near, arch)
@@ -175,6 +176,30 @@ end
             @allowscalar begin
                 @test all(isfinite, interior(field_lin))
                 @test all(isfinite, interior(field_near))
+            end
+        end
+    end
+end
+
+@testset "Native column time series fills missing levels" begin
+    mktempdir() do dir
+        metadata = Metadata(:temperature; dataset = SyntheticOcean(), dir,
+                             region = Column(test_longitude, test_latitude),
+                             dates = [DateTime(2000), DateTime(2000, 2)])
+        download(metadata)
+        for metadatum in metadata
+            NCDataset(metadata_path(metadatum), "a") do ds
+                ds["temperature"][:, :, 1] .= NaN32
+            end
+        end
+
+        for arch in test_architectures
+            series = FieldTimeSeries(metadata, arch; inpainting = nothing)
+            for n in eachindex(metadata.dates)
+                expected = Field(metadata[n], arch; inpainting = nothing)
+                values = Array(interior(series[n]))
+                @test all(isfinite, values)
+                @test values ≈ Array(interior(expected))
             end
         end
     end

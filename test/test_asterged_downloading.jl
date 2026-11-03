@@ -17,7 +17,7 @@ const asterged_latitude  = (35.8, 36.2)
 const asterged_region = BoundingBox(longitude = asterged_longitude, latitude = asterged_latitude)
 
 # 1 km: the 100 m tiles cover the same region at ~100× the download.
-const asterged_dataset = ASTERGEDv3(resolution = :low_1km)
+const asterged_dataset = ASTERGEDv3(resolution = ASTERGEDLow1km)
 
 asterged_metadatum(name) = Metadatum(name; dataset = asterged_dataset, region = asterged_region)
 

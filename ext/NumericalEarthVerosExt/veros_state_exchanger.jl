@@ -17,8 +17,10 @@ NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimu
     v = Field{Center, Face,   Nothing}(grid)
     T = Field{Center, Center, Nothing}(grid)
     S = Field{Center, Center, Nothing}(grid)
+    η = Field{Center, Center, Nothing}(grid)
+    freshwater_heat_content = Field{Center, Center, Nothing}(grid)
 
-    return (; u, v, T, S)
+    return (; u, v, T, S, η, freshwater_heat_content, u_coefficient=nothing, v_coefficient=nothing)
 end
 
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulation, coupled_model)
