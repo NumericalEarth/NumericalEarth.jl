@@ -86,3 +86,40 @@ end
         end
     end
 end
+
+@testset "Breeze RadiativeTransferModel over a canopy partitioned with the ocean" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Shared columns radiate the area mean of canopy and ocean on $A" begin
+            atmosphere, land, radiation, canopy = rtm_canopy_components(arch)
+            Tᵒ = 290
+            ocean = PrescribedOcean(land.grid)
+            set!(ocean, T = Tᵒ)
+
+            ## Land to the west, ocean to the east, shared across the middle.
+            þ(x) = clamp(1/2 + x / 1kilometer, 0, 1)
+            model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction = þ,
+                                       atmosphere_land_interface_state = canopy)
+            time_step!(model, Δt)
+
+            fractions = Array(interior(model.interfaces.surface_partition.ocean_fraction, :, :, 1))
+            @test minimum(fractions) == 0 && maximum(fractions) == 1 && any(f -> 0 < f < 1, fractions)
+
+            canopy_state = model.interfaces.atmosphere_land_interface.temperature
+            Tʳᵃᵈ = Array(interior(canopy_state.effective, :, :, 1))
+            αʳᵃᵈ = Array(interior(canopy_state.effective_albedo, :, :, 1))
+
+            ## Breeze's fluxes are positive upward, so the downwelling longwave is negative.
+            ℐꜜˡʷ = -Array(interior(model.radiation.downwelling_longwave_flux))[:, :, 1]
+            ℐꜛˡʷ = Array(interior(model.radiation.upwelling_longwave_flux))[:, :, 1]
+
+            ocean_longwave = @. rtm_emissivity * σ * Tᵒ^4 + (1 - rtm_emissivity) * ℐꜜˡʷ
+            @test ℐꜛˡʷ ≈ (@. (1 - fractions) * σ * Tʳᵃᵈ^4 + fractions * ocean_longwave) rtol = 1e-3
+
+            ## Gray optics carry no upwelling shortwave, so check the albedo the RTM reads.
+            α = Array(interior(compute!(Field(model.radiation.surface_radiation.direct_surface_albedo)), :, :, 1))
+            @test α ≈ @. (1 - fractions) * αʳᵃᵈ + fractions * rtm_albedo
+        end
+    end
+end
