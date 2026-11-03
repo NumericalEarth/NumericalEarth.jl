@@ -10,11 +10,16 @@ using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryCondi
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: launch!
 using NumericalEarth: NumericalEarth
+using NumericalEarth.EarthSystemModels: sea_ice_concentration
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, computed_fluxes
 
 include("coupled_radiation.jl")
 include("breeze_atmosphere_interface.jl")
 include("breeze_atmosphere_simulation.jl")
+include("breeze_prognostic_state.jl")
+include("breeze_state_exchanger.jl")
+include("breeze_nested_atmosphere.jl")
 include("breeze_air_land_radiation.jl")
+include("breeze_surface_albedo.jl")
 
 end # module NumericalEarthBreezeExt

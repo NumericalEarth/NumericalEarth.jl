@@ -106,7 +106,7 @@ function initialize_output_writers!(sim, save_indices, iteration, rank)
                                               including = [:grid],
                                               filename = prefix,
                                               indices = idx,
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
     end
 end
 

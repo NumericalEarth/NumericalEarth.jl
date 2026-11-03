@@ -24,9 +24,9 @@
 #     machinery reads directly from the RTM's flux divergence.
 #   * The atmosphere's own `update_state!` drives the RRTMGP solve
 #     through the proxy (honoring the RTM's `schedule`).
-#   * Net surface SW/LW from the RTM feeds the slab's `net_energy_flux`
+#   * Net surface SW/LW from the RTM feeds the slab's `surface_energy_flux`
 #     via `apply_air_land_radiative_fluxes!`, closing the surface
-#     energy balance — no example-level callbacks required.
+#     energy balance.
 
 using NumericalEarth
 using Breeze
@@ -68,8 +68,7 @@ grid = RectilinearGrid(arch;
 #
 # A 1D land grid (size Nx, flat in y and z) carrying skin temperature,
 # soil water, and surface saturation. The land grid spans the same x
-# extent as the atmosphere so that the slab T can serve directly as the
-# RRTMGP surface temperature.
+# extent as the atmosphere.
 
 land_grid = RectilinearGrid(arch;
                             size = Nx,
@@ -77,33 +76,71 @@ land_grid = RectilinearGrid(arch;
                             halo = grid.Hx,
                             topology = (Periodic, Flat, Flat))
 
-hydrology = BucketHydrology(maximum_water_storage = 150)
-slab_land = SlabLand(land_grid; hydrology)
+# A conservative, variably-saturated hydrology replaces the classic clamped
+# bucket. Storage is the augmented liquid fraction `ϑˡ = θˡ + max(Π, 0)/hˢˢ`,
+# so wetting beyond saturation (`Mˡᵃ > Mˡᵃ⁺ = ρˡ ν hˡᵃ`) is admitted and
+# corresponds to positive pressure head rather than a hard clamp. We use Van
+# Genuchten retention and conductivity, free drainage at the bottom (a small
+# bulk soil drainage), and an infiltration-capacity runoff closure for any
+# precipitation that exceeds the soil capacity.
+
+hydrology = VariablySaturatedHydrology(eltype(land_grid);
+    slab_depth = 1.0,
+    porosity = 0.4,
+    residual_liquid_fraction = 0.05,
+    storage_height = 1000,
+    retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
+    hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2),
+    deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
+    runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
+
+# Water-mass-coupled energy with a water-mass-dependent areal heat capacity
+# `cˡᵃ(Mˡᵃ) = cᵈʳʸ + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
+# water at the slab temperature leaves `Tˡᵃ` unchanged.
+#
+# `deep_temperature` should sit near the surface's radiative–convective
+# equilibrium (~310 K here): a much colder restoring target holds the thin,
+# low-heat-capacity dry patches far below their daytime equilibrium and
+# destabilizes the coupled boundary layer.
+
+energy = WaterCoupledEnergy(eltype(land_grid);
+    dry_heat_capacity = 1480 * 1500 * 0.10,
+    liquid_heat_capacity = 4186,
+    reference_temperature = 273.15,
+    deep_temperature = 310.0,
+    deep_time_scale = 12hours,
+    advect_deep_liquid_energy = false,
+    advect_surface_liquid_energy = false)
+
+soil_humidity = DryLayerHumidity(;
+    dry_layer_depth = StorageBasedDryLayerDepth(
+        maximum_dry_layer_depth = 0.05,
+        dry_layer_onset_saturation = 0.5,
+        dry_layer_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(
+        minimum_dry_layer_depth = 1e-4,
+        molecular_diffusivity = 2.5e-5,
+        tortuosity = PowerLawTortuosity()))
+slab_land = SlabLand(land_grid; hydrology, energy)
 
 # ### Surface saturation and the wet/dry contrast
 #
-# The bucket hydrology stores land water mass per area `Mˡᵃ` (kg m⁻²) with a
-# saturation cap `Mˡᵃ⁺` (`maximum_water_storage`, the soil-science "field
-# capacity"), and exposes the continuous surface saturation
-# `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]`. The interface's `FractionalHumidity` model with a
-# Manabe `CriticalSaturation(𝒮ᶜ)` efficiency scales the saturation specific humidity
-# by the evaporation efficiency `β(𝒮) = min(𝒮/𝒮ᶜ, 1)`:
+# The hydrology exposes the diagnostic surface saturation
+# `𝒮 = clamp(θˡ/ν, 0, 1) ∈ [0, 1]`. The interface's
+# [`DryLayerHumidity`](@ref) closure solves for the
+# soil-surface specific humidity `qⁱⁿ` from a vapor-flux balance through
+# an unresolved dry layer at saturation-dependent depth
+# `δᵛ(𝒮) = δᵛ_max[1 − min(𝒮/𝒮ᶜ, 1)]^η`. The wet center (`𝒮 ≥ 𝒮ᶜ`) has
+# `δᵛ = 0` and a saturated skin (`qⁱⁿ = qᵛ⁺`); the dry edges have
+# `δᵛ → δᵛ_max` and the small dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
+# kills evaporation entirely. The contrast emerges from the dry-layer physics
+# rather than a prescribed evaporation efficiency `β(𝒮)`.
 #
-# ```math
-# q_s = β(𝒮) \, q^{v+}(T_s),  \qquad β(𝒮) = \min(𝒮/𝒮_c, 1).
-# ```
-#
-# The wet center (`𝒮 ≥ 𝒮ᶜ`) evaporates at full efficiency (`qₛ = qᵛ⁺`, strong
-# latent-heat flux), while the dry edges (`𝒮 = 0`) cannot evaporate (no latent
-# flux ⇒ all surface energy goes into sensible heating).
-#
-# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint: wet in
-# the middle (`qₛ = qᵛ⁺`), bone-dry at the edges (`qₛ = 0`). The contrast
-# persists because the wet center retains water through the run while the dry
-# edges have no source (no precipitation is prescribed here).
+# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint.
 
 T₀    = 295 # K
-M_wet = 0.95 * hydrology.maximum_water_storage
+Mˡᵃ⁺  = slab_land.hydrology.porosity * slab_land.hydrology.slab_depth * 1000   # ρˡ ν hˡᵃ
+M_wet = 0.95 * Mˡᵃ⁺
 σ_wet = Lx / 8
 
 M_init(x) = M_wet * exp(-(x/σ_wet)^2)
@@ -117,7 +154,7 @@ Oceananigans.TimeSteppers.update_state!(slab_land)
 # The 15 km column gives RRTMGP a realistic atmosphere, but the initial
 # stratosphere is not in radiative equilibrium and the coarse upper cells
 # respond strongly once radiation switches on. A Newtonian relaxation of
-# temperature toward the reference profile above 8 km anchors the
+# potential temperature toward its initial profile above 8 km anchors the
 # stratosphere without affecting the troposphere (as in Breeze's
 # `radiative_convection` example). We build the reference state explicitly
 # so the sponge and the radiation share the same thermodynamic constants.
@@ -128,32 +165,29 @@ latitude = 15
 
 constants = ThermodynamicConstants()
 reference_state = ReferenceState(grid, constants;
-                                 surface_pressure = p₀,
+                                 base_pressure = p₀,
                                  potential_temperature = θ₀)
 dynamics = AnelasticDynamics(reference_state)
 
-Tᵣ  = reference_state.temperature
-ρᵣ  = reference_state.density
-cᵖᵈ = constants.dry_air.heat_capacity / constants.dry_air.molar_mass
+θᵣ = CenterField(grid) # the initial potential temperature, set below
+ρᵣ = reference_state.density
 τ_sponge = 6hours
 
 @inline function stratospheric_relaxation(i, j, k, grid, clock, model_fields, p)
-    @inbounds T  = model_fields.T[i, j, k]
-    @inbounds Tᵣ = p.Tᵣ[i, j, k]
+    @inbounds θ  = model_fields.θ[i, j, k]
+    @inbounds θᵣ = p.θᵣ[i, j, k]
     @inbounds ρ  = p.ρᵣ[i, j, k]
     z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
     α = clamp((z - 8000) / 4000, 0, 1)
-    return ρ * p.cᵖᵈ * (-α * (T - Tᵣ) / p.τ)
+    return ρ * (-α * (θ - θᵣ) / p.τ)
 end
 
 sponge = Forcing(stratospheric_relaxation; discrete_form = true,
-                 parameters = (; Tᵣ, ρᵣ, cᵖᵈ, τ = τ_sponge))
+                 parameters = (; θᵣ, ρᵣ, τ = τ_sponge))
 
 # ## RRTMGP radiation
 #
-# All-sky RRTMGP at 15°N starting at the equinox, midnight local. The
-# `surface_temperature` is the slab land's prognostic skin temperature,
-# so radiation responds to surface heating and cooling in real time.
+# All-sky RRTMGP at 15°N starting at the equinox, midnight local.
 #
 # A tropical ozone profile is required for stratospheric radiative balance:
 # without it the upper column is far from radiative equilibrium and
@@ -173,7 +207,6 @@ solar_position = ApparentSolarPosition(coordinate = (0, latitude),
 
 radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                    solar_position, background_atmosphere,
-                                   surface_temperature = slab_land.temperature,
                                    surface_albedo      = 0.20,
                                    surface_emissivity  = 0.95,
                                    solar_constant      = 1361,
@@ -184,11 +217,10 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # ## Atmosphere (Simulation wrapping a Breeze `AtmosphereModel`)
 #
 # The atmosphere is built with a skeleton `CoupledRadiation` placeholder.
-# `AtmosphereLandModel` materializes it against the RTM below — no
-# `radiation` kwarg is passed here.
+# `AtmosphereLandModel` materializes it against the RTM below.
 
 atmos = atmosphere_simulation(grid; dynamics,
-                              forcing  = (; ρe = sponge),
+                              forcing  = (; ρθ = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
@@ -215,27 +247,29 @@ set!(atmos.model; T = Tᵢ, ℋ = ℋᵢ)
 # precision; `set_to_mean!` anchors `ρᵣ` to the current state.
 
 set_to_mean!(reference_state, atmos.model, rescale_densities = true)
+set!(θᵣ, liquid_ice_potential_temperature(atmos.model))
 
 # ## Coupled model
 #
-# Passing `radiation = radiative_transfer_model` here triggers
-# `materialize_earth_system_radiation!`, which aliases the atmosphere's
-# `CoupledRadiation.flux_divergence` to
-# `radiative_transfer_model.flux_divergence` and installs the Breeze-aware
-# `apply_air_land_radiative_fluxes!`.
+# Passing `radiation` here aliases the atmosphere's
+# `CoupledRadiation.flux_divergence` to the RTM's `flux_divergence`.
 
-# The surface specific humidity uses a Manabe evaporation efficiency: saturated
-# above the critical saturation `𝒮ᶜ = 0.75`, scaling down linearly below it.
-interface_specific_humidity = FractionalHumidity(efficiency = CriticalSaturation(0.75))
-al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
-                                         specific_humidity = interface_specific_humidity)
+# The interface is a [`CanopyInterface`](@ref): a big-leaf canopy over the soil,
+# exchanging heat and vapor with the atmosphere through the canopy air space.
+# Soil evaporation beneath the canopy is solved by [`DryLayerHumidity`](@ref):
+# a Fickian vapor-flux balance between the saturated soil at depth `δᵛ` and
+# the canopy air. The wet center has `δᵛ = 0` (saturated soil surface); the dry
+# edges have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
+# limits evaporation self-consistently. Stomata close as the soil dries below
+# the critical saturation, so the dry edges neither evaporate nor transpire.
+# The atmosphere and land clocks are `Clock(grid)`: time accumulates in `Float64`
+# while kernels see it at the grid's `Float32`, and the coupled model's clock matches.
+canopy_humidity = CanopyConductanceHumidity(moisture_stress = CriticalSaturation(0.5))
+canopy = CanopyInterface(; soil_humidity, canopy_humidity)
 
-# The coupled model's clock is authoritative for all components, and a
-# `Simulation`'s clock type is fixed by its grid — since the grids here are
-# `Float32`, the coupled model needs a matching `Float32` clock.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
-                            clock = Clock{Float32}(time=0),
-                            atmosphere_land_interface = al_interface)
+                            atmosphere_land_interface_state = canopy,
+                            clock = Clock(grid))
 
 # The wizard recomputes Δt every iteration so the step always tracks the
 # current CFL — important for a convective LES on a 100 m grid, where a
@@ -283,7 +317,7 @@ qˡ = atmos.model.microphysical_fields.qˡ
 simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(10minutes),
-                                               overwrite_existing = true)
+                                               overwrite_files = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; T = slab_land.temperature,
@@ -291,7 +325,7 @@ simulation.output_writers[:land] = JLD2Writer(model,
                                                   𝒮 = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
-                                              overwrite_existing = true)
+                                              overwrite_files = true)
 
 # ## Run
 
@@ -329,11 +363,11 @@ wlim  = maximum(abs, w_ts) / 2
 qˡ_cloudy = filter(>(0), interior(qˡ_ts))
 qˡlim     = isempty(qˡ_cloudy) ? 1e-6 : quantile(qˡ_cloudy, 0.99)
 
-fig = Figure(size = (1500, 800), fontsize = 13)
+fig = Figure(size = (1200, 640))
 
-ax_w   = Axis(fig[1, 1][1, 1], title = "w (m/s)",         ylabel = "z (m)", limits = (nothing, (0, 5e3)))
-ax_Tᵃᵗ = Axis(fig[1, 2][1, 1], title = "Tᵃᵗ anomaly (K)",                   limits = (nothing, (0, 5e3)))
-ax_qˡ  = Axis(fig[1, 3][1, 1], title = "qˡ (kg/kg)",                        limits = (nothing, (0, 5e3)))
+ax_w   = Axis(fig[1, 1][1, 1], limits = (nothing, (0, 5e3)), title = "w (m/s)", ylabel = "z (m)")
+ax_Tᵃᵗ = Axis(fig[1, 2][1, 1], limits = (nothing, (0, 5e3)), title = "Tᵃᵗ anomaly (K)")
+ax_qˡ  = Axis(fig[1, 3][1, 1], limits = (nothing, (0, 5e3)), title = "qˡ (kg/kg)")
 
 ax_Tˡᵃ = Axis(fig[2, 1], title = "Skin temperature (K)", xlabel = "x (m)", ylabel = "Tˡᵃ (K)")
 ax_M   = Axis(fig[2, 2], title = "Soil water (kg/m²)",   xlabel = "x (m)", ylabel = "M (kg/m²)")
@@ -363,7 +397,7 @@ lines!(ax_Tˡᵃ, x_land, Tˡᵃ_n; color = :black, linewidth = 2)
 lines!(ax_M,   x_land, M_n;   color = :black, linewidth = 2)
 lines!(ax_𝒮,   x_land, 𝒮_n;   color = :black, linewidth = 2)
 
-ylims!(ax_M, 0, hydrology.maximum_water_storage * 1.05)
+ylims!(ax_M, 0, Mˡᵃ⁺ * 1.05)
 ylims!(ax_𝒮, 0, 1.05)
 
 title = @lift "Diurnal convection over heterogeneous slab land, t = " * prettytime(times[$n])
