@@ -18,7 +18,8 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, EarthSystemModel, boundary_strips,
+                                        relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
                                    VectorComponent, interpolate_from_parent!
@@ -78,13 +79,14 @@ NumericalEarth.Grids.surface_elevation(grid::TerrainFollowingGrid) =
     compute!(Field(KernelFunctionOperation{Center, Center, Nothing}(znode, grid, Center(), Center(), Face())))
 
 #####
-##### Live parents: a Breeze model, or a nest whose child is one
+##### Live parents: a Breeze model, a nest whose child is one, or a coupled model whose atmosphere is
 #####
 
-const LiveParentAtmosphere = Union{BreezeAtmosphere, NestedModel}
+const LiveParentAtmosphere = Union{BreezeAtmosphere, NestedModel, EarthSystemModel}
 
 breeze_atmosphere(model::BreezeAtmosphere) = model
 breeze_atmosphere(nested::NestedModel) = breeze_atmosphere(nested.child)
+breeze_atmosphere(coupled_model::EarthSystemModel) = breeze_atmosphere(component_model(coupled_model.atmosphere))
 
 # The parent's own fields, under the keys of the state exchanger's derived prognostics.
 function parent_prognostic(parent::LiveParentAtmosphere)
@@ -344,8 +346,9 @@ interpolate that side's strip, and the lateral boundary relaxation acts only on 
 relaxation zone, through a tendency callback the `NestedModel` adds to the child's at every time step.
 `parent_condensates` is then keyed by side.
 
-`parent_atmosphere` may instead be a live Breeze `AtmosphereModel`, or a `NestedModel` whose child is
-one, so nests telescope: `nested_atmosphere_model(nested_atmosphere_model(coarse_grid, dataset; dates), fine_grid)`.
+`parent_atmosphere` may instead be a live Breeze `AtmosphereModel`, a `NestedModel` whose child is
+one, or an `EarthSystemModel` (e.g. an `AtmosphereLandModel`) whose atmosphere is either, so nests
+telescope, each level with its own surface: `nested_atmosphere_model(nested_atmosphere_model(coarse_grid, dataset; dates), fine_grid)`.
 The child's boundary conditions and relaxation then sample the parent's own fields, its terrain blends
 toward the parent's, and it starts from the parent's state, balanced unless `balancer = false`.
 
