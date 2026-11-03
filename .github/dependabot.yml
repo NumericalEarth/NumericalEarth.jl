@@ -17,7 +17,6 @@ updates:
       - "/"
       - "/docs"
       - "/examples"
-      - "/experiments/one_degree_simulation"
       - "/test"
       - "/test/reactant"
     schedule:
