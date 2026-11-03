@@ -220,20 +220,7 @@ end
     # =============================================
     # Part 4: Freshwater and salt fluxes
     # =============================================
-    # Jʷ tracks total ice+snow mass lost to the ocean (top + bottom + any flooding), since the
-    # resulting water enters the ocean regardless of why the ice/snow melted. Jˢ must use the same
-    # total `Eᵢ`: all of that water carries the ice's brine salinity `Sˢⁱ` into the ocean, whether
-    # it melted at the top or the bottom, so crediting only the bottom-melt share here (while Jʷ
-    # keeps crediting all of it) would add salty meltwater as if it were salt-free, leaking salt
-    # out of the ocean's tracked budget.
-    #
-    # Jᴴ attributes heat content differently: it uses `q`, the ocean-driven melt rate implied by
-    # the interface balance that produced Tb/Sb, rather than `ice_ocean_mass_flux` (ClimaSeaIce's
-    # total ice tendency), because `ice_ocean_mass_flux` also includes atmosphere-driven top-surface
-    # melt/freeze, which has no ocean-side temperature of its own — using it here would attribute
-    # that top-surface exchange to the ocean at the bottom interface's Tb, leaking heat into the
-    # ocean whenever the top-surface tendency changes (e.g. once a thin snow cover fully melts away
-    # and the ice surface's melting-point ceiling drops).
+    # Jʷ is the total ice+snow mass lost to the ocean (top + bottom + any flooding). Jˢ the salinity flux carried by the ice-share of the total meltwater Jʷ (the snow does not carry salinity), while Jᴴ the heat content associated with Jʷ, where the bottom (ice-ocean) share of Jʷ has a temperature equal to the ice-ocean interface temperature and the remaining share is at 0 degrees Celsius
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
