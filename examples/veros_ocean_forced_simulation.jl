@@ -1,8 +1,8 @@
 # # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis
 #
 # This example showcases the use of NumericalEarth's PythonCall extension to run a
-# near-global ocean simulation at 4-degree resolution using the Veros ocean model.
-# The ocean is forced by the JRA55 reanalysis data
+# near-global ocean simulation at 4-degree resolution using the Veros ocean model on its
+# JAX backend. The ocean is forced by the JRA55 reanalysis data
 #
 # For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
 # CairoMakie to visualize the simulation.
@@ -26,7 +26,7 @@ using Printf
 # VerosModule.install_veros()
 # ```
 #
-# once before executing this example.
+# once and restart Julia before executing this example.
 
 VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
 
@@ -34,42 +34,7 @@ VerosModule.remove_outputs(:global_4deg)
 
 # Actually loading and instantiating the Veros setup in the variable `ocean`.
 
-ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
-
-# The loaded Veros setup contains a `set_forcing` method which computes the fluxes as restoring from climatology.
-# We replace it with a custom function that only computes the TKE forcing (which depends on the wind stresses
-# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten.
-# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in
-# https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
-
-pyexec("""
-def set_forcing_tke_only(state):
-    from veros.core.operators import numpy as npx, update, at
-    from veros import KernelOutput
-
-    vs = state.variables
-    settings = state.settings
-
-    if settings.enable_tke:
-        vs.forc_tke_surface = update(
-            vs.forc_tke_surface,
-            at[1:-1, 1:-1],
-            npx.sqrt(
-                (0.5 * (vs.surface_taux[1:-1, 1:-1] + vs.surface_taux[:-2, 1:-1]) / settings.rho_0) ** 2
-                + (0.5 * (vs.surface_tauy[1:-1, 1:-1] + vs.surface_tauy[1:-1, :-2]) / settings.rho_0) ** 2
-            ) ** 1.5,
-        )
-
-    return KernelOutput(
-        surface_taux=vs.surface_taux,
-        surface_tauy=vs.surface_tauy,
-        forc_tke_surface=vs.forc_tke_surface,
-        forc_temp_surface=vs.forc_temp_surface,
-        forc_salt_surface=vs.forc_salt_surface,
-    )
-
-ocean.set_forcing = set_forcing_tke_only
-""", Main, (ocean=ocean.setup,))
+ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup; backend="jax")
 
 # We force the 4-degree setup with a prescribed atmosphere based on the JRA-55 reanalysis data.
 # This includes 2-meter wind velocity, temperature, humidity, downwelling longwave and shortwave
