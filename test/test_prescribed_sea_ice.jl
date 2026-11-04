@@ -18,12 +18,10 @@ end
 function prescribed_surface_model(arch, concentration)
     grid = surface_grid(arch)
     atmosphere = cold_prescribed_atmosphere(grid)
-    radiation = PrescribedRadiation(grid)
-    parent(radiation.downwelling_longwave) .= 200
     ocean = PrescribedOcean(grid)
     set!(ocean, T = 271.3, S = 34)
     sea_ice = PrescribedSeaIce(grid; concentration)
-    return EarthSystemModel(; atmosphere, radiation, ocean, sea_ice)
+    return EarthSystemModel(; atmosphere, ocean, sea_ice)
 end
 
 @testset "PrescribedSeaIce" begin
@@ -57,7 +55,7 @@ end
             ai_ice = ice_covered.interfaces.atmosphere_sea_ice_interface
             @test all(Array(interior(ai_open.fluxes.sensible_heat)) .== 0)
 
-            # Ice cooled by longwave emission under cold air sits below the ocean surface temperature,
+            # Ice under cold air sits below the ocean surface temperature,
             # so it gives up less sensible heat than the open water does.
             Qᵃⁱ = Array(interior(ai_ice.fluxes.sensible_heat))
             Qᵃᵒ = Array(interior(ice_covered.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat))
@@ -70,14 +68,14 @@ end
 
         @testset "Breeze surface fluxes split by concentration on $A" begin
             for ℵ in (0, 0.5, 1)
-                grid = RectilinearGrid(arch, size = (4, 4, 8), halo = (5, 5, 5),
+                grid = RectilinearGrid(arch, size = (8, 8, 8), halo = (5, 5, 5),
                                        x = (-10kilometers, 10kilometers), y = (-10kilometers, 10kilometers),
                                        z = (0, 10kilometers), topology = (Periodic, Periodic, Bounded))
 
                 atmosphere = atmosphere_simulation(grid; potential_temperature = 260)
                 set!(atmosphere.model, θ = 260, u = 5)
 
-                sgrid = RectilinearGrid(arch, size = (4, 4), halo = (5, 5),
+                sgrid = RectilinearGrid(arch, size = (8, 8), halo = (5, 5),
                                         x = (-10kilometers, 10kilometers), y = (-10kilometers, 10kilometers),
                                         topology = (Periodic, Periodic, Flat))
 
