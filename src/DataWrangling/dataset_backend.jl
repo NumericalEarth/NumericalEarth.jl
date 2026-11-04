@@ -117,22 +117,26 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
 end
 
 """
-    PrefetchingBackend{F} <: AbstractInMemoryBackend{Int}
+    PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
 
 In-memory backend for a dataset `FieldTimeSeries` whose next sliding window is loaded on a background task.
 The `pending` task fills `buffer`, a `FieldTimeSeries` with a `DatasetBackend`, and reloading the window that
 `buffer` holds costs one copy.
 """
-struct PrefetchingBackend{F} <: AbstractInMemoryBackend{Int}
+struct PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
     start :: Int
     length :: Int
+    metadata :: M
     buffer :: F
     pending :: Task
 end
 
+PrefetchingBackend(buffer) = PrefetchingBackend(buffer.backend.start, buffer.backend.length, buffer.backend.metadata,
+                                                buffer, Threads.@spawn set!(buffer))
+
 Base.summary(backend::PrefetchingBackend) = string("PrefetchingBackend(", backend.start, ", ", backend.length, ")")
 
-new_backend(b::PrefetchingBackend, start, length) = PrefetchingBackend(start, length, b.buffer, b.pending)
+new_backend(b::PrefetchingBackend, start, length) = PrefetchingBackend(start, length, b.metadata, b.buffer, b.pending)
 
 Adapt.adapt_structure(to, b::PrefetchingBackend) = Adapt.adapt(to, new_backend(b.buffer.backend, b.start, b.length))
 
@@ -152,7 +156,7 @@ function set!(fts::PrefetchingFieldTimeSeries, backend=fts.backend)
     # The next reload starts at this window's last record
     next_start = time_index(backend, fts.time_indexing, length(fts.times), backend.length)
     buffer.backend = new_backend(buffer.backend, next_start, backend.length)
-    fts.backend = PrefetchingBackend(backend.start, backend.length, buffer, Threads.@spawn set!(buffer))
+    fts.backend = PrefetchingBackend(backend.start, backend.length, backend.metadata, buffer, Threads.@spawn set!(buffer))
 
     return nothing
 end

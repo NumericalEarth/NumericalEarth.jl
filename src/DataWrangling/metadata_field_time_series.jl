@@ -72,10 +72,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
 
-    if prefetch
-        buffer = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
-        backend = PrefetchingBackend(1, time_indices_in_memory, buffer, Threads.@spawn set!(buffer))
-    end
+    prefetch && (backend = PrefetchingBackend(FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)))
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)

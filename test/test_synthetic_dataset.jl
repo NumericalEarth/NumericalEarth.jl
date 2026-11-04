@@ -111,5 +111,8 @@ for arch in test_architectures
             update_field_time_series!(fts, n, mod1(n + 1, Nt))
             @test all(Array(interior(fts[n])) .== n)
         end
+
+        restoring = DatasetRestoring(metadata, arch; rate = 1, inpainting = nothing, prefetch = true)
+        @test contains(sprint(show, restoring), "SyntheticAtmosphere")
     end
 end
