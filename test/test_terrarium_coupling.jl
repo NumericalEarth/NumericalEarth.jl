@@ -94,7 +94,7 @@ end
     @test all(interior(state.surface_shortwave_down) .≈ 400)
     @test all(interior(state.surface_longwave_down) .≈ 320)
 
-    # Upwelling radiation is pushed from the same `α`, `ϵ`, and `Tₛ` as the coupler's budget.
+    # Upwelling radiation is pushed from the same `α`, `ϵ`, and `Tⁱⁿ` as the coupler's budget.
     @test all(interior(state.surface_shortwave_up) .≈ α * 400)
     @test all(interior(state.surface_longwave_up) .≈ interior(radiative.upwelling_longwave))
 

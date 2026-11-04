@@ -146,12 +146,19 @@ end
 function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory = 3)
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
-    window = clamp(time_indices_in_memory, 3, length(times))
+    # Not `clamp`: with fewer than 3 times its lower bound would win over `length(times)`
+    window = min(max(time_indices_in_memory, 3), length(times))
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
                                                       time_indexing = length(times) > 1 ? Cyclical() : Clamp())
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
 end
+
+# The number of time levels `parent_atmosphere` holds in memory (the fewest over the strips of a
+# `BoundaryPrescribedComponent`).
+resident_time_indices(parent_atmosphere::PrescribedAtmosphere) = length(time_indices(parent_atmosphere.temperature))
+resident_time_indices(parent_atmosphere::BoundaryPrescribedComponent) =
+    minimum(resident_time_indices, boundary_strips(parent_atmosphere))
 
 # Fill the derived FTS's resident window with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
@@ -297,13 +304,10 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     window = length(p.ρᵈ.backend)
     start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
 
-    # Advance the parent's own (possibly limited-memory) FTS windows to bracket the child window's LOWER
-    # edge `times[start]`, NOT `time` (= t + Δt). A parent bracketed on t+Δt holds a forward window from
-    # n₁ that EXCLUDES the n₁-1 (= start) level the 3-level child window needs, so on a window-move recompute
-    # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
-    # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
+    # Hold the child window's levels `start:start+window-1` in the parent's own (possibly limited-memory)
+    # FTS windows; they also bracket the parent's clock, which trails `time` by at most one interval.
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(times[start]))
+        update_field_time_series!(fts, start, start + window - 1)
     end
 
     moved = p.ρᵈ.backend.start != start

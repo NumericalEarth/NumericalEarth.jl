@@ -12,6 +12,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
 | `GLO90`            | [Supported variables](@ref dataset-glo90-vars)            | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90) |
 | `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
+| `ORCATwo`          | `:bottom_height`, `:mesh_mask`                            | [ORCA2 domain configuration (Zenodo)](https://zenodo.org/records/15705144)                         |
 | `ORCAQuarter`      | `:bottom_height`, `:mesh_mask`                            | [eORCA025 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15494369)                       |
 | `ORCATwelfth`      | `:bottom_height`, `:mesh_mask`                            | [eORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                        |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
@@ -135,7 +136,7 @@ NumericalEarth currently ships connectors for the following data products:
 - `:sea_level_pressure` - Sea-level pressure (Pa).
 - `:downwelling_shortwave_radiation` - Downward shortwave radiation (W m⁻²).
 - `:downwelling_longwave_radiation` - Downward longwave radiation (W m⁻²).
-- `:rain_freshwater_flux` - Liquid precipitation flux (kg m⁻² s⁻¹).
+- `:rain_freshwater_flux` - Liquid water precipitation flux (kg m⁻² s⁻¹).
 - `:snow_freshwater_flux` - Solid precipitation flux (kg m⁻² s⁻¹).
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).

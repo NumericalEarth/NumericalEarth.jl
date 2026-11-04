@@ -453,7 +453,7 @@ for arch in test_architectures
         end
 
         @testset "Lambert-conformal horizontal composes with the per-column vertical" begin
-            # Without the joint method, Oceananigans' LambertConformalConicGrid method wins and the
+            # Without the joint method, Oceananigans' ConformalConicGrid method wins and the
             # vertical silently reads the column-mean profile.
             Nx, Ny, Nz = 8, 6, 5
             g = 9.80665
@@ -463,11 +463,11 @@ for arch in test_architectures
             # Column i spans 100i to 100i + 1600 m, so the columns vary laterally.
             height(i, k) = 100.0i + 400.0 * (k - 1)
 
-            placeholder = LambertConformalConicGrid(arch, Float64; z = (0, 1), lcc_kw...)
+            placeholder = ConformalConicGrid(arch, Float64; z = (0, 1), lcc_kw...)
             Φ = CenterField(placeholder)
             set!(Φ, [g * height(i, k) for i in 1:Nx, j in 1:Ny, k in 1:Nz])
             plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration = g)
-            grid = LambertConformalConicGrid(arch, Float64; z = plvd, lcc_kw...)
+            grid = ConformalConicGrid(arch, Float64; z = plvd, lcc_kw...)
 
             @test grid isa PressureLevelGrid
             ℓ = (Center(), Center(), Center())
