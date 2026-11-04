@@ -12,8 +12,8 @@ using Oceananigans.Utils: launch!
 using OceanBioME: GasExchange, NutrientsPlanktonDetritus, CompleteBiogeochemistry, DiscreteBiogeochemistry
 using OceanBioME.Models.NutrientsPlanktonDetritusModels.OxygenModels: Oxygen
 using OceanBioME.Models.NutrientsPlanktonDetritusModels.InorganicCarbonModels: AbstractInorganicCarbon
-using OceanBioME.Light: 
-    AbstractPhotosyntheticallyActiveRadiation, 
+using OceanBioME.Light:
+    AbstractPhotosyntheticallyActiveRadiation,
     surface_PAR,
     PARFromShortwave
 

@@ -54,6 +54,11 @@ on rebuild.
 
 ## Notes
 
+- This adapter requests C3S version 2. Its [Product User Guide, section 2.5](https://dast.copernicus-climate.eu/documents/satellite-albedo/D3.3.4-v2.0_PUGS_CDR_SA_MULTI_SENSOR_v2.0_PRODUCTS_v1.2.pdf)
+  describes a trailing 20-day composite ending on the file's nominal date, with prior
+  BRDF estimates also contributing. Consecutive composites overlap, so `window_bounds`
+  rejects them. Monthly climatologies average the composite estimates assigned to each
+  nominal month; they are not exact calendar-month means of the underlying observations.
 - Ocean and unretrieved pixels are `NaN` (no inpainting by default — this is a land dataset).
 - Downloads are global and shared across regions; regional windowing happens at read
   time via the `BoundingBox` machinery.
