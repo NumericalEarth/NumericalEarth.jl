@@ -388,9 +388,10 @@ or overridden directly with `terrain_blend_width`), so the terrain at the open b
 orography the parent state was produced with — and the blend slope stays fixed across resolutions
 rather than steepening. `parent_surface_elevation` replaces the parent's own surface elevation in that blend.
 """
-function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedComponent,
-                                                                                     LiveParentAtmosphere},
-                                                              child_grid;
+function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere,
+                                                                                      BoundaryPrescribedComponent,
+                                                                                      LiveParentAtmosphere},
+                                                             child_grid;
     relaxation_rate = nothing,
     relaxation_width = default_relaxation_width,
     relaxation_mask = boundary_relaxation_mask(child_grid, relaxation_width),
