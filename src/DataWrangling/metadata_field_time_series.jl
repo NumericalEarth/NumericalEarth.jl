@@ -31,7 +31,8 @@ Keyword Arguments
                           Default: `true`.
 
 - `prefetch`: If `true`, the next window is loaded on a background task, so that reloading it costs one copy.
-              Doubles the memory the series holds and needs at least two Julia threads. Default: `false`.
+              Doubles the memory the series holds, needs at least two Julia threads, and is not available
+              on a distributed grid. Default: `false`.
 """
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
     Downloads.download(metadata)

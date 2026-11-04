@@ -1,3 +1,4 @@
+using Oceananigans.DistributedComputations: Distributed
 using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_index, time_indices
 
 import Oceananigans.OutputReaders: new_backend
@@ -131,8 +132,11 @@ struct PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
     pending :: Task
 end
 
-PrefetchingBackend(buffer) = PrefetchingBackend(buffer.backend.start, buffer.backend.length, buffer.backend.metadata,
-                                                buffer, Threads.@spawn set!(buffer))
+function PrefetchingBackend(buffer)
+    architecture(buffer) isa Distributed && throw(ArgumentError("prefetch = true needs a series on a non-distributed grid"))
+    return PrefetchingBackend(buffer.backend.start, buffer.backend.length, buffer.backend.metadata,
+                              buffer, Threads.@spawn set!(buffer))
+end
 
 Base.summary(backend::PrefetchingBackend) = string("PrefetchingBackend(", backend.start, ", ", backend.length, ")")
 
