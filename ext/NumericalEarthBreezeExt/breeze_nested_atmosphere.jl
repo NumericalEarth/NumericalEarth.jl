@@ -38,9 +38,9 @@ using Oceananigans:
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
-using Oceananigans.Fields: AbstractField, interior, interpolate!
-using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget, evaluate_target
-using Oceananigans.Grids: node, znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Fields: AbstractField, ConstantField, interior, interpolate!
+using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
+using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
@@ -211,30 +211,30 @@ Wrap a `Relaxation` so that its local rate `κ = rate * mask` enters the tendenc
 inside the stability region of the Runge-Kutta time steppers for any `rate * Δt`. With `Δt = 0`
 the tendency is the explicit `Relaxation`'s.
 """
-struct StableRelaxation{R, S}
+struct StableRelaxation{R, K, S}
     relaxation :: R
+    local_rate :: K
     step :: S
 end
 
-StableRelaxation(relaxation) = StableRelaxation(relaxation, StepSize())
+StableRelaxation(relaxation) = StableRelaxation(relaxation, nothing, StepSize())
 
-Oceananigans.Forcings.materialize_forcing(f::StableRelaxation, field, name, model_field_names) =
-    StableRelaxation(Oceananigans.Forcings.materialize_forcing(f.relaxation, field, name, model_field_names), f.step)
+# `local_rate` relaxes a unit field toward zero, so it evaluates to `-rate * mask`.
+function Oceananigans.Forcings.materialize_forcing(f::StableRelaxation, field, name, model_field_names)
+    r = Oceananigans.Forcings.materialize_forcing(f.relaxation, field, name, model_field_names)
+    local_rate = Relaxation(r.rate, ConstantField(one(eltype(field))), r.mask, 0, r.location, nothing)
+    return StableRelaxation(r, local_rate, f.step)
+end
 
 Adapt.adapt_structure(to, f::StableRelaxation) =
-    StableRelaxation(Adapt.adapt(to, f.relaxation), step_size(f.step))
+    StableRelaxation(Adapt.adapt(to, f.relaxation), Adapt.adapt(to, f.local_rate), step_size(f.step))
 
 NumericalEarth.NestedModels.set_forcing_time_step!(f::StableRelaxation, Δt) = set_forcing_time_step!(f.step, Δt)
 
 @inline function (f::StableRelaxation)(i, j, k, grid, clock, model_fields)
-    r = f.relaxation
-    X = node(i, j, k, grid, r.location...)
-    ϕ = @inbounds r.relaxed[i, j, k]
-    ϕᵣ = evaluate_target(r.target, i, j, k, X, clock.time)
-    κ = r.rate * r.mask(X...)
+    κ = - f.local_rate(i, j, k, grid, clock, model_fields)
     Δt = convert(typeof(κ), step_size(f.step))
-    κᵉ = κ / sqrt(sqrt(1 + (κ * Δt)^4))
-    return κᵉ * (ϕᵣ - ϕ)
+    return f.relaxation(i, j, k, grid, clock, model_fields) / sqrt(sqrt(1 + (κ * Δt)^4))
 end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
