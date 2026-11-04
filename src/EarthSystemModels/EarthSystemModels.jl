@@ -10,6 +10,7 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     AtmosphereLandModel,
+    atmosphere_radiation,
     BulkHumidity,
     SkinHumidity,
     FractionalHumidity,

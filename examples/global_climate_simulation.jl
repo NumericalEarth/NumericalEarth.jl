@@ -116,10 +116,9 @@ atmosphere.model.initial_conditions
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
-# NumericalEarth still computes turbulent (sensible heat, water vapor) fluxes
-# here using its own bulk-formula machinery and writes them back to Speedy.
-# Top-level radiation, however, is not yet wired up against SpeedyWeather's
-# upwelling-LW path, so we leave `radiation = nothing` for now.
+# NumericalEarth computes the turbulent (sensible heat, water vapor) fluxes using its
+# own bulk-formula machinery and writes them back to Speedy. Speedy computes the radiation:
+# the ocean and sea ice absorb its downwelling and hand back their albedo and upwelling longwave.
 
 earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 

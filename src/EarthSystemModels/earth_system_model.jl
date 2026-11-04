@@ -144,6 +144,14 @@ materialize_earth_system_surface_properties(radiation, interfaces) = radiation
 """
 $(TYPEDSIGNATURES)
 
+Return the radiation component of an `atmosphere` that computes its own radiation, and `nothing`
+for any other atmosphere. It is the radiation of an [`EarthSystemModel`](@ref) given none.
+"""
+atmosphere_radiation(atmosphere; kw...) = nothing
+
+"""
+$(TYPEDSIGNATURES)
+
 Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
 by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
 atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
@@ -181,9 +189,10 @@ for components that are absent. For simpler configurations, see
 Arguments
 ==========
 
-- `radiation`: Radiation component, or `nothing` for a radiatively decoupled surface.
-               Pass a `PrescribedRadiation` (e.g. `JRA55PrescribedRadiation(...)`) to
-               enable radiative forcing.
+- `radiation`: Radiation component. Pass a `PrescribedRadiation` (e.g. `JRA55PrescribedRadiation(...)`)
+               to enable radiative forcing. `nothing` takes the radiation of the `atmosphere`
+               ([`atmosphere_radiation`](@ref)), or leaves the surface radiatively decoupled
+               if the atmosphere has none.
 - `atmosphere`: A representation of a possibly time-dependent atmospheric state, or `nothing`.
                 For a prognostic atmosphere, use `atmosphere_simulation`. For prescribed
                 atmospheric forcing, use `JRA55PrescribedAtmosphere` or `PrescribedAtmosphere`.
@@ -215,6 +224,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
                           interface_kw...) # e.g. `atmosphere_land_interface_state`
+
+    radiation = isnothing(radiation) ? atmosphere_radiation(atmosphere) : radiation
 
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """

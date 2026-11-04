@@ -166,6 +166,7 @@ export
     DatasetRestoring,
     atmosphere_model,
     atmosphere_simulation,
+    atmosphere_radiation,
     land_model,
     land_simulation,
     breeze_prognostic_state,
