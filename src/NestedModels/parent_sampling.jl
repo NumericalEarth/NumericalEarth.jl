@@ -2,9 +2,10 @@
 ##### query_node: the coordinate at which a child samples its parent
 #####
 
+using Oceananigans: instantiated_location
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: instantiated_location, interpolate
+using Oceananigans.Fields: interpolate
 using Oceananigans.Grids: interior_indices, node
 using Oceananigans.Utils: launch!, KernelParameters
 using KernelAbstractions: @kernel, @index
