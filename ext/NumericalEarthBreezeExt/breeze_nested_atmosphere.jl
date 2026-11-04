@@ -98,7 +98,7 @@ default_parent_condensates(::LiveParentAtmosphere) = nothing
 resident_time_indices(::LiveParentAtmosphere) = nothing
 
 NumericalEarth.Grids.surface_elevation(parent::LiveParentAtmosphere) =
-    surface_elevation(Oceananigans.fields(parent).ρu.grid)
+    surface_elevation(first(Oceananigans.fields(parent)).grid)
 
 NumericalEarth.Grids.surface_elevation(coupled_model::EarthSystemModel) =
     surface_elevation(component_model(coupled_model.atmosphere))
