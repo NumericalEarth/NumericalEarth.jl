@@ -53,46 +53,54 @@ mouth is a finite (land/river) cell with at least one `NaN` (ocean) horizontal
 neighbor — i.e. the point where the routed river network meets the coast.
 
 A channel running along the coast makes many such cells, each carrying (nearly) the river's whole
-discharge (68 cells of ~23,700 m³/s in the Mississippi delta, a ninefold excess). So the cells are
-taken largest discharge first, and a cell is dropped when an already kept cell within
-`channel_radius` degrees carries a discharge within a factor `similarity` of its own: the same
-channel reaching the coast again. A small stream beside a large river keeps its own mouth.
+discharge (68 cells of ~23,700 m³/s in the Mississippi delta, a ninefold excess). So a coastal cell
+is a mouth only when no other coastal cell within `channel_radius` degrees carries a larger discharge
+within a factor `similarity` of its own: such a cell is the same channel reaching the coast again.
+A small stream beside a large river keeps its own mouth.
 """
 function coastal_outlet_indices(discharge; similarity = 2, channel_radius = 0.5)
     grid = discharge.grid
     arch = architecture(grid)
 
+    # Half-widths, in cells, of the index window holding every cell within `channel_radius`
+    cpu_grid = on_architecture(CPU(), grid)
+    window_λ = ceil(Int, channel_radius / minimum(abs, diff(λnodes(cpu_grid, Center()))))
+    window_φ = ceil(Int, channel_radius / minimum(abs, diff(φnodes(cpu_grid, Center()))))
+
     outlet = Field{Center, Center, Nothing}(grid, Bool)
-    fill!(outlet, false)
-    launch!(arch, grid, :xy, _mark_coastal_outlets!, outlet, discharge)
+    launch!(arch, grid, :xy, _mark_river_mouths!, outlet, discharge, grid,
+            similarity, channel_radius, window_λ, window_φ)
 
-    outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(Array(interior(outlet))[:, :, 1], grid)
-    Q = Array(interior(discharge))[:, :, 1]
-    keep = one_mouth_per_channel([Q[i, j] for (i, j) in zip(outlet_i, outlet_j)], outlet_λ, outlet_φ;
-                                 similarity, channel_radius)
-
-    return outlet_i[keep], outlet_j[keep], outlet_λ[keep], outlet_φ[keep]
+    return outlet_indices_from_mask(Array(interior(outlet))[:, :, 1], grid)
 end
 
-function one_mouth_per_channel(Q, λ, φ; similarity, channel_radius)
-    order = sortperm(Q; rev = true)
-    kept = Int[]
-    for n in order
-        same_channel = any(kept) do m
-            abs(λ[n] - λ[m]) ≤ channel_radius && abs(φ[n] - φ[m]) ≤ channel_radius && Q[m] ≤ similarity * Q[n]
-        end
-        same_channel || push!(kept, n)
-    end
-    return sort(kept)
-end
+@inline coastal_cell(i, j, discharge) =
+    @inbounds !isnan(discharge[i, j, 1]) & (isnan(discharge[i-1, j, 1]) | isnan(discharge[i+1, j, 1]) |
+                                            isnan(discharge[i, j-1, 1]) | isnan(discharge[i, j+1, 1]))
 
-@kernel function _mark_coastal_outlets!(outlet, discharge)
+@kernel function _mark_river_mouths!(outlet, discharge, grid, similarity, channel_radius, window_λ, window_φ)
     i, j = @index(Global, NTuple)
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    λ = λnode(i, j, 1, grid, Center(), Center(), Center())
+    φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+
     @inbounds begin
-        finite = !isnan(discharge[i, j, 1])
-        ocean_neighbor = isnan(discharge[i-1, j, 1]) | isnan(discharge[i+1, j, 1]) |
-                         isnan(discharge[i, j-1, 1]) | isnan(discharge[i, j+1, 1])
-        outlet[i, j, 1] = finite & ocean_neighbor
+        local_discharge = discharge[i, j, 1]
+        same_channel = false
+
+        for j′ in max(1, j - window_φ):min(Ny, j + window_φ), i′ in max(1, i - window_λ):min(Nx, i + window_λ)
+            nearby_discharge = discharge[i′, j′, 1]
+            nearby = (abs(λnode(i′, j′, 1, grid, Center(), Center(), Center()) - λ) ≤ channel_radius) &
+                     (abs(φnode(i′, j′, 1, grid, Center(), Center(), Center()) - φ) ≤ channel_radius)
+
+            # Equal discharges defer to the lower index, so exactly one of them is kept
+            larger = (nearby_discharge > local_discharge) | ((nearby_discharge == local_discharge) & ((j′, i′) < (j, i)))
+            comparable = nearby_discharge ≤ similarity * local_discharge
+
+            same_channel |= coastal_cell(i′, j′, discharge) & nearby & larger & comparable
+        end
+
+        outlet[i, j, 1] = coastal_cell(i, j, discharge) & !same_channel
     end
 end
 
