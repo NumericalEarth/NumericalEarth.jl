@@ -101,7 +101,7 @@ end
     StepSize(Δt = 0.0)
 
 Host-side holder of the outer time step a step-size-aware forcing (e.g. the Breeze extension's
-`ExponentialRelaxation`) integrates over. `NestedModel`'s `time_step!` writes the step about to be
+`StableRelaxation`) integrates over. `NestedModel`'s `time_step!` writes the step about to be
 taken into every `StepSize` reachable from the child's forcing, through `set_forcing_time_step!`,
 before stepping the child. `Δt = 0` until the first step, which step-size-aware forcings treat as
 the explicit limit.
