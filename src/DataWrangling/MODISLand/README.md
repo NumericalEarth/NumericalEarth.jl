@@ -57,7 +57,7 @@ leaf_area_index = FieldTimeSeries(metadata; time_indices_in_memory = length(meta
 ```
 
 `fill_seasonal_gaps!` with `class_maximum_gap` and `zero_non_vegetated!` fills what
-compositing leaves behind — see their docstrings and `examples/modis_landcover_gap_fill.jl`.
+compositing leaves behind — see their docstrings and `examples/modis_leaf_area_index.jl`.
 
 ## Notes
 
