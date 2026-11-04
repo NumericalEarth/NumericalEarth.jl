@@ -307,6 +307,88 @@ jobs:
   ##### The final test (a final check)
   #####
 
+  # The gradient of a nested Breeze model through one compiled hour (test/reactant/test_reactant_nested_gradient.jl),
+  # which needs a GPU. Not among `ci`'s requirements while it is new.
+  reactant_gpu:
+    name: Reactant extension (GPU) - nested gradient
+    runs-on: aws-linux-nvidia-gpu-l4
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
+      options: --gpus=all
+      volumes:
+        - /opt:/host-opt
+        - /usr/local:/host-usr-local
+    timeout-minutes: 180
+    env:
+      GPU_TEST: "true"
+      TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Copy LocalPreferences
+        # The image's CUDA builds of Reactant_jll and CUDA_Runtime_jll, which test/reactant lists in [extras]
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/reactant/.
+      - name: Clean up space on host device
+        run: |
+          rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
+      - name: Run the nested gradient test
+        timeout-minutes: 150
+        # -O1: the traced Julia methods run once to emit the program, so optimizing them at the default
+        # -O2 only slows the compile (at -O2 the runner was lost two hours into `initialize!`)
+        shell: bash
+        run: |
+          mkdir -p mlir_dumps
+          julia --project=test/reactant --color=yes --check-bounds=auto -O1 -e '
+              using Pkg
+              # Pinned to the latest Reactant release for this job only
+              Pkg.add(name = "Reactant", version = "0.2.304")
+              Pkg.instantiate()
+              Pkg.status(["Reactant", "Reactant_jll"]; mode = Pkg.PKGMODE_MANIFEST)
+              # Every module before and after each pass pipeline, to see where a compile stops
+              using Reactant
+              Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(pwd(), "mlir_dumps")
+              Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+              include("test/reactant/test_reactant_nested_gradient.jl")
+          ' &
+          julia_pid=$!
+          # Every minute, the host memory, Julia's resident memory and the newest dump, so the log shows where
+          # the run is when it stalls. Under 2 GiB available it kills Julia, so the step fails and the dumps
+          # upload, instead of the host starving the runner (which loses the job and everything in it)
+          (
+            while kill -0 ${julia_pid} 2> /dev/null; do
+              sleep 60
+              avail=$(awk '/MemAvailable/ {print int($2 / 1024)}' /proc/meminfo)
+              rss=$(awk '/VmRSS/ {print int($2 / 1024)}' /proc/${julia_pid}/status 2> /dev/null)
+              newest=$(ls -t mlir_dumps | head -1)
+              echo "[monitor $(date -u +%H:%M:%S)] ${avail} MiB available, Julia at ${rss:-?} MiB;" \
+                   "$(ls mlir_dumps | wc -l) dumps ($(du -sh mlir_dumps | cut -f1)), newest ${newest:-none}"
+              if [ "${avail}" -lt 2048 ]; then
+                echo "[monitor] under 2 GiB available: killing Julia"
+                kill -9 ${julia_pid}
+              fi
+            done
+          ) &
+          wait ${julia_pid}
+      - name: Upload the MLIR dumps
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nested-gradient-mlir-dumps
+          path: mlir_dumps
+          if-no-files-found: ignore
+          retention-days: 7
+
   ci:
     name: CI
     needs:
