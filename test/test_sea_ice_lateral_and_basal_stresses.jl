@@ -1,5 +1,6 @@
 include("runtests_setup.jl")
 
+using NumericalEarth.EarthSystemModels: surface_layer_velocities
 using NumericalEarth.SeaIces: LandfastBasalStress, sea_ice_dynamics, sea_ice_simulation,
                               sea_ice_velocity_boundary_conditions
 
@@ -61,4 +62,15 @@ end
 
     @test u_lateral_boundary_condition(u.boundary_conditions.immersed) isa NoSlip
     @test v_lateral_boundary_condition(v.boundary_conditions.immersed) isa NoSlip
+end
+
+@testset "Ice-ocean drag reads the velocity averaged over the reference depth" begin
+    grid = RectilinearGrid(size = (8, 8, 8), halo = (7, 7, 7), x = (0, 8e4), y = (0, 8e4), z = (-40, 0),
+                           topology = (Bounded, Bounded, Bounded))   # 5 m cells
+    ocean = ocean_simulation(grid; coriolis = nothing)
+    set!(ocean.model, u = (x, y, z) -> -z)
+    uˢˡ, _ = surface_layer_velocities(ocean, 6)
+
+    # top 6 m: 5 m of the cell centred at 2.5 m and 1 m of the cell centred at 7.5 m
+    @test all(interior(uˢˡ, 2:grid.Nx, :, 1) .≈ (5 * 2.5 + 1 * 7.5) / 6)
 end
