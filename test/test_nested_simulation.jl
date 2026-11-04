@@ -738,6 +738,35 @@ end
     @test time_discretization.sponge isa UpperSponge
 end
 
+# ρw is damped implicitly in the acoustic solve (lid layer + lateral relaxation zone) rather than by an
+# explicit `Relaxation`, which would cap Δt at ≈2.5 / damping_rate (12.5 s at the default 1/5 s⁻¹).
+@testset "Breeze nested_atmosphere_model damps ρw implicitly over the lid and the lateral zone" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                        longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                        z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, collect(0.0:1.0:2.0))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (16, 16, 8),
+                                       longitude = (-1, 1), latitude = (-1, 1), z = (0, 8000),
+                                       halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    nested = nested_atmosphere_model(parent, child_grid; relaxation_rate = 1/300, relaxation_width = 3,
+                                     parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    child = nested.child
+    @test !(child.forcing.ρw isa Oceananigans.Forcings.Relaxation)
+
+    γ = Array(interior(child.timestepper.substepper.sponge.damping_profile))
+    @test maximum(γ) ≈ 1/5
+    @test γ[1, 8, 1] > 0.1 * 1/5 # the wall column is damped all the way down
+    @test γ[8, 8, 1] == 0      # the interior is undamped below the lid layer
+    @test γ[8, 8, end] ≈ 1/5   # and fully damped at the lid
+end
+
 # The lateral boundary relaxation is keyed by the density-weighted prognostic, so a caller's own specific-key
 # forcing combines with it rather than replacing it.
 @testset "Lateral boundary relaxation survives a caller-supplied specific forcing" begin
