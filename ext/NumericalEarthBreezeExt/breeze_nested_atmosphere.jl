@@ -21,7 +21,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent
+                                   VectorComponent, StepSize, step_size, set_forcing_time_step!
 
 using Oceananigans:
     Oceananigans,
@@ -39,8 +39,8 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
-using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
-using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget, evaluate_target
+using Oceananigans.Grids: node, znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
@@ -50,6 +50,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: KernelParameters
 using Oceananigans.Simulations: Callback
 
+using Adapt: Adapt
 using GPUArraysCore: @allowscalar
 
 using Breeze:
@@ -196,6 +197,46 @@ end
 boundary_relaxation_mask(grid::OrthogonalSphericalShellGrid, width; ramp = SmoothStepRamp()) =
     throw(ArgumentError("boundary_relaxation_mask requires a ConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
 
+
+#####
+##### Relaxation stable at any rate * Δt
+#####
+
+"""
+    StableRelaxation(relaxation::Relaxation, step = StepSize())
+
+Wrap a `Relaxation` so that its local rate `κ = rate * mask` enters the tendency as
+`κ / (1 + (κ Δt)⁴)^¼`, where `Δt` is the outer step held by `step` (set by `NestedModel`'s
+`time_step!`). The rate is unchanged to `O((κ Δt)⁴)` and the effective `κ Δt` never exceeds 1,
+inside the stability region of the Runge-Kutta time steppers for any `rate * Δt`. With `Δt = 0`
+the tendency is the explicit `Relaxation`'s.
+"""
+struct StableRelaxation{R, S}
+    relaxation :: R
+    step :: S
+end
+
+StableRelaxation(relaxation) = StableRelaxation(relaxation, StepSize())
+
+Oceananigans.Forcings.materialize_forcing(f::StableRelaxation, field, name, model_field_names) =
+    StableRelaxation(Oceananigans.Forcings.materialize_forcing(f.relaxation, field, name, model_field_names), f.step)
+
+Adapt.adapt_structure(to, f::StableRelaxation) =
+    StableRelaxation(Adapt.adapt(to, f.relaxation), step_size(f.step))
+
+NumericalEarth.NestedModels.set_forcing_time_step!(f::StableRelaxation, Δt) = set_forcing_time_step!(f.step, Δt)
+
+@inline function (f::StableRelaxation)(i, j, k, grid, clock, model_fields)
+    r = f.relaxation
+    X = node(i, j, k, grid, r.location...)
+    ϕ = @inbounds r.relaxed[i, j, k]
+    ϕᵣ = evaluate_target(r.target, i, j, k, X, clock.time)
+    κ = r.rate * r.mask(X...)
+    Δt = convert(typeof(κ), step_size(f.step))
+    κᵉ = κ / sqrt(sqrt(1 + (κ * Δt)^4))
+    return κᵉ * (ϕᵣ - ϕ)
+end
+
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
 # indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
@@ -310,7 +351,7 @@ Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
 `dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate`; a matching ρw Rayleigh
-lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
+lid sponge (an `StableRelaxation` toward zero, stable for any `damping_rate * Δt`) is added to `forcing`. Pass
 `base_pressure`/`reference_potential_temperature` to anchor the default dynamics, and
 `time_discretization_kwargs` to set options of its `SplitExplicitTimeDiscretization`, e.g.
 `(; damping = ThermalDivergenceDamping())` (default: no divergence damping). Any
@@ -454,7 +495,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # on `ρw` with the pointwise max of the lid and lateral boundary relaxation masks.
     lid_mask = lid_sponge_mask(child_grid, damping_depth)
     sponge_mask = (λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))
-    lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = sponge_mask))
+    lid_sponge = (; ρw = StableRelaxation(Relaxation(rate = damping_rate, mask = sponge_mask)))
 
     # initialize = false: the resting-state construction default would survive into
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full

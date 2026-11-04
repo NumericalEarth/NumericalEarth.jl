@@ -1236,3 +1236,29 @@ end
     @test parent.clock.time == nested.child.clock.time == 4
 end
 
+@testset "StableRelaxation is stable for any rate * Δt on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    set_forcing_time_step! = NumericalEarth.NestedModels.set_forcing_time_step!
+    grid = RectilinearGrid(arch, size = (4, 4, 4), extent = (1, 1, 1))
+    rate = 1/5
+
+    function decay(forcing, Δt, Nt)
+        model = NonhydrostaticModel(grid; timestepper = :RungeKutta3, tracers = :c, forcing = (; c = forcing))
+        set!(model, c = 1)
+        set_forcing_time_step!(model.forcing, Δt)
+        for _ in 1:Nt
+            time_step!(model, Δt)
+        end
+        return maximum(abs, interior(model.tracers.c))
+    end
+
+    # rate * Δt = 0.01: matches the explicit Relaxation and exp(-rate t).
+    explicit = decay(Relaxation(; rate), 0.05, 100)
+    stable = decay(ext.StableRelaxation(Relaxation(; rate)), 0.05, 100)
+    @test stable ≈ explicit rtol = 1e-4
+    @test stable ≈ exp(-rate * 5) rtol = 1e-4
+
+    # rate * Δt = 10: explicit RK3 amplifies, the limited rate decays.
+    @test decay(Relaxation(; rate), 50, 5) > 1
+    @test decay(ext.StableRelaxation(Relaxation(; rate)), 50, 5) < exp(-1)
+end
