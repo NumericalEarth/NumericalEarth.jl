@@ -1,3 +1,21 @@
+using Oceananigans.Grids: nodes
+
+same_nodes(::Nothing, ::Nothing) = true
+same_nodes(nodes₁, nodes₂) = size(nodes₁) == size(nodes₂) && nodes₁ ≈ nodes₂
+
+function same_horizontal_grid(grid₁, grid₂)
+    topology(grid₁)[1:2] == topology(grid₂)[1:2] || return false
+    x₁, y₁, _ = nodes(on_architecture(CPU(), grid₁), (Face(), Face(), Center()))
+    x₂, y₂, _ = nodes(on_architecture(CPU(), grid₂), (Face(), Face(), Center()))
+    return same_nodes(x₁, x₂) && same_nodes(y₁, y₂)
+end
+
+function validate_exchange_grid(component_name, component_grid, exchange_grid)
+    same_horizontal_grid(component_grid, exchange_grid) ||
+        throw(ArgumentError("the $component_name must share the horizontal grid of the exchange grid"))
+    return nothing
+end
+
 """
     ComponentExchanger(component, exchange_grid)
 
@@ -17,9 +35,20 @@ struct ComponentExchanger{S, EX, C}
     correction :: C
 end
 
-# Two-arg convenience: defaults the correction to nothing so existing per-component
-# `ComponentExchanger(state, regridder)` returns work unchanged.
-ComponentExchanger(state, regridder) = ComponentExchanger(state, regridder, nothing)
+ComponentExchanger(state::NamedTuple, regridder) = ComponentExchanger(state, regridder, nothing)
+
+function ComponentExchanger(component, exchange_grid; correction = nothing, kw...)
+    model = component_model(component)
+    validate_exchange_grid(nameof(typeof(model)), Oceananigans.Grids.grid(model), exchange_grid)
+    correction = materialize_correction(correction, exchange_grid, model)
+    return ComponentExchanger(surface_state(model; kw...), nothing, correction)
+end
+
+function EarthSystemModels.interpolate_state!(exchanger, exchange_grid, component, coupled_model)
+    isnothing(exchanger) && return nothing
+    update_surface_state!(exchanger.state, component_model(component))
+    return nothing
+end
 
 """
     StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;

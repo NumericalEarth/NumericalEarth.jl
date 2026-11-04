@@ -29,7 +29,7 @@ similar_surface_field(grid, ::FTS0) = Field{Nothing, Nothing, Nothing}(grid)
 function atmosphere_regridder(atmosphere::PrescribedAtmosphere, exchange_grid)
     # Note: we could use an array of FractionalIndices. Instead, for compatbility
     # with Reactant we construct FractionalIndices on the fly in `interpolate_atmospheric_state`.
-    FT = eltype(atmosphere.grid)
+    FT = eltype(Grids.grid(atmosphere))
     fi, fj = fractional_index_fields(exchange_grid, FT, Center(), Center())
 
     # Each tracer is interpolated from its own grid and location
@@ -52,7 +52,7 @@ function EarthSystemModels.InterfaceComputations.initialize!(exchanger::Componen
     arch = architecture(grid)
     frac_indices = exchanger.regridder
     kernel_parameters = interface_kernel_parameters(grid)
-    launch!(arch, grid, kernel_parameters, _compute_fractional_indices!, frac_indices, grid, atmosphere.grid, Center(), Center())
+    launch!(arch, grid, kernel_parameters, _compute_fractional_indices!, frac_indices, grid, Grids.grid(atmosphere), Center(), Center())
 
     for (name, tracer) in pairs(atmosphere.tracers)
         tracer_indices = frac_indices.tracers[name]

@@ -1,6 +1,6 @@
 using Oceananigans.Fields: ZeroField
 
-using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration, intercepted_snowfall
+using ..EarthSystemModels: NoAtmosInterfaceModel, sea_ice_concentration, intercepted_snowfall
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
@@ -10,16 +10,10 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 ##### Radiative contributions are added later by `apply_air_sea_radiative_fluxes!`.
 #####
 
-# Fallback for an ocean-only model (it has no interfaces!)
-EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
-
-function EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations)
-    update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
-    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.model.biogeochemistry, ocean, ocean.model.grid)
-    return nothing
-end
-
 update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry, ocean, grid) = nothing
+update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean) = nothing
+update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
+    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.model.biogeochemistry, ocean, Grids.grid(ocean))
 
 rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data
@@ -37,13 +31,19 @@ land_freshwater_flux(::Nothing, name) = ZeroField()
     return hasproperty(state, name) ? getproperty(state, name).data : ZeroField()
 end
 
-function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
+function EarthSystemModels.assemble_net_ocean_fluxes!(coupled_model)
+    interfaces = coupled_model.interfaces
+    net_ocean_fluxes = interfaces.net_fluxes.ocean
+    isnothing(net_ocean_fluxes) && return nothing
+    isnothing(interfaces.atmosphere_ocean_interface) && isnothing(interfaces.sea_ice_ocean_interface) && return nothing
+
+    ocean_model = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
+    grid = Grids.grid(ocean_model)
     arch = architecture(grid)
     clock = coupled_model.clock
 
-    net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
-    sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
+    sea_ice_ocean_fluxes = computed_fluxes(interfaces.sea_ice_ocean_interface)
 
     atmos_ocean_fluxes = atmos_ocean_flux(coupled_model)
     rainfall = rainfall_flux(coupled_model)
@@ -77,6 +77,8 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     if grid isa MutableGridOfSomeKind
         fill_halo_regions!(net_ocean_fluxes.η)
     end
+
+    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean_model)
 
     return nothing
 end

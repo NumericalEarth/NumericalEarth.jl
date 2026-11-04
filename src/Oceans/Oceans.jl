@@ -36,11 +36,11 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
-                           ocean_surface_salinity,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters,
+                                                 validate_exchange_grid
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -85,17 +85,17 @@ EarthSystemModels.ocean_salinity(ocean::OceananigansModelSimulations)    = ocean
 EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = ocean.model.tracers.T
 
 function EarthSystemModels.ocean_surface_salinity(ocean::OceananigansModelSimulations)
-    kᴺ = size(ocean.model.grid, 3)
+    kᴺ = size(Grids.grid(ocean), 3)
     return view(ocean.model.tracers.S.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_temperature(ocean::OceananigansModelSimulations)
-    kᴺ = size(ocean.model.grid, 3)
+    kᴺ = size(Grids.grid(ocean), 3)
     return view(ocean.model.tracers.T.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimulations)
-    kᴺ = size(ocean.model.grid, 3)
+    kᴺ = size(Grids.grid(ocean), 3)
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
 end
 
@@ -104,48 +104,35 @@ end
     @inbounds Tᵉˣ[i, j, 1] = θ_from_Θ(max(0, Sᵒᶜ[i, j, kᴺ]), Tᵒᶜ[i, j, kᴺ])
 end
 
-function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model)
-    Tᵉˣ = exchanger.state.T
-    Tᵒᶜ = ocean.model.tracers.T
-    Sᵒᶜ = ocean.model.tracers.S
-    kᴺ = size(ocean.model.grid, 3)
-    arch = architecture(ocean.model.grid)
+function EarthSystemModels.update_surface_state!(state, model::HydrostaticFreeSurfaceModel)
+    grid = Grids.grid(model)
+    kᴺ = size(grid, 3)
     # Over the halo columns too, which the interface flux kernels visit: the ocean's own tracer
-    # halos are already filled, so this needs no separate fill of `Tᵉˣ`.
-    launch!(arch, grid, interface_kernel_parameters(grid), _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    # halos are already filled, so this needs no separate fill of `T`.
+    launch!(architecture(grid), grid, interface_kernel_parameters(grid), _ocean_state_to_potential_temperature!,
+            state.T, model.tracers.T, model.tracers.S, kᴺ)
     return nothing
 end
 
-EarthSystemModels.interpolate_state!(exchanger, grid, ::OceananigansModelSimulations, coupled_model) = nothing
-
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::OceananigansModelSimulations, grid)
-    ocean_grid = ocean.model.grid
-
-    if ocean_grid == grid
-        u = ocean.model.velocities.u
-        v = ocean.model.velocities.v
-        S = ocean.model.tracers.S
-    else
-        u = Field{Center, Center, Nothing}(grid)
-        v = Field{Center, Center, Nothing}(grid)
-        S = Field{Center, Center, Nothing}(grid)
-    end
-
+function EarthSystemModels.surface_state(model::OceananigansModels)
+    grid = Grids.grid(model)
+    u = model.velocities.u
+    v = model.velocities.v
+    S = model.tracers.S
     T = Field{Center, Center, Nothing}(grid)
 
     # Near-surface vertical tracer diffusivity, evaluated lazily inside the
     # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
-    model = ocean.model
     temperature_index = findfirst(name -> name === :T, collect(keys(model.tracers)))
     κ = KernelFunctionOperation{Center, Center, Nothing}(Σκzᴺ,
-                                                         ocean_grid,
+                                                         grid,
                                                          model.closure,
                                                          model.closure_fields,
                                                          Val(temperature_index),
                                                          model.clock,
                                                          Oceananigans.fields(model))
 
-    return ComponentExchanger((; u, v, T, S, κ), nothing)
+    return (; u, v, T, S, κ)
 end
 
 #####
@@ -195,20 +182,19 @@ end
 @inline net_flux_coefficient(condition) = nothing
 @inline net_flux_coefficient(bc::IMEXFlux) = net_flux(bc.implicit_coefficient)
 
-function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
-    # TODO: Generalize this to work with any ocean model
-    u_top = ocean.model.velocities.u.boundary_conditions.top.condition
-    v_top = ocean.model.velocities.v.boundary_conditions.top.condition
+function EarthSystemModels.InterfaceComputations.net_fluxes(model::OceananigansModels)
+    u_top = model.velocities.u.boundary_conditions.top.condition
+    v_top = model.velocities.v.boundary_conditions.top.condition
     net_ocean_surface_fluxes = (; u = net_flux(u_top),
                                   v = net_flux(v_top),
                                   u_coefficient = net_flux_coefficient(u_top),
                                   v_coefficient = net_flux_coefficient(v_top))
 
-    tracers = ocean.model.tracers
+    tracers = model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
 
-    freshwater_volume_flux = extract_freshwater_flux(ocean.model.tracers.S.boundary_conditions.top.condition)
-    heat_exchange = freshwater_exchange(ocean.model.tracers.T.boundary_conditions.top.condition)
+    freshwater_volume_flux = extract_freshwater_flux(tracers.S.boundary_conditions.top.condition)
+    heat_exchange = freshwater_exchange(tracers.T.boundary_conditions.top.condition)
 
     fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes,
                    (; η = freshwater_volume_flux,

@@ -80,7 +80,10 @@ using ..EarthSystemModels: EarthSystemModels,
                            thermodynamics_parameters,
                            molmass_dryair,
                            surface_layer_height,
-                           boundary_layer_height
+                           boundary_layer_height,
+                           component_model,
+                           surface_state,
+                           update_surface_state!
 
 using ...NumericalEarth: NumericalEarth, stateindex
 
@@ -89,6 +92,7 @@ using ...NumericalEarth: NumericalEarth, stateindex
 #####
 
 net_fluxes(::Nothing) = nothing
+net_fluxes(simulation::Simulation) = net_fluxes(simulation.model)
 
 #####
 ##### Radiation hooks: declared here so the turbulent flux kernels can

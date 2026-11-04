@@ -2,7 +2,7 @@ using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
 using Oceananigans.Grids: znode
 using Oceananigans.Operators: Δzᶜᶜᶜ
 
-using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
+using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface, ocean_salinity, ocean_temperature
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations
 
 #####
@@ -29,7 +29,7 @@ FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; li
 const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
 
 function EarthSystemModels.materialize_sea_ice!(sea_ice::FreezingLimitedOceanTemperature, ocean)
-    frazil_heat = Field{Center, Center, Nothing}(ocean.model.grid)
+    frazil_heat = Field{Center, Center, Nothing}(Grids.grid(ocean))
     return FreezingLimitedOceanTemperature(sea_ice.liquidus, frazil_heat)
 end
 
@@ -38,7 +38,6 @@ EarthSystemModels.materialize_sea_ice!(sea_ice::FreezingLimitedOceanTemperature,
 # Extend interface methods to work with a `FreezingLimitedOceanTemperature`
 EarthSystemModels.sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
 EarthSystemModels.sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
-EarthSystemModels.intercepted_snowfall(::FreezingLimitedOceanTemperature) = ZeroField()
 
 # does not matter
 EarthSystemModels.reference_density(::FreezingLimitedOceanTemperature) = 0
@@ -60,13 +59,6 @@ InterfaceComputations.sea_ice_ocean_interface(grid, ::FreezingLimitedOceanTemper
 
 InterfaceComputations.net_fluxes(::FreezingLimitedOceanTemperature) = nothing
 
-const OnlyOceanwithFreezingLimited      = EarthSystemModel{<:Any, <:Nothing, <:Any, <:FreezingLimitedOceanTemperature, <:Any}
-const OnlyAtmospherewithFreezingLimited = EarthSystemModel{<:Any, <:Any,     <:Any, <:FreezingLimitedOceanTemperature, <:Nothing}
-const SingleComponentPlusFreezingLimited = Union{OnlyAtmospherewithFreezingLimited, OnlyOceanwithFreezingLimited}
-
-# Also for the ocean nothing really happens here
-EarthSystemModels.update_net_fluxes!(::SingleComponentPlusFreezingLimited, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
-
 # No need to compute fluxes for this "sea ice model"
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(cm::FreezingLimitedEarthSystemModel) = nothing
 
@@ -76,19 +68,16 @@ function InterfaceComputations.compute_sea_ice_ocean_fluxes!(cm::FreezingLimited
     sea_ice = cm.sea_ice
     liquidus = sea_ice.liquidus
     𝒬ᶠʳᶻ = sea_ice.frazil_heat
-    grid = ocean.model.grid
+    grid = Grids.grid(ocean)
     arch = architecture(grid)
-    Sᵒᶜ = ocean.model.tracers.S
-    Tᵒᶜ = ocean.model.tracers.T
-    Δt = ocean.Δt
+    Sᵒᶜ = ocean_salinity(ocean)
+    Tᵒᶜ = ocean_temperature(ocean)
     ocean_properties = cm.interfaces.ocean_properties
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
 
-    # Guard for ocean.model.clock.iteration == 0
-    Δt_frazil = ifelse(ocean.model.clock.iteration == 0, convert(typeof(Δt), Inf), Δt)
-
-    launch!(arch, grid, :xy, _freeze_ocean_temperature!, 𝒬ᶠʳᶻ, Tᵒᶜ, Sᵒᶜ, liquidus, grid, ρᵒᶜ, cᵒᶜ, Δt_frazil)
+    # The clock's last time step is infinite until the model has stepped
+    launch!(arch, grid, :xy, _freeze_ocean_temperature!, 𝒬ᶠʳᶻ, Tᵒᶜ, Sᵒᶜ, liquidus, grid, ρᵒᶜ, cᵒᶜ, cm.clock.last_Δt)
 
     return nothing
 end

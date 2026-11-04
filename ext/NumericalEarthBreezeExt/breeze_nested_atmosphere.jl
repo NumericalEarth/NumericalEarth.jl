@@ -134,7 +134,7 @@ end
 end
 
 function relax_boundary_strips!(model, strips)
-    grid = model.grid
+    grid = Oceananigans.Grids.grid(model)
     arch = architecture(grid)
     model_fields = Oceananigans.fields(model)
     for strip in strips, name in keys(strip.forcings)

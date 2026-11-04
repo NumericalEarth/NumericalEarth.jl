@@ -192,9 +192,9 @@ end
 end
 
 function update_diagnostics!(h::VariablySaturatedHydrology, land)
-    arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _variably_saturated_saturation!,
-            land.saturation, land.water_storage, h, land.grid)
+    arch = architecture(Grids.grid(land))
+    launch!(arch, Grids.grid(land), :xy, _variably_saturated_saturation!,
+            land.saturation, land.water_storage, h, Grids.grid(land))
     return nothing
 end
 
@@ -253,8 +253,8 @@ end
 
 function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
                     liquid_input = land.fluxes.liquid_water_precipitation_flux)
-    arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _variably_saturated_step!,
+    arch = architecture(Grids.grid(land))
+    launch!(arch, Grids.grid(land), :xy, _variably_saturated_step!,
             land.water_storage, land.saturation,
             land.diagnostics.deep_liquid_water_flux,
             land.diagnostics.surface_liquid_water_flux,
@@ -265,7 +265,7 @@ function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
             liquid_input,
             land.temperature,
             land.prognostic,
-            h, h.deep_pressure_head, Δt, land.grid, time)
+            h, h.deep_pressure_head, Δt, Grids.grid(land), time)
     return nothing
 end
 

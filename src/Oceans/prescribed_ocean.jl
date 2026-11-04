@@ -116,8 +116,8 @@ function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
 end
 
 function Base.summary(ocean::PrescribedOcean{FT}) where FT
-    A = nameof(typeof(architecture(ocean.grid)))
-    G = nameof(typeof(ocean.grid))
+    A = nameof(typeof(architecture(Grids.grid(ocean))))
+    G = nameof(typeof(Grids.grid(ocean)))
     Nt = length(ocean.times)
     return string("PrescribedOcean{$FT, $A, $G}",
                   "(Nt = ", Nt, ")")
@@ -125,7 +125,7 @@ end
 
 function Base.show(io::IO, ocean::PrescribedOcean)
     print(io, summary(ocean), "\n",
-          "├── grid: ", summary(ocean.grid), "\n",
+          "├── grid: ", summary(Grids.grid(ocean)), "\n",
           "├── times: ", prettysummary(ocean.times), "\n",
           "├── density: ", prettysummary(ocean.density), "\n",
           "└── heat_capacity: ", prettysummary(ocean.heat_capacity))
@@ -143,7 +143,7 @@ function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where 
     new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
     isnothing(new_clock) && return ocean
     EarthSystemModels.warn_clock_coercion(ocean, new_clock)
-    return PrescribedOcean{FT}(ocean.grid,
+    return PrescribedOcean{FT}(Grids.grid(ocean),
                                new_clock,
                                ocean.sea_surface_temperature,
                                ocean.sea_surface_salinity,
@@ -168,7 +168,8 @@ EarthSystemModels.ocean_surface_velocities(ocean::PrescribedOcean) = ocean.veloc
 #####
 
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
-    grid = ocean.grid
+    grid = Grids.grid(ocean)
+    validate_exchange_grid("prescribed ocean", grid, exchange_grid)
     T = CenterField(grid)
     S = CenterField(grid)
     u = CenterField(grid)
@@ -195,7 +196,7 @@ function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
     Sᵒ = ocean.sea_surface_salinity
     uᵒ, vᵒ = ocean.velocities
 
-    grid = ocean.grid
+    grid = Grids.grid(ocean)
     arch = architecture(grid)
     t = ocean.clock.time
     interpolator(fts) = cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t)
@@ -217,9 +218,6 @@ end
         v[i, j, 1] = vᵒ[i, j, 1, τv]
     end
 end
-
-# A prescribed ocean follows its data rather than responding to fluxes, so net flux assembly is not needed.
-EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
 
 #####
 ##### Time stepping — update FieldTimeSeries backends, tick the clock

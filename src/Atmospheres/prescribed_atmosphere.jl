@@ -32,24 +32,26 @@ function horizontal_domain_summary(grid::LatitudeLongitudeGrid)
                   "], φ ∈ [", prettysummary(φ₁), ", ", prettysummary(φ₂), "]")
 end
 
+Grids.grid(atmos::PrescribedAtmosphere) = atmos.grid
+
 function Base.summary(atmos::PrescribedAtmosphere{<:Any, FT}) where FT
-    Nx, Ny, Nz = size(atmos.grid)
+    Nx, Ny, Nz = size(Grids.grid(atmos))
     Nt = length(atmos.times)
     sz_str = string(Nx, "×", Ny, "×", Nz, "×", Nt)
-    domain = horizontal_domain_summary(atmos.grid)
+    domain = horizontal_domain_summary(Grids.grid(atmos))
     suffix = isempty(domain) ? "" : string(" (", domain, ")")
     return string(sz_str, " PrescribedAtmosphere{$FT}", suffix)
 end
 
 function Base.show(io::IO, atmos::PrescribedAtmosphere)
-    print(io, summary(atmos), " on ", grid_name(atmos.grid), ":", '\n')
+    print(io, summary(atmos), " on ", grid_name(Grids.grid(atmos)), ":", '\n')
     print(io, "├── times: ", prettysummary(atmos.times), '\n')
     print(io, "├── surface_layer_height: ", prettysummary(atmos.surface_layer_height), '\n')
     print(io, "└── boundary_layer_height: ", prettysummary(atmos.boundary_layer_height))
 end
 
 NumericalEarth.Grids.surface_elevation(atmos::PrescribedAtmosphere) =
-    NumericalEarth.Grids.surface_elevation(atmos.grid)
+    NumericalEarth.Grids.surface_elevation(Grids.grid(atmos))
 
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
@@ -160,7 +162,7 @@ end
     end
 
     # A no-op unless the grid's vertical is a time-varying geopotential.
-    NumericalEarth.Grids.materialize_geopotential!(atmos.grid)
+    NumericalEarth.Grids.materialize_geopotential!(Grids.grid(atmos))
 
     return nothing
 end
@@ -177,9 +179,6 @@ end
 @inline EarthSystemModels.thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
 @inline EarthSystemModels.surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
 @inline EarthSystemModels.boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
-
-# No need to compute anything here...
-EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
 EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmos, clock)
 

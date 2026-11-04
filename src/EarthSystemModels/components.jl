@@ -21,7 +21,9 @@ const celsius_to_kelvin = 273.15
 # Default: build the exchange grid from the ocean. When the model has no
 # ocean / sea ice, fall back to the land grid (used by AtmosphereLandModel).
 exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = grid(ocean)
-exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
+exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = grid(land)
+
+Oceananigans.Grids.grid(simulation::Simulation) = grid(simulation.model)
 
 # Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
 # `nothing` leaves the field untouched.
@@ -39,11 +41,16 @@ end
 
 reference_density(::Nothing) = 0
 heat_capacity(::Nothing) = 0
-ocean_temperature(ocean) = ZeroField()
-ocean_salinity(ocean) = ZeroField()
-ocean_surface_temperature(ocean) = ZeroField()
-ocean_surface_salinity(ocean) = ZeroField()
-ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
+temperature_units(ocean) = DegreesCelsius()
+ocean_surface_temperature(ocean) = surface_state(component_model(ocean)).T
+ocean_surface_salinity(ocean) = surface_state(component_model(ocean)).S
+ocean_temperature(ocean) = ocean_surface_temperature(ocean)
+ocean_salinity(ocean) = ocean_surface_salinity(ocean)
+
+function ocean_surface_velocities(ocean)
+    state = surface_state(component_model(ocean))
+    return state.u, state.v
+end
 
 """
 $(TYPEDSIGNATURES)
@@ -52,16 +59,20 @@ Ocean velocities averaged over the top `reference_depth` meters, the reference v
 `reference_depth = nothing` returns [`ocean_surface_velocities`](@ref).
 """
 surface_layer_velocities(ocean, reference_depth) = ocean_surface_velocities(ocean)
-temperature_units(ocean) = DegreesCelsius()
 
 #####
 ##### Functions extended by sea-ice models
 #####
 
+sea_ice_thickness(sea_ice) = surface_state(component_model(sea_ice)).hi
 sea_ice_thickness(::Nothing) = ZeroField()
+sea_ice_concentration(sea_ice) = surface_state(component_model(sea_ice)).ℵ
 sea_ice_concentration(::Nothing) = ZeroField()
-intercepted_snowfall(::Nothing) = ZeroField()
+intercepted_snowfall(sea_ice) = ZeroField()
+sea_ice_ocean_stress(sea_ice) = nothing
 function default_sea_ice end
+function sea_ice_phase_transitions end
+function sea_ice_mass_fluxes end
 
 #####
 ##### Functions extended by atmosphere models
@@ -100,12 +111,11 @@ default unwraps a `Simulation`; the identity fallback covers bare models.
 @inline component_model(sim::Simulation) = sim.model
 @inline component_model(component) = component
 
-function interpolate_state! end
-function update_net_fluxes! end
+surface_state(::Nothing) = (; u = ZeroField(), v = ZeroField(), T = ZeroField(), S = ZeroField())
+update_surface_state!(state, model) = nothing
+update_net_fluxes!(coupled_model, model) = nothing
 
-# Fallbacks for a  generic component model
-update_net_fluxes!(coupled_model, component) = nothing
-interpolate_state!(exchanger, grid, component, coupled_model) = nothing
+function interpolate_state! end
 
 # Fallback for radiative coupling when no radiation is configured.
 apply_air_land_radiative_fluxes!(::Any) = nothing

@@ -106,8 +106,8 @@ function prepare_time_step!(h::InterceptingHydrology, land)
     # The clock accumulates in Float64; the kernel sees the time at the grid's precision
     time = clock_convert(kernel_time_type(land.clock), land.clock.time)
     update_field_time_series!(h.cover_fraction, Time(time))
-    launch!(architecture(land.grid), land.grid, :xy, _cache_cover_fraction!,
-            land.diagnostics.previous_cover_fraction, h.cover_fraction, land.grid, time)
+    launch!(architecture(Grids.grid(land)), Grids.grid(land), :xy, _cache_cover_fraction!,
+            land.diagnostics.previous_cover_fraction, h.cover_fraction, Grids.grid(land), time)
     return nothing
 end
 
@@ -143,14 +143,14 @@ end
 end
 
 function time_step!(h::InterceptingHydrology, land, Δt, time)
-    arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _interception_step!,
+    arch = architecture(Grids.grid(land))
+    launch!(arch, Grids.grid(land), :xy, _interception_step!,
             land.prognostic.canopy_water_storage,
             land.fluxes.liquid_water_precipitation_flux,
             land.fluxes.canopy_evaporation,
             land.diagnostics.throughfall,
             land.diagnostics.previous_cover_fraction,
-            h, Δt, land.grid, time)
+            h, Δt, Grids.grid(land), time)
     time_step!(h.soil, land, Δt, time, land.diagnostics.throughfall)
     return nothing
 end
@@ -161,7 +161,7 @@ saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
 
 # The store capacity `Mᶜⁿᵖʸ⁺ = c·λˡᵉᵃᶠ` the interface normalizes the wet fraction by.
 canopy_water_capacity(h::InterceptingHydrology, land) =
-    KernelFunctionOperation{Center, Center, Nothing}(canopy_water_capacity, land.grid, h, land.clock)
+    KernelFunctionOperation{Center, Center, Nothing}(canopy_water_capacity, Grids.grid(land), h, land.clock)
 
 @inline canopy_water_capacity(i, j, k, grid, h, clock) =
     h.capacity_per_leaf_area * stateindex(h.leaf_area_index, i, j, 1, grid, Time(clock.time), (Center, Center, Center))

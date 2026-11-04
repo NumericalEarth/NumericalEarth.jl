@@ -6,7 +6,7 @@ using ..Oceans: forcing_barotropic_potential
 
 """Interpolate the atmospheric state onto the ocean / sea-ice grid."""
 function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
-    atmosphere_grid = atmosphere.grid
+    atmosphere_grid = Grids.grid(atmosphere)
 
     # Basic model properties
     arch = architecture(grid)

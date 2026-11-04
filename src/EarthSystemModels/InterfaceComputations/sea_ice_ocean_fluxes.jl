@@ -3,7 +3,8 @@ using Oceananigans.Grids: znode
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
-using ..EarthSystemModels: ocean_temperature, ocean_salinity
+using ..EarthSystemModels: ocean_temperature, ocean_salinity, sea_ice_phase_transitions, sea_ice_mass_fluxes,
+                           sea_ice_ocean_stress
 
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
@@ -35,21 +36,23 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     Δt = sea_ice.Δt
     Tᵒᶜ = ocean_temperature(ocean)
     Sᵒᶜ = ocean_salinity(ocean)
-    Sⁱ = sea_ice.model.tracers.S
-    ℵ = sea_ice.model.ice_concentration
-    hˢⁱ = sea_ice.model.ice_thickness
-    hc = sea_ice.model.ice_consolidation_thickness
 
-    phase_transitions = sea_ice.model.phase_transitions
+    model = component_model(sea_ice)
+    state = surface_state(model)
+    Sⁱ = state.S
+    ℵ = state.ℵ
+    hˢⁱ = state.hi
+    hc = state.hc
+    uˢⁱ = state.u
+    vˢⁱ = state.v
+
+    phase_transitions = sea_ice_phase_transitions(sea_ice)
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 
-    grid = sea_ice.model.grid
-    clock = sea_ice.model.clock
+    grid = Oceananigans.Grids.grid(model)
+    clock = model.clock
     arch = architecture(grid)
-
-    uˢⁱ, vˢⁱ = sea_ice.model.velocities
-    dynamics = sea_ice.model.dynamics
 
     # Get interface data
     fluxes = interface.fluxes
@@ -58,15 +61,13 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     Sˢⁱ = interface.salinity
 
     # Mass the ice/snow exchanged with the ocean during the previous sea-ice step
-    mass_fluxes = sea_ice.model.mass_fluxes.thermodynamics
+    mass_fluxes = sea_ice_mass_fluxes(sea_ice)
 
-    if !isnothing(dynamics)
-        kernel_parameters = interface_kernel_parameters(grid)
-        τₛ = dynamics.external_momentum_stresses.bottom
-        launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
+    τₛ = sea_ice_ocean_stress(sea_ice)
+
+    if !isnothing(τₛ)
+        launch!(arch, grid, interface_kernel_parameters(grid), _compute_sea_ice_ocean_stress!,
                 fluxes, grid, clock, hˢⁱ, ℵ, uˢⁱ, vˢⁱ, τₛ)
-    else
-        τₛ = nothing
     end
 
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,

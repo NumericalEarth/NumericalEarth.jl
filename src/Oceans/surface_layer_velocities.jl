@@ -26,7 +26,7 @@ end
 function EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimulations, reference_depth)
     isnothing(reference_depth) && return ocean_surface_velocities(ocean)
 
-    grid = ocean.model.grid
+    grid = Grids.grid(ocean)
     u, v = ocean.model.velocities.u, ocean.model.velocities.v
     H = convert(eltype(grid), reference_depth)
 

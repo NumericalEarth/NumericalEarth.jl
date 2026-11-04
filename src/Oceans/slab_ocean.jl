@@ -69,19 +69,20 @@ SlabOcean{FT}(grid, clock, T, tf, d, ρ, c) where FT =
 
 function Oceananigans.set!(ocean::SlabOcean; T=nothing)
     !isnothing(T) && set!(ocean.temperature, T)
+    fill_halo_regions!(ocean.temperature)
     return nothing
 end
 
 function Base.summary(ocean::SlabOcean{FT}) where FT
-    A = nameof(typeof(architecture(ocean.grid)))
-    G = nameof(typeof(ocean.grid))
+    A = nameof(typeof(architecture(Grids.grid(ocean))))
+    G = nameof(typeof(Grids.grid(ocean)))
     return string("SlabOcean{$FT, $A, $G}",
                   "(time = ", prettytime(ocean.clock.time), ", iteration = ", ocean.clock.iteration, ")")
 end
 
 function Base.show(io::IO, ocean::SlabOcean)
     print(io, summary(ocean), "\n",
-          "├── grid: ", summary(ocean.grid), "\n",
+          "├── grid: ", summary(Grids.grid(ocean)), "\n",
           "├── depth: ", prettysummary(ocean.depth), "\n",
           "├── density: ", prettysummary(ocean.density), "\n",
           "└── heat_capacity: ", prettysummary(ocean.heat_capacity))
@@ -96,27 +97,17 @@ Grids.grid(ocean::SlabOcean) = ocean.grid
 
 EarthSystemModels.reference_density(ocean::SlabOcean) = ocean.density
 EarthSystemModels.heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
-EarthSystemModels.exchange_grid(atmosphere, ocean::SlabOcean, sea_ice, land=nothing) = ocean.grid
 EarthSystemModels.temperature_units(::SlabOcean) = DegreesKelvin()
-EarthSystemModels.ocean_temperature(ocean::SlabOcean) = ocean.temperature
-EarthSystemModels.ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
-EarthSystemModels.ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
-EarthSystemModels.ocean_surface_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
-EarthSystemModels.ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT)
 
 #####
 ##### InterfaceComputations interface
 #####
 
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::SlabOcean, exchange_grid)
-    T = ocean.temperature
-    S = ocean_surface_salinity(ocean)
-    u, v = ocean_surface_velocities(ocean)
-    return ComponentExchanger((; u, v, T, S), nothing)
-end
+EarthSystemModels.surface_state(ocean::SlabOcean{FT}) where FT =
+    (; u = ZeroField(FT), v = ZeroField(FT), T = ocean.temperature, S = ConstantField(convert(FT, 35)))
 
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::SlabOcean)
-    grid = ocean.grid
+    grid = Grids.grid(ocean)
     Jˢ = CenterField(grid)
     τx = CenterField(grid)
     τy = CenterField(grid)
@@ -125,19 +116,12 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::SlabOcean)
     return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy, η=Jʷ, freshwater_heat_content=Jᴴ, u_coefficient=nothing, v_coefficient=nothing)
 end
 
-# No interpolation needed: the slab ocean IS on the exchange grid
-EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
-
-# Assemble net ocean fluxes from interface computations
-EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =
-    update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
-
 # `FT` is not inferable from the fields, so rebuild explicitly to preserve it.
 function EarthSystemModels.adopt_clock(ocean::SlabOcean{FT}, clock) where FT
     new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
     isnothing(new_clock) && return ocean
     EarthSystemModels.warn_clock_coercion(ocean, new_clock)
-    return SlabOcean{FT}(ocean.grid, new_clock, ocean.temperature,
+    return SlabOcean{FT}(Grids.grid(ocean), new_clock, ocean.temperature,
                          ocean.temperature_flux, ocean.depth, ocean.density, ocean.heat_capacity)
 end
 
@@ -152,7 +136,7 @@ end
 
 function Oceananigans.TimeSteppers.time_step!(ocean::SlabOcean, Δt)
     tick!(ocean.clock, Δt)
-    grid = ocean.grid
+    grid = Grids.grid(ocean)
     arch = architecture(grid)
     launch!(arch, grid, :xy, _step_slab_temperature!,
             ocean.temperature, ocean.temperature_flux, Δt, ocean.depth)
