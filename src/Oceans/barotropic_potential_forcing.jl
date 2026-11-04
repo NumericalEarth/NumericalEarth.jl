@@ -1,6 +1,9 @@
 using DocStringExtensions: TYPEDSIGNATURES
+using Oceananigans: UpdateStateCallsite
 using Oceananigans.Architectures: on_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Grids: node
+using Oceananigans.Simulations: Callback
 using Oceananigans.TimeSteppers: kernel_time_type
 
 struct XDirection end
@@ -53,6 +56,52 @@ Adapt.@adapt_structure TimeInterpolatedPotential
     χ = (clock.time - t₁) / (t₂ - t₁)
     χ = ifelse(t₂ == t₁, zero(χ), χ)
     return @inbounds (1 - χ) * Φ.previous[i, j, 1] + χ * Φ.next[i, j, 1]
+end
+
+#####
+##### Pointwise potentials, evaluated once per state update
+#####
+
+# A potential that is a function of (λ, φ, t), such as Tidejinks.TidalPotential, would otherwise be evaluated inside
+# the momentum tendency kernels at every level and for both cells of each derivative. It is evaluated instead into a
+# two-dimensional field each time the model state is updated, and kernels read that field.
+struct EvaluatedPotential{F, S}
+    field :: F
+    source :: S
+end
+
+# Kernels see only the field, which the AbstractArray method of barotropic_potentialᶜᶜᵃ reads.
+Adapt.adapt_structure(to, Φ::EvaluatedPotential) = Adapt.adapt(to, Φ.field)
+
+evaluate_pointwise_potentials(grid, Φ) = Φ
+evaluate_pointwise_potentials(grid, Φ::Function) = EvaluatedPotential(Field{Center, Center, Nothing}(grid), Φ)
+evaluate_pointwise_potentials(grid, Φ::Tuple) = map(ϕ -> evaluate_pointwise_potentials(grid, ϕ), Φ)
+
+@kernel function _evaluate_potential!(Φ, grid, source, time)
+    i, j = @index(Global, NTuple)
+    @inbounds Φ[i, j, 1] = source(node(i, j, 1, grid, Center(), Center(), nothing)..., time)
+end
+
+evaluate_potentials!(model, Φ) = nothing
+evaluate_potentials!(model, Φ::Tuple) = foreach(ϕ -> evaluate_potentials!(model, ϕ), Φ)
+
+function evaluate_potentials!(model, Φ::EvaluatedPotential)
+    grid = model.grid
+    launch!(architecture(grid), grid, :xy, _evaluate_potential!, Φ.field, grid, Φ.source, model.clock.time)
+    fill_halo_regions!(Φ.field)
+    return nothing
+end
+
+has_evaluated_potential(Φ) = false
+has_evaluated_potential(Φ::EvaluatedPotential) = true
+has_evaluated_potential(Φ::Tuple) = any(has_evaluated_potential, Φ)
+
+function add_evaluated_potential_callback!(simulation, Φ)
+    has_evaluated_potential(Φ) || return nothing
+    evaluate_potentials!(simulation.model, Φ) # for the first stage, before any state update
+    simulation.callbacks[:evaluate_barotropic_potential] =
+        Callback(evaluate_potentials!; parameters = Φ, callsite = UpdateStateCallsite())
+    return nothing
 end
 
 forcing_barotropic_potential(something) = nothing

@@ -493,6 +493,7 @@ function hydrostatic_ocean_simulation(grid;
         v_immersed_bc = ImmersedBoundaryCondition(bottom = bottom_drag_bc(v_immersed_drag_coefficient, v_immersed_bottom_drag, drag_parameters, implicit_bottom_drag))
 
         barotropic_potential = self_attraction_and_loading_potential(barotropic_potential, self_attraction_and_loading)
+        barotropic_potential = evaluate_pointwise_potentials(grid, barotropic_potential)
 
         if !isnothing(barotropic_potential)
             u_forcing = BarotropicPotentialForcing(XDirection(), barotropic_potential)
@@ -611,6 +612,7 @@ function hydrostatic_ocean_simulation(grid;
 
     ocean = Simulation(ocean_model; Δt, stop_time, verbose)
     add_self_attraction_and_loading_callback!(ocean, self_attraction_and_loading)
+    add_evaluated_potential_callback!(ocean, barotropic_potential)
 
     return ocean
 end
