@@ -35,7 +35,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     Δt = sea_ice.Δt
     Tᵒᶜ = ocean_temperature(ocean)
     Sᵒᶜ = ocean_salinity(ocean)
-    Sⁱ = sea_ice.model.tracers.S
+    Sˢⁱ = sea_ice.model.tracers.S
     ℵˢⁱ = sea_ice.model.ice_concentration
     hˢⁱ = sea_ice.model.ice_thickness
     hc = sea_ice.model.ice_consolidation_thickness
@@ -54,8 +54,8 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     # Get interface data
     fluxes = interface.fluxes
     flux_formulation = interface.flux_formulation
-    Tˢⁱ = interface.temperature
-    Sˢⁱ = interface.salinity
+    Tⁱⁿ = interface.temperature
+    Sⁱⁿ = interface.salinity
 
     # Mass the ice/snow exchanged with the ocean during the previous sea-ice step
     mass_fluxes = sea_ice.model.mass_fluxes.thermodynamics
@@ -70,8 +70,8 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     end
 
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
-            flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
-            hˢⁱ, hc, ℵˢⁱ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
+            flux_formulation, fluxes, Tⁱⁿ, Sⁱⁿ, grid, clock,
+            hˢⁱ, hc, ℵˢⁱ, Sˢⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
 
     return nothing
@@ -193,7 +193,7 @@ end
         Sᴺ  = Sᵒᶜ[i, j, Nz]
         Sˢⁱ = ice_salinity[i, j, 1]
         hˢⁱ = ice_thickness[i, j, 1]
-        ℵˢⁱᵢ = ice_concentration[i, j, 1]
+        ℵˢⁱ = ice_concentration[i, j, 1]
         hc  = ice_consolidation_thickness[i, j, 1]
     end
 
@@ -202,7 +202,7 @@ end
 
     # Package states
     ocean_surface_state = (; T = Tᴺ, S = Sᴺ)
-    ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = hc, ℵ = ℵˢⁱᵢ, T = Tˢⁱ)
+    ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = hc, ℵ = ℵˢⁱ, T = Tˢⁱ)
 
     # Compute friction velocity
     u★ = get_friction_velocity(flux_formulation.friction_velocity, i, j, grid, τˣ, τʸ, ρᵒᶜ)

@@ -82,7 +82,7 @@ apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean::Simulation)
     time = Time(clock.time)
 
     @inbounds begin
-        ℵˢⁱᵢ = ice_concentration[i, j, 1]
+        ℵˢⁱ = ice_concentration[i, j, 1]
         Tⁱⁿ = ocean_surface_temperature[i, j, 1]
     end
     Tⁱⁿ = convert_to_kelvin(ocean_properties.temperature_units, Tⁱⁿ)
@@ -94,9 +94,9 @@ apply_air_sea_biogeochemical_radiative_fluxes!(coupled_model, ocean::Simulation)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
     # Multiply by ocean fraction (only the parts not blocked by ice)
-    ℐₐˡʷ *= (1 - ℵˢⁱᵢ)
-    ℐₜˢʷ *= (1 - ℵˢⁱᵢ)
-    ℐꜛˡʷ_ocean = ℐꜛˡʷ * (1 - ℵˢⁱᵢ)
+    ℐₐˡʷ *= (1 - ℵˢⁱ)
+    ℐₜˢʷ *= (1 - ℵˢⁱ)
+    ℐꜛˡʷ_ocean = ℐꜛˡʷ * (1 - ℵˢⁱ)
 
     Qss = shortwave_radiative_forcing(i, j, grid, penetrating_radiation, ℐₜˢʷ, ocean_properties)
 

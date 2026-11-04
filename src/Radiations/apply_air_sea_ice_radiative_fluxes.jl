@@ -67,7 +67,7 @@ end
     time = Time(clock.time)
 
     @inbounds begin
-        ℵˢⁱᵢ = ice_concentration[i, j, 1]
+        ℵˢⁱ = ice_concentration[i, j, 1]
         Ts = surface_temperature[i, j, kᴺ]
     end
     Ts = convert_to_kelvin(sea_ice_properties.temperature_units, Ts)
@@ -77,7 +77,7 @@ end
     ℐꜛˡʷ = emitted_longwave_radiation(Ts, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
-    ΣQ  = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ℵˢⁱᵢ
+    ΣQ  = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ℵˢⁱ
 
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
