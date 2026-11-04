@@ -222,7 +222,10 @@ end
     # =============================================
     # Part 4: Freshwater and salt fluxes
     # =============================================
-    # Jʷ is the total ice+snow mass lost to the ocean (top + bottom + any flooding). Jˢ the salinity flux carried by the ice-share of the total meltwater Jʷ (the snow does not carry salinity), while Jᴴ the heat content associated with Jʷ, where the bottom (ice-ocean) share of Jʷ has a temperature equal to the ice-ocean interface temperature and the remaining share is at 0 degrees Celsius
+    # Jʷ is the total ice+snow mass lost to the ocean (top + bottom + any flooding). 
+    # Jˢ the salinity flux carried by the ice-share of the total meltwater Jʷ (the snow does not carry salinity), 
+    # while Jᴴ the heat content associated with Jʷ, where the bottom (ice-ocean) share of Jʷ has a 
+    # temperature equal to the ice-ocean interface temperature and the remaining share is at 0 degrees Celsius
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
