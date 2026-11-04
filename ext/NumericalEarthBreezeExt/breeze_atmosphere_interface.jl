@@ -1,13 +1,17 @@
 using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Fields: Field, compute!
+using Oceananigans.Architectures: CPU, on_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: AbstractField, Field, compute!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
                                specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, vector_component_boundary_conditions
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, exchange_regridder, regrid_surface_field!,
+                                                              rotate_to_geographic_frame!,
+                                                              surface_flux_fields, vector_component_boundary_conditions
 
 const BreezeAtmosphere    = Breeze.AtmosphereModel
 const BreezeAtmosphereSim = Simulation{<:Breeze.AtmosphereModel}
@@ -39,13 +43,17 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 end
 
 function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere, exchange_grid)
-    grid = atmosphere.grid
+    grid = Oceananigans.Grids.grid(atmosphere)
     if grid isa TerrainFollowingGrid
         # Terrain makes the AGL first-cell height vary per column → a 2-D field.
-        z₁ = Oceananigans.Field{Center, Center, Nothing}(exchange_grid)
-        launch!(architecture(exchange_grid), exchange_grid, interface_kernel_parameters(exchange_grid),
-                _fill_surface_layer_height!, z₁, grid)
-        return z₁
+        z₁ = Field{Center, Center, Nothing}(grid)
+        launch!(architecture(grid), grid, interface_kernel_parameters(grid), _fill_surface_layer_height!, z₁, grid)
+        regridder = exchange_regridder(on_architecture(CPU(), grid), exchange_grid)
+        isnothing(regridder) && return z₁
+        exchange_grid_height = Field{Center, Center, Nothing}(exchange_grid)
+        regrid_surface_field!(exchange_grid_height, regridder.from_component, z₁)
+        fill_halo_regions!(exchange_grid_height)
+        return exchange_grid_height
     else
         # Horizontally uniform → one scalar. Read once here (cached, not per step), so the
         # single host index into a possibly-stretched device Δz array is fine under @allowscalar.
@@ -89,7 +97,9 @@ function NumericalEarth.EarthSystemModels.surface_state(atmosphere::BreezeAtmosp
                Jʳⁿ  = bottom_precipitation_flux(atmosphere),
                Jˢⁿ  = Field{Center, Center, Nothing}(grid))
 
-    return state
+    h_bℓ = NumericalEarth.EarthSystemModels.boundary_layer_height(atmosphere)
+
+    return h_bℓ isa AbstractField ? merge(state, (; h_bℓ)) : state
 end
 
 #####
@@ -151,12 +161,29 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
     # Moisture flux field
     ρqᵛᵉ = atmosphere.moisture_density.boundary_conditions.bottom.condition
 
-    return (; ρu, ρv, ρE, ρqᵛᵉ)
+    return (; ρu, ρv, ρE, ρqᵛᵉ, surface_fluxes = surface_flux_fields(Oceananigans.Grids.grid(atmosphere)))
 end
 
 #####
 ##### Assemble the partition-weighted surface fluxes into Breeze bottom BCs
 #####
+
+regrid_surface_fluxes!(::Nothing, atmosphere_fluxes, surface_fluxes, exchange_grid) = surface_fluxes
+
+function regrid_surface_fluxes!(regridder, atmosphere_fluxes, surface_fluxes, exchange_grid)
+    to_atmosphere = regridder.exchange.to_component
+
+    rotate_to_geographic_frame!(surface_fluxes.x_momentum, surface_fluxes.y_momentum, exchange_grid)
+
+    regrid_surface_field!(atmosphere_fluxes.sensible_heat, to_atmosphere, surface_fluxes.sensible_heat)
+    regrid_surface_field!(atmosphere_fluxes.water_vapor,   to_atmosphere, surface_fluxes.water_vapor)
+    regrid_surface_field!(atmosphere_fluxes.x_momentum,    to_atmosphere, surface_fluxes.x_momentum)
+    regrid_surface_field!(atmosphere_fluxes.y_momentum,    to_atmosphere, surface_fluxes.y_momentum)
+
+    fill_halo_regions!((atmosphere_fluxes.x_momentum, atmosphere_fluxes.y_momentum))
+
+    return atmosphere_fluxes
+end
 
 @kernel function _assemble_net_atmosphere_fluxes!(net, surface_fluxes, grid)
     i, j = @index(Global, NTuple)
@@ -173,7 +200,11 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     isnothing(net) && return nothing
 
     grid = Oceananigans.Grids.grid(atmosphere)
-    surface_fluxes = coupled_model.interfaces.surface_partition.fluxes
+    exchanger = coupled_model.interfaces.exchanger
+    surface_fluxes = regrid_surface_fluxes!(exchanger.atmosphere.regridder,
+                                            net.surface_fluxes,
+                                            coupled_model.interfaces.surface_partition.fluxes,
+                                            exchanger.grid)
 
     launch!(architecture(grid), grid, interface_kernel_parameters(grid), _assemble_net_atmosphere_fluxes!,
             net, surface_fluxes, grid)
