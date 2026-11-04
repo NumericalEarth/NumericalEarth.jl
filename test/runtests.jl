@@ -22,7 +22,6 @@ args = parse_args(ARGS)
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
 delete!(testsuite, "synthetic_datasets")
-delete!(testsuite, "test_distributed_utils")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
@@ -47,6 +46,9 @@ if filter_tests!(testsuite, args)
     for name in filter(endswith("_downloading"), collect(keys(testsuite)))
         delete!(testsuite, name)
     end
+
+    # MPI tests run only from the distributed_tests job, which names them explicitly
+    delete!(testsuite, "test_distributed_utils")
 
     if !remote_data
         for name in remote_data_tests
