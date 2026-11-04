@@ -196,9 +196,6 @@ const f = Face()
     return ifelse(inactive_cell(i, j, k - 1, grid), zero(J), J)
 end
 
-@inline blue_green_absorption_coefficient(κ₂::Number, i, j) = κ₂
-@inline blue_green_absorption_coefficient(κ₂, i, j) = @inbounds κ₂[i, j, 1]
-
 """
 $(TYPEDSIGNATURES)
 
@@ -225,7 +222,7 @@ end
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
     J₀ = @inbounds R.surface_flux[i, j, 1]
     κ₁ = R.first_absorption_coefficient
-    κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
+    κ₂ = state2dindex(R.second_absorption_coefficient, i, j)
     ϵ₁ = R.first_color_fraction
 
     # Radiation flux divergences
@@ -253,8 +250,8 @@ end
 
 Forcings.penetrative_radiation(radiation::TwoColorRadiation) = radiation
 
-@inline function two_color_parameters(R::TwoColorRadiation, i, j)
-    κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
+@inline function two_color_parameters(i, j, R::TwoColorRadiation)
+    κ₂ = state2dindex(R.second_absorption_coefficient, i, j)
     return R.first_color_fraction, R.first_absorption_coefficient, κ₂
 end
 
@@ -268,17 +265,17 @@ end
 end
 
 @inline function Forcings.transmitted_fraction(R::TwoColorRadiation, i, j, grid, d)
-    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
     return ϵ₁ * exp(-κ₁ * d) + (1 - ϵ₁) * exp(-κ₂ * d)
 end
 
 @inline function Forcings.transmitted_fraction_derivative(R::TwoColorRadiation, i, j, grid, d)
-    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
     return - ϵ₁ * κ₁ * exp(-κ₁ * d) - (1 - ϵ₁) * κ₂ * exp(-κ₂ * d)
 end
 
 @inline function Forcings.transmitted_thickness(R::TwoColorRadiation, i, j, grid, h)
-    ϵ₁, κ₁, κ₂ = two_color_parameters(R, i, j)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
     return - ϵ₁ * expm1(-κ₁ * h) / κ₁ - (1 - ϵ₁) * expm1(-κ₂ * h) / κ₂
 end
 
