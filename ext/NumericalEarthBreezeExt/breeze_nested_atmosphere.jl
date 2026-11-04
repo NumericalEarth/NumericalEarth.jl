@@ -71,7 +71,7 @@ using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
 
 # A terrain-following grid's `znodes` are its reference levels, so a terrain-following parent is
 # sampled at the child's reference node.
-@inline NumericalEarth.NestedModels.query_node(::TerrainFollowingGrid, i, j, k, grid, ℓx, ℓy, ℓz) =
+@inline NumericalEarth.NestedModels.interpolation_node(i, j, k, grid, ℓx, ℓy, ℓz, ::TerrainFollowingGrid) =
     (ξnode(i, j, k, grid, ℓx, ℓy, ℓz), ηnode(i, j, k, grid, ℓx, ℓy, ℓz), rnode(i, j, k, grid, ℓx, ℓy, ℓz))
 
 # The height of a terrain-following grid's lowest face.

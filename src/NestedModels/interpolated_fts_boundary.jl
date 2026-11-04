@@ -219,7 +219,7 @@ validate_source_bracket(source, grid, dim, SideType,
 end
 
 @inline function evaluate_target(i, j, k, grid, target::VectorComponent, ℓ, time)
-    X = query_node(target.grid, i, j, k, grid, ℓ...)
+    X = interpolation_node(i, j, k, grid, ℓ..., target.grid)
     return _query_source(target, target.grid, X, ℓ, time, i, j, k, grid)
 end
 
@@ -242,20 +242,20 @@ end
     # center node). A Value BC's value is the value AT the boundary, so for a Center
     # field this must be the face, not the half-cell-inside center; for a Face-normal
     # field (the normal velocity) this is unchanged (its location is already Face).
-    X = query_node(bc.source_grid, i, j, k, grid, Face(), LY(), LZ())
+    X = interpolation_node(i, j, k, grid, Face(), LY(), LZ(), bc.source_grid)
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
-    X = query_node(bc.source_grid, i, j, k, grid, LX(), Face(), LZ())   # boundary face in the y-normal direction
+    X = interpolation_node(i, j, k, grid, LX(), Face(), LZ(), bc.source_grid)   # boundary face in the y-normal direction
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
-    X = query_node(bc.source_grid, i, j, k, grid, LX(), LY(), Face())   # boundary face in the z-normal direction
+    X = interpolation_node(i, j, k, grid, LX(), LY(), Face(), bc.source_grid)   # boundary face in the z-normal direction
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end

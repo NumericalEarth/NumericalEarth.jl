@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, interpolate_from_parent!, query_node
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, interpolate_from_parent!, interpolation_node
 using NumericalEarth.DataWrangling: BoundingBox
 using NumericalEarth.EarthSystemModels: component_model
 using Oceananigans
@@ -1376,7 +1376,7 @@ end
 
 # `interpolate` locates the vertical through the source grid's `znodes`, which on a terrain-following
 # grid are the reference levels, so a terrain-following source is queried at the reference node.
-@testset "query_node samples a terrain-following source in its own vertical coordinate" begin
+@testset "interpolation_node samples a terrain-following source in its own vertical coordinate" begin
     plateau = 400.0
     z = collect(range(0, 12000, length = 25))
     horizontal = (size = (6, 6, length(z) - 1), longitude = (-100, -96), latitude = (34, 38), halo = (5, 5, 5),
@@ -1385,8 +1385,8 @@ end
     Breeze.materialize_terrain!(grid, (λ, φ) -> plateau)
     flat_grid = LatitudeLongitudeGrid(; horizontal..., z)
 
-    reference = query_node(grid, 3, 3, 1, grid, Center(), Center(), Center())
-    physical  = query_node(flat_grid, 3, 3, 1, grid, Center(), Center(), Center())
+    reference = interpolation_node(3, 3, 1, grid, Center(), Center(), Center(), grid)
+    physical  = interpolation_node(3, 3, 1, grid, Center(), Center(), Center(), flat_grid)
     @test reference[3] ≈ rnode(3, 3, 1, grid, Center(), Center(), Center())
     @test physical[3]  ≈ znode(3, 3, 1, grid, Center(), Center(), Center())
     @test physical[3] - reference[3] ≈ plateau rtol = 0.05

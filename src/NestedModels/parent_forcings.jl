@@ -11,7 +11,7 @@
 using Oceananigans.Fields: Field
 using Adapt: Adapt, adapt
 
-# A live parent `Field` as a relaxation target, sampled at `query_node`.
+# A live parent `Field` as a relaxation target, sampled at `interpolation_node`.
 struct InterpolatedParentTarget{F, L, G}
     field    :: F
     location :: L
@@ -28,7 +28,7 @@ Oceananigans.OutputReaders.extract_field_time_series(::InterpolatedParentTarget)
 Base.summary(t::InterpolatedParentTarget) = "parent-sampled " * summary(t.field)
 
 @inline Oceananigans.Forcings.evaluate_target(i, j, k, grid, t::InterpolatedParentTarget, ℓ, time) =
-    interpolate(query_node(t.grid, i, j, k, grid, ℓ...), t.field, t.location, t.grid)
+    interpolate(interpolation_node(i, j, k, grid, ℓ..., t.grid), t.field, t.location, t.grid)
 
 relaxation_target(source) = source
 relaxation_target(field::Field) = InterpolatedParentTarget(field)
