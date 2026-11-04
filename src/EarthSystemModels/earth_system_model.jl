@@ -151,11 +151,11 @@ prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them
 authoritative model clock rather than the other way around. On `ReactantState` the coupled clock of a
 `Simulation` atmosphere is a device clock in every field, as `Clock(grid)` is, so a compiled step can advance it.
 """
-default_earth_system_clock(atmosphere::Simulation) = clock_at_time_zero(component_model(atmosphere).clock)
+default_earth_system_clock(atmosphere::Simulation) = zero(component_model(atmosphere).clock)
 default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
 
 # A clock at time zero with the time type of `clock`; NumericalEarthReactantExt extends it for device clocks
-clock_at_time_zero(clock) = Clock{typeof(clock.time)}(time = 0)
+Base.zero(clock::Clock) = Clock{typeof(clock.time)}(time = 0)
 
 """
     materialize_sea_ice(sea_ice, ocean)
