@@ -143,10 +143,14 @@ function advance_parent!(parent::BoundaryPrescribedComponent, clock, time_step_r
     return nothing
 end
 
-# A parent with its own dynamics integrates over the gap to the child's time, once the child has run
-# `time_step_ratio` steps ahead. The half-step tolerance absorbs a lag summed in floating point.
+# A parent with its own dynamics advances once the child has run `time_step_ratio` steps ahead.
 function advance_parent!(parent, clock, time_step_ratio)
+    # The gap between parent and child grows by the child's Δt at every child step.
+    # Stepping the parent by the whole gap lands it on the child's time, resetting the gap.
     Δt_parent = clock.time - parent.clock.time
+    # Advance when the gap (in units of the child's latest Δt) rounds to `time_step_ratio` or more,
+    # because accumulated Δt — steady or varying — does not necessarily give an integer multiple of
+    # the latest Δt.
     Δt_parent ≥ (time_step_ratio - 1//2) * clock.last_Δt && time_step!(parent, Δt_parent)
     return nothing
 end
