@@ -82,7 +82,7 @@ This formulation solves a coupled system for the interface temperature and salin
 
 where ``T_b`` and ``S_b`` are the interface temperature and salinity,
 ``\\gamma_T = \\alpha_h u_*`` and ``\\gamma_S = \\alpha_s u_*`` are turbulent exchange velocities,
-``ℰ`` is the latent heat of fusion, ``q`` is the melt rate (computed, not input), and
+``ℰ`` is the latent heat of fusion, ``q`` is the melt rate, and
 ``F_c`` is the optional conductive flux through the ice (zero without a `ConductiveFlux`).
 The heat flux passed to the ocean and to the base of the sea ice is the turbulent ocean
 flux ``\\rho c_p \\gamma_T (T - T_b)`` only, since the sea-ice model accounts for ``F_c``.
