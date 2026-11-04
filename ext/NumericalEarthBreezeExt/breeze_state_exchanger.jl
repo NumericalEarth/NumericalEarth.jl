@@ -30,7 +30,13 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
-using Breeze.Utils: initialize_on_construction!
+using Oceananigans.Architectures: ReactantState
+
+# Run `initialize!(args...)` at construction, except on ReactantState: there the caller compiles and
+# runs it (`Reactant.@compile initialize!(model)`). Local stand-in for Breeze.Utils.initialize_on_construction!
+# (Breeze PR 1112, closed unmerged), so this works on Breeze main.
+initialize_on_construction!(arch, initialize!, args...) = initialize!(args...)
+initialize_on_construction!(::ReactantState, initialize!, args...) = nothing
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
