@@ -113,6 +113,11 @@ struct ConvolutionLoadingOperator{FT, V, I}
     coefficient :: FT       # 3ρ₀ / 4πρₑ
     singular_coefficient :: FT    # 1 - b₀
     logarithmic_coefficient :: FT # a₁ - b₁
+    minimum_separation :: FT      # pairs with 1 - cos γ below this are skipped (coincident cells; 0: none)
+    multiplicity :: V             # 0 for a wet cell at the same point as an earlier one (remove_duplicates), else 1
+    uniform¹ :: V                 # e¹, e² components of Σₘ dG/dc Ωₘ (xₘ - xₙ), the response to pᵇ = 1, computed in Float64
+    uniform² :: V
+    subtract_uniform :: Bool
 end
 
 Base.summary(op::ConvolutionLoadingOperator{FT}) where FT =
@@ -150,11 +155,20 @@ makes the kernel exact for each degree of `love_numbers`: a `NamedTuple` `(; h, 
 With `components = :geographic` the two components are eastward and northward; with `components = :grid` they are
 along the direction of increasing `i` and perpendicular to it, to the left. The sum costs `O(N²)` for `N` wet cells
 and is computed in precision `FT`; the angle between two cells is computed from their chord, so `Float32` is
-accurate also for neighbours. Apply it with [`loading_gradient!`](@ref), and its transpose with
+accurate also for neighbours.
+
+`remove_duplicates = true` gives zero weight to wet cells at the same point as an earlier one (the fold row of a
+`TripolarGrid`, whose cells (i, Ny) and (Nx + 1 - i, Ny) coincide, would otherwise be counted twice as sources, and the
+coincident pair contributes dG/dc at 1 - cos γ = eps(FT), which is huge in `Float64`) and skips coincident pairs.
+`subtract_uniform = true` sums Σₘ dG/dc Ωₘ (pₘ - pₙ)(xₘ - xₙ) in `FT` and adds pₙ times the response to a uniform
+pᵇ = 1, precomputed in `Float64` (exact in exact arithmetic): the large, nearly cancelling contributions of nearby
+cells to the gradient of a smooth load are then summed as small differences, which makes `Float32` accurate also at
+low degree. Both default to `false`, which reproduces earlier results. Apply it with [`loading_gradient!`](@ref), and its transpose with
 [`loading_gradient_transpose!`](@ref).
 """
 function ConvolutionLoadingOperator(grid; components = :geographic, love_numbers = nothing, self_term = true,
-                                    reference_density = 1035, earth_density = 5517, FT = eltype(grid))
+                                    reference_density = 1035, earth_density = 5517, FT = eltype(grid),
+                                    remove_duplicates = false, subtract_uniform = false)
     arch = architecture(grid)
     cpu_grid = on_architecture(CPU(), grid)
     Nx, Ny, Nz = size(cpu_grid)
@@ -218,10 +232,35 @@ function ConvolutionLoadingOperator(grid; components = :geographic, love_numbers
         loading_kernel_correction(isnothing(love_numbers) ? prem_load_love_numbers() : love_numbers, asymptotic)
     end
 
+    Ω = [Azᶜᶜᶜ(i, j, 1, cpu_grid) / R^2 for (i, j) in wet]
+    μ = ones(length(wet))
+    minimum_separation = 0.0
+    if remove_duplicates
+        seen = Set{NTuple{3, Int}}()
+        for n in eachindex(X)
+            key = round.(Int, X[n] .* 1e8)
+            key ∈ seen ? (μ[n] = 0.0) : push!(seen, key)
+        end
+        minimum_separation = 1e-12
+        @info "ConvolutionLoadingOperator: $(count(iszero, μ)) duplicate wet cells removed as sources"
+    end
+    uniform¹ = zeros(length(wet)); uniform² = zeros(length(wet))
+    if subtract_uniform
+        d64(a) = on_architecture(arch, a)
+        c64(vs, n) = d64(Float64[v[n] for v in vs])
+        U¹, U² = d64(zeros(length(wet))), d64(zeros(length(wet)))
+        corr = love_numbers isa AsymptoticLoadLoveNumbers ? zeros(2) :
+               loading_kernel_correction(isnothing(love_numbers) ? prem_load_love_numbers() : love_numbers, asymptotic)
+        launch!(arch, grid, (length(wet),), _uniform_response!, U¹, U², c64(X, 1), c64(X, 2), c64(X, 3),
+                ntuple(n -> c64(e¹, n), 3), ntuple(n -> c64(e², n), 3), d64(Ω .* μ), length(wet),
+                1 - asymptotic.b₀, asymptotic.a₁ - asymptotic.b₁, d64(corr), minimum_separation)
+        uniform¹, uniform² = Array(U¹), Array(U²)
+    end
+
     return ConvolutionLoadingOperator(component(X, 1), component(X, 2), component(X, 3),
                                       ntuple(n -> component(e¹, n), 3),
                                       ntuple(n -> component(e², n), 3),
-                                      device(FT[Azᶜᶜᶜ(i, j, 1, cpu_grid) / R^2 for (i, j) in wet]),
+                                      device(FT.(Ω)),
                                       device(Int32[i for (i, j) in wet]),
                                       device(Int32[j for (i, j) in wet]),
                                       device(zeros(FT, length(wet))),
@@ -232,7 +271,34 @@ function ConvolutionLoadingOperator(grid; components = :geographic, love_numbers
                                       FT(R),
                                       FT(K),
                                       FT(1 - asymptotic.b₀),
-                                      FT(asymptotic.a₁ - asymptotic.b₁))
+                                      FT(asymptotic.a₁ - asymptotic.b₁),
+                                      FT(minimum_separation),
+                                      device(FT.(μ)),
+                                      device(FT.(uniform¹)),
+                                      device(FT.(uniform²)),
+                                      subtract_uniform)
+end
+
+# e¹, e² components of Σₘ dG/dc Ωₘ (xₘ - xₙ) at wet cell n (with subtract_uniform, in Float64)
+@kernel function _uniform_response!(U¹, U², X, Y, Z, e¹, e², Ω, N, α, β, correction, smin)
+    n = @index(Global)
+    FT = eltype(X)
+    @inbounds x, y, z = X[n], Y[n], Z[n]
+    Sx = zero(FT); Sy = zero(FT); Sz = zero(FT)
+    for m in 1:N
+        @inbounds xm, ym, zm, Ωm = X[m], Y[m], Z[m], Ω[m]
+        s₀ = one_minus_cosine(x, y, z, xm, ym, zm)
+        s = max(s₀, eps(FT))
+        dG = green_function_derivative(s, α, β) + interpolate_correction(correction, sqrt(s / 2))
+        dG = ifelse((m == n) | (s₀ < smin), zero(FT), dG * Ωm)
+        Sx += dG * (xm - x)
+        Sy += dG * (ym - y)
+        Sz += dG * (zm - z)
+    end
+    @inbounds begin
+        U¹[n] = e¹[1][n] * Sx + e¹[2][n] * Sy + e¹[3][n] * Sz
+        U²[n] = e²[1][n] * Sx + e²[2][n] * Sy + e²[3][n] * Sz
+    end
 end
 
 # dG/dc for the closed-form Green's function, divided by 3ρ₀ / 4πρₑ, with s = 1 - c:
@@ -253,7 +319,8 @@ end
 end
 
 # Components of ∇Ψ along e¹ and e² at wet cell n. ∇ₓ(x ⋅ y) = (y - (x ⋅ y) x) / R, and e¹ ⋅ x = e² ⋅ x = 0.
-@kernel function _loading_gradient!(Ψ¹, Ψ², X, Y, Z, e¹, e², q, I, J, N, R, K, α, β, correction)
+@kernel function _loading_gradient!(Ψ¹, Ψ², X, Y, Z, e¹, e², q, I, J, N, R, K, α, β, correction,
+                                    Ω, smin, U¹, U², subtract, μ)
     n = @index(Global)
     FT = eltype(X)
 
@@ -264,19 +331,41 @@ end
     Sy = zero(FT)
     Sz = zero(FT)
 
-    for m in 1:N
-        @inbounds xm, ym, zm, qm = X[m], Y[m], Z[m], q[m]
-        s = max(one_minus_cosine(x, y, z, xm, ym, zm), eps(FT))
-        dG = green_function_derivative(s, α, β) + interpolate_correction(correction, sqrt(s / 2))
-        dG = ifelse(m == n, zero(FT), dG * qm)
-        Sx += dG * xm
-        Sy += dG * ym
-        Sz += dG * zm
+    if subtract
+        # Σ dG Ωₘ (pₘ - pₙ)(xₘ - xₙ); pₙ times the uniform response is added below
+        @inbounds pₙ = q[n] / Ω[n]
+        for m in 1:N
+            @inbounds xm, ym, zm, qm, Ωm = X[m], Y[m], Z[m], q[m] * μ[m], Ω[m] * μ[m]
+            s₀ = one_minus_cosine(x, y, z, xm, ym, zm)
+            s = max(s₀, eps(FT))
+            dG = green_function_derivative(s, α, β) + interpolate_correction(correction, sqrt(s / 2))
+            dG = ifelse((m == n) | (s₀ < smin), zero(FT), dG * (qm - Ωm * pₙ))
+            Sx += dG * (xm - x)
+            Sy += dG * (ym - y)
+            Sz += dG * (zm - z)
+        end
+        @inbounds begin
+            g¹ = e¹[1][n] * Sx + e¹[2][n] * Sy + e¹[3][n] * Sz + pₙ * U¹[n]
+            g² = e²[1][n] * Sx + e²[2][n] * Sy + e²[3][n] * Sz + pₙ * U²[n]
+        end
+    else
+        for m in 1:N
+            @inbounds xm, ym, zm, qm = X[m], Y[m], Z[m], q[m] * μ[m]
+            s₀ = one_minus_cosine(x, y, z, xm, ym, zm)
+            s = max(s₀, eps(FT))
+            dG = green_function_derivative(s, α, β) + interpolate_correction(correction, sqrt(s / 2))
+            dG = ifelse((m == n) | (s₀ < smin), zero(FT), dG * qm)
+            Sx += dG * xm
+            Sy += dG * ym
+            Sz += dG * zm
+        end
+        @inbounds begin
+            g¹ = e¹[1][n] * Sx + e¹[2][n] * Sy + e¹[3][n] * Sz
+            g² = e²[1][n] * Sx + e²[2][n] * Sy + e²[3][n] * Sz
+        end
     end
 
     @inbounds begin
-        g¹ = e¹[1][n] * Sx + e¹[2][n] * Sy + e¹[3][n] * Sz
-        g² = e²[1][n] * Sx + e²[2][n] * Sy + e²[3][n] * Sz
         Ψ¹[I[n], J[n], 1] = - K * g¹ / R
         Ψ²[I[n], J[n], 1] = - K * g² / R
     end
@@ -312,14 +401,15 @@ function loading_gradient!(∂¹Ψ, ∂²Ψ, op::ConvolutionLoadingOperator, p�
     N = length(op.x)
     launch!(arch, pᵇ.grid, (N,), _gather_weighted_source!, op.weighted_source, pᵇ, op.solid_angle, op.i, op.j)
     launch!(arch, pᵇ.grid, (N,), _loading_gradient!, ∂¹Ψ, ∂²Ψ, op.x, op.y, op.z, op.e¹, op.e², op.weighted_source,
-            op.i, op.j, N, op.radius, op.coefficient, op.singular_coefficient, op.logarithmic_coefficient, op.correction)
+            op.i, op.j, N, op.radius, op.coefficient, op.singular_coefficient, op.logarithmic_coefficient, op.correction,
+            op.solid_angle, op.minimum_separation, op.uniform¹, op.uniform², op.subtract_uniform, op.multiplicity)
     launch!(arch, pᵇ.grid, (N,), _add_self_term!, ∂¹Ψ, ∂²Ψ, op.weighted_source, op.solid_angle, op.i, op.j,
             op.neighbours, op.stencil, op.self_term)
     return nothing
 end
 
 # Transpose: pᵇ*(m) = - K Ωₘ Σₙ dG/dc(cₙₘ) [(e¹ₙ ⋅ xₘ) ∂¹Ψ*(n) + (e²ₙ ⋅ xₘ) ∂²Ψ*(n)] / R
-@kernel function _loading_gradient_transpose!(pᵇ, Ψ¹, Ψ², X, Y, Z, e¹, e², solid_angle, I, J, N, R, K, α, β, correction)
+@kernel function _loading_gradient_transpose!(pᵇ, Ψ¹, Ψ², X, Y, Z, e¹, e², solid_angle, I, J, N, R, K, α, β, correction, smin, μ)
     m = @index(Global)
     FT = eltype(X)
 
@@ -334,13 +424,14 @@ end
             e¹xm = e¹[1][n] * xm + e¹[2][n] * ym + e¹[3][n] * zm
             e²xm = e²[1][n] * xm + e²[2][n] * ym + e²[3][n] * zm
         end
-        s = max(one_minus_cosine(x, y, z, xm, ym, zm), eps(FT))
+        s₀ = one_minus_cosine(x, y, z, xm, ym, zm)
+        s = max(s₀, eps(FT))
         dG = green_function_derivative(s, α, β) + interpolate_correction(correction, sqrt(s / 2))
-        dG = ifelse(m == n, zero(FT), dG)
+        dG = ifelse((m == n) | (s₀ < smin), zero(FT), dG)
         S += dG * (e¹xm * a¹ + e²xm * a²)
     end
 
-    @inbounds pᵇ[I[m], J[m], 1] = - K * solid_angle[m] * S / R
+    @inbounds pᵇ[I[m], J[m], 1] = - K * solid_angle[m] * μ[m] * S / R
 end
 
 # Transpose of the self-cell term: each wet cell m collects from itself and from the neighbours whose stencils use it
@@ -375,7 +466,7 @@ function loading_gradient_transpose!(pᵇ, op::ConvolutionLoadingOperator, ∂¹
     N = length(op.x)
     launch!(architecture(pᵇ), pᵇ.grid, (N,), _loading_gradient_transpose!, pᵇ, ∂¹Ψ, ∂²Ψ, op.x, op.y, op.z, op.e¹, op.e²,
             op.solid_angle, op.i, op.j, N, op.radius, op.coefficient, op.singular_coefficient, op.logarithmic_coefficient,
-            op.correction)
+            op.correction, op.minimum_separation, op.multiplicity)
     launch!(architecture(pᵇ), pᵇ.grid, (N,), _add_self_term_transpose!, pᵇ, ∂¹Ψ, ∂²Ψ, op.i, op.j, op.neighbours,
             op.stencil, op.self_term)
     return nothing
