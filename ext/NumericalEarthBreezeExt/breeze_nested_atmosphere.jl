@@ -84,24 +84,24 @@ NumericalEarth.Grids.surface_elevation(grid::TerrainFollowingGrid) =
 
 const LiveParentAtmosphere = Union{BreezeAtmosphere, NestedModel, EarthSystemModel}
 
-breeze_atmosphere(model::BreezeAtmosphere) = model
-breeze_atmosphere(nested::NestedModel) = breeze_atmosphere(nested.child)
-breeze_atmosphere(coupled_model::EarthSystemModel) = breeze_atmosphere(component_model(coupled_model.atmosphere))
-
 # The parent's own fields, under the keys of the state exchanger's derived prognostics.
-function parent_prognostic(parent::LiveParentAtmosphere)
-    model = breeze_atmosphere(parent)
-    return (ρᵈ = dynamics_density(model.dynamics), ρu = model.momentum.ρu, ρv = model.momentum.ρv,
-            ρθ = Oceananigans.prognostic_fields(model.formulation).ρθ, ρqᵛᵉ = model.moisture_density,
-            θ = Oceananigans.fields(model.formulation).θ, u = model.velocities.u, v = model.velocities.v)
+function parent_prognostic(parent::LiveParentAtmosphere, moisture_name)
+    f = Oceananigans.fields(parent)
+    return (ρᵈ = f.ρᵈ, ρu = f.ρu, ρv = f.ρv, ρθ = f.ρθ, ρqᵛᵉ = f[moisture_name], θ = f.θ, u = f.u, v = f.v)
 end
+
+parent_prognostic(coupled_model::EarthSystemModel, moisture_name) =
+    parent_prognostic(component_model(coupled_model.atmosphere), moisture_name)
 
 state_exchanger(::LiveParentAtmosphere, pˢᵗ, constants; kw...) = nothing
 default_parent_condensates(::LiveParentAtmosphere) = nothing
 resident_time_indices(::LiveParentAtmosphere) = nothing
 
 NumericalEarth.Grids.surface_elevation(parent::LiveParentAtmosphere) =
-    surface_elevation(breeze_atmosphere(parent).grid)
+    surface_elevation(Oceananigans.fields(parent).ρu.grid)
+
+NumericalEarth.Grids.surface_elevation(coupled_model::EarthSystemModel) =
+    surface_elevation(component_model(coupled_model.atmosphere))
 
 # A live parent covers the child, so the child starts from it; a prescribed parent's child is
 # initialized by the caller.
@@ -437,7 +437,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
     exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
                                  moisture_name, time_indices_in_memory)
-    prognostic = parent_prognostic(something(exchanger, parent_atmosphere))
+    prognostic = isnothing(exchanger) ? parent_prognostic(parent_atmosphere, moisture_name) : parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
     moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛᵉ))
