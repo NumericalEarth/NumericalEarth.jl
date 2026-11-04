@@ -1357,3 +1357,18 @@ end
     @test parent.clock.time == nested.child.clock.time == 3
     @test parent.clock.iteration == nested.child.clock.iteration == 3
 end
+
+@testset "NestedModel: a boundary-prescribed parent's strips follow the child's clock" begin
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = BoundaryPrescribedComponent(west = PrescribedAtmosphere(grid, [0.0, 10.0]),
+                                         east = PrescribedAtmosphere(grid, [0.0, 10.0]))
+    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); time_step_ratio = 3)
+
+    for _ in 1:3
+        time_step!(nested, 1.0)
+    end
+
+    @test parent.clock.time == nested.child.clock.time == 3
+    @test parent.west.clock.time == parent.east.clock.time == 3
+    @test parent.west.clock.iteration == parent.east.clock.iteration == 3
+end
