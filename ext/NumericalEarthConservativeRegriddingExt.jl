@@ -1,6 +1,7 @@
 module NumericalEarthConservativeRegriddingExt
 
 using ConservativeRegridding: ConservativeRegridding, Regridder, regrid!
+using Oceananigans: instantiated_location
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.Fields: Field, interior
 using Oceananigans.Grids: AbstractGrid
@@ -24,10 +25,15 @@ end
 cell_values(field::Field) = vec(interior(field))
 cell_values(array) = vec(array)
 
+# Both copies of a tripolar fold row are filled only for a `Field` on the underlying grid
+regrid_target(field::Field) = Field(instantiated_location(field), underlying_grid(field.grid);
+                                    data = field.data, indices = field.indices)
+regrid_target(array) = vec(array)
+
 function InterfaceComputations.regrid_surface_field!(destination, regridder::Regridder, source)
     # Stage `source` in the regridder's dense buffer so `mul!` dispatches to the GPU sparse kernel
     regridder.src_temp .= cell_values(source)
-    regrid!(cell_values(destination), regridder, regridder.src_temp)
+    regrid!(regrid_target(destination), regridder, regridder.src_temp)
     return destination
 end
 

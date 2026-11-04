@@ -8,6 +8,7 @@ using Oceananigans.Units
 using Oceananigans.Fields: interior
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.TimeSteppers: update_state!
+using NumericalEarth.EarthSystemModels.InterfaceComputations: conservative_exchange, regrid_surface_field!
 using Test
 
 
@@ -84,6 +85,31 @@ end
 
         @test maximum(abs, interior(fluxes.sensible_heat)) > 0
         @test area_integral(model.interfaces.net_fluxes.atmosphere.ρE) ≈ area_integral(fluxes.sensible_heat)
+    end
+end
+
+@testset "Both copies of a tripolar fold row receive the regridded value" begin
+    bottom_height(λ, φ) = ifelse(φ < -70, 0, -1000)
+
+    for arch in test_architectures, z in ((-100, 0), ExponentialDiscretization(2, -100, 0))
+        underlying_grid = TripolarGrid(arch; size = (40, 20, 2), z, halo = (5, 5, 4))
+        component_grid = LatitudeLongitudeGrid(arch; size = (30, 15, 1), z = (0, 1),
+                                               longitude = (0, 360), latitude = (-90, 90))
+
+        for grid in (underlying_grid, ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height)))
+            exchange = conservative_exchange(on_architecture(CPU(), component_grid), grid)
+            source = Field{Center, Center, Nothing}(component_grid)
+            destination = Field{Center, Center, Nothing}(grid)
+
+            set!(source, 1)
+            regrid_surface_field!(destination, exchange.from_component, source)
+            @test all(Array(interior(destination)) .≈ 1)
+
+            set!(source, (λ, φ) -> φ + cosd(λ))
+            regrid_surface_field!(destination, exchange.from_component, source)
+            fold_row = Array(interior(destination, :, 20, 1))
+            @test fold_row ≈ reverse(fold_row)
+        end
     end
 end
 
