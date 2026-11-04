@@ -77,12 +77,15 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
     land_heat_flux = SpeedyWeather.SurfaceLandHeatFlux(spectral_grid)
     surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux)
 
+    albedo = SpeedyWeather.OceanLandAlbedo(spectral_grid; ocean=SpeedyWeather.PrescribedAlbedo(spectral_grid))
+
     # The atmospheric model
     atmosphere_model = SpeedyWeather.PrimitiveWetModel(
         spectral_grid;
         time_stepping,
         surface_heat_flux,
         surface_humidity_flux,
+        albedo,
         ocean = SpeedyWeather.PrescribedOcean(),
         sea_ice = nothing # provided by ClimaSeaIce
     )

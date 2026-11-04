@@ -19,8 +19,6 @@ function NumericalEarth.EarthSystemModels.surface_state(atmosphere::SpeedySimula
               T    = zero(surface_values),
               p    = zero(surface_values),
               q    = zero(surface_values),
-              ℐꜜˢʷ = zero(surface_values),
-              ℐꜜˡʷ = zero(surface_values),
               Jʳⁿ  = zero(surface_values),
               Jˢⁿ  = zero(surface_values))
 end
@@ -62,9 +60,7 @@ function NumericalEarth.EarthSystemModels.update_surface_state!(state, atmos::Sp
     state.q .= RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer, prognostic_step).data
     state.p .= exp.(RingGrids.field_view(atmos.variables.grid.pressure, :, prognostic_step).data)
 
-    state.ℐꜜˢʷ .= .- parameterizations.surface_shortwave_down.data
-    state.ℐꜜˡʷ .= .- parameterizations.surface_longwave_down.data
-    state.Jʳⁿ  .= parameterizations.rain_rate.data
+    state.Jʳⁿ .= parameterizations.rain_rate.data
 
     # `snow_rate` is only registered when SpeedyWeather's large-scale
     # condensation parameterization is part of the model
@@ -86,10 +82,8 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     partition = coupled_model.interfaces.surface_partition
     ocean = atmos.variables.prognostic.ocean
 
-    # TODO: Figure out how we are going to deal with upwelling radiation
     regrid_over_water!(ocean.sensible_heat_flux.data, regridder, partition.fluxes.sensible_heat)
     regrid_over_water!(ocean.surface_humidity_flux.data, regridder, partition.fluxes.water_vapor)
-    regrid_over_water!(ocean.sea_surface_temperature.data, regridder, partition.surface_temperature)
 
     return nothing
 end
