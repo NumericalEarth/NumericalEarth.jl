@@ -264,17 +264,17 @@ end
     return - b.gravitational_acceleration * α * J₀
 end
 
-@inline function Forcings.transmitted_fraction(R::TwoColorRadiation, i, j, grid, d)
+@inline function Forcings.transmitted_fraction(i, j, grid, R::TwoColorRadiation, d)
     ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
     return ϵ₁ * exp(-κ₁ * d) + (1 - ϵ₁) * exp(-κ₂ * d)
 end
 
-@inline function Forcings.transmitted_fraction_derivative(R::TwoColorRadiation, i, j, grid, d)
+@inline function Forcings.transmitted_fraction_derivative(i, j, grid, R::TwoColorRadiation, d)
     ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
     return - ϵ₁ * κ₁ * exp(-κ₁ * d) - (1 - ϵ₁) * κ₂ * exp(-κ₂ * d)
 end
 
-@inline function Forcings.transmitted_thickness(R::TwoColorRadiation, i, j, grid, h)
+@inline function Forcings.transmitted_thickness(i, j, grid, R::TwoColorRadiation, h)
     ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
     return - ϵ₁ * expm1(-κ₁ * h) / κ₁ - (1 - ϵ₁) * expm1(-κ₂ * h) / κ₂
 end

@@ -35,17 +35,17 @@ absorbed_above(i, j, k, grid, radiation) = sum(radiation(i, j, n, grid, nothing,
 
     for k in (100, 99, 90, 60)
         d = - zᶠ[k]
-        @test absorbed_above(1, 1, k, grid, radiation) ≈ J₀ * (1 - transmitted_fraction(radiation, 1, 1, grid, d))
+        @test absorbed_above(1, 1, k, grid, radiation) ≈ J₀ * (1 - transmitted_fraction(1, 1, grid, radiation, d))
     end
 
-    T(d) = transmitted_fraction(radiation, 1, 1, grid, d)
-    ℒ(h) = transmitted_thickness(radiation, 1, 1, grid, h)
+    T(d) = transmitted_fraction(1, 1, grid, radiation, d)
+    ℒ(h) = transmitted_thickness(1, 1, grid, radiation, h)
     @test T(0) == 1
     @test ℒ(0) == 0
 
     for d in (0.1, 1.0, 10.0, 100.0)
         δ = 1e-5 * d
-        @test transmitted_fraction_derivative(radiation, 1, 1, grid, d) ≈ (T(d + δ) - T(d - δ)) / 2δ rtol=1e-6
+        @test transmitted_fraction_derivative(1, 1, grid, radiation, d) ≈ (T(d + δ) - T(d - δ)) / 2δ rtol=1e-6
         @test (ℒ(d + δ) - ℒ(d - δ)) / 2δ ≈ T(d) rtol=1e-6
     end
 
@@ -66,11 +66,11 @@ absorbed_above(i, j, k, grid, radiation) = sum(radiation(i, j, n, grid, nothing,
     for i in 1:2
         shortwave_radiative_forcing(i, 1, grid, radiation, Iˢʷ, ocean_properties)
         @test absorbed_above(i, 1, 1, grid, radiation) ≈ radiation.surface_flux[i, 1, 1]
-        @test absorbed_above(i, 1, 15, grid, radiation) ≈ radiation.surface_flux[i, 1, 1] * (1 - transmitted_fraction(radiation, i, 1, grid, d))
+        @test absorbed_above(i, 1, 15, grid, radiation) ≈ radiation.surface_flux[i, 1, 1] * (1 - transmitted_fraction(i, 1, grid, radiation, d))
     end
 
     # The greener column lets less light through
-    @test transmitted_fraction(radiation, 2, 1, grid, 10) < transmitted_fraction(radiation, 1, 1, grid, 10)
+    @test transmitted_fraction(2, 1, grid, radiation, 10) < transmitted_fraction(1, 1, grid, radiation, 10)
 
     # A moving vertical coordinate stretches the column, which still absorbs the whole shortwave
     grid = RectilinearGrid(size=(1, 1, 20), x=(0, 1), y=(0, 1),
