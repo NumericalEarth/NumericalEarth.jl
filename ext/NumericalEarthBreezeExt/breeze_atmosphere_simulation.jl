@@ -52,7 +52,7 @@ end
                      coriolis = nothing,
                      forcing = NamedTuple(),
                      closure = nothing,
-                     clock = Clock{eltype(grid)}(time=0),
+                     clock = Clock(grid),
                      initialize = true)
 
 Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
@@ -98,7 +98,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                      coriolis = nothing,
                                                      forcing = NamedTuple(),
                                                      closure = nothing,
-                                                     clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                     clock = Oceananigans.TimeSteppers.Clock(grid),
                                                      initialize = true,
                                                      radiation = CoupledRadiation())
 

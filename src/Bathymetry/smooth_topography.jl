@@ -1,13 +1,11 @@
 using DocStringExtensions: TYPEDSIGNATURES
 
-# RightConnected and LeftConnected have physical west and east boundaries, respectively.
-@inline _previous_smoothing_index(i, ::Bounded) = max(1, i - 1)
-@inline _previous_smoothing_index(i, ::RightConnected) = max(1, i - 1)
+# Clamp to the interior across a physical (Closed) boundary.
+@inline _previous_smoothing_index(i, ::Sides{Closed}) = max(1, i - 1)
 @inline _previous_smoothing_index(i, ::Flat) = i
 @inline _previous_smoothing_index(i, topology) = i - 1
 
-@inline _next_smoothing_index(i, N, ::Bounded) = min(N, i + 1)
-@inline _next_smoothing_index(i, N, ::LeftConnected) = min(N, i + 1)
+@inline _next_smoothing_index(i, N, ::Sides{<:Any, Closed}) = min(N, i + 1)
 @inline _next_smoothing_index(i, N, ::Flat) = i
 @inline _next_smoothing_index(i, N, topology) = i + 1
 
