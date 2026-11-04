@@ -51,8 +51,14 @@ Return `(outlet_i, outlet_j, outlet_λ, outlet_φ)` for the river-mouth cells of
 `discharge` `Field` whose ocean cells are `NaN` (the GloFAS convention). A river
 mouth is a finite (land/river) cell with at least one `NaN` (ocean) horizontal
 neighbor — i.e. the point where the routed river network meets the coast.
+
+A channel running along the coast makes many such cells, each carrying (nearly) the river's whole
+discharge (68 cells of ~23,700 m³/s in the Mississippi delta, a ninefold excess). So the cells are
+taken largest discharge first, and a cell is dropped when an already kept cell within
+`channel_radius` degrees carries a discharge within a factor `similarity` of its own: the same
+channel reaching the coast again. A small stream beside a large river keeps its own mouth.
 """
-function coastal_outlet_indices(discharge)
+function coastal_outlet_indices(discharge; similarity = 2, channel_radius = 0.5)
     grid = discharge.grid
     arch = architecture(grid)
 
@@ -60,7 +66,24 @@ function coastal_outlet_indices(discharge)
     fill!(outlet, false)
     launch!(arch, grid, :xy, _mark_coastal_outlets!, outlet, discharge)
 
-    return outlet_indices_from_mask(Array(interior(outlet))[:, :, 1], grid)
+    outlet_i, outlet_j, outlet_λ, outlet_φ = outlet_indices_from_mask(Array(interior(outlet))[:, :, 1], grid)
+    Q = Array(interior(discharge))[:, :, 1]
+    keep = one_mouth_per_channel([Q[i, j] for (i, j) in zip(outlet_i, outlet_j)], outlet_λ, outlet_φ;
+                                 similarity, channel_radius)
+
+    return outlet_i[keep], outlet_j[keep], outlet_λ[keep], outlet_φ[keep]
+end
+
+function one_mouth_per_channel(Q, λ, φ; similarity, channel_radius)
+    order = sortperm(Q; rev = true)
+    kept = Int[]
+    for n in order
+        same_channel = any(kept) do m
+            abs(λ[n] - λ[m]) ≤ channel_radius && abs(φ[n] - φ[m]) ≤ channel_radius && Q[m] ≤ similarity * Q[n]
+        end
+        same_channel || push!(kept, n)
+    end
+    return sort(kept)
 end
 
 @kernel function _mark_coastal_outlets!(outlet, discharge)
