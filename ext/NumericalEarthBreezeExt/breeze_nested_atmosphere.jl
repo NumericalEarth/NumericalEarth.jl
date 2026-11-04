@@ -36,7 +36,7 @@ using Oceananigans:
     TendencyCallsite,
     set!
 
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, ReactantState
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
@@ -616,7 +616,10 @@ function initialize_nested_child!(nested_model; balancer = true, prognostic = ne
     interpolate_child_momentum!(ρu, ρv, prognostic, child.grid, t₀)
 
     moisture = NamedTuple{(moisture_name,)}((ρqᵛᵉ,))
-    set!(nested_model; ρᵈ, ρu, ρv, ρθ, moisture..., compute_reference_state = true)
+    # Breeze main's `reset_reference_state!` builds Fields and branches on traced values, so on
+    # ReactantState the reference state stays as constructed (Breeze PR 1112, closed unmerged).
+    compute_reference_state = !(architecture(child.grid) isa ReactantState)
+    set!(nested_model; ρᵈ, ρu, ρv, ρθ, moisture..., compute_reference_state)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
