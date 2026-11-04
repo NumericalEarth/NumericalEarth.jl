@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: BoundingBox, cmr_granules_url
+using NumericalEarth.DataWrangling: BoundingBox, cmr_granules_url, earthdata_download_cached
+using Dates: DateTime
 
 # The granule query itself needs network access; the URL it is built from does not.
 @testset "NASA CMR granule-search URL" begin
@@ -14,4 +15,29 @@ using NumericalEarth.DataWrangling: BoundingBox, cmr_granules_url
     @test occursin("bounding_box=-112.8,35.2,-111.2,36.8", url)
     @test occursin("page_num=1", url)
     @test occursin("page_num=3", cmr_granules_url("AG1KM", "003", region; page_num = 3))
+
+    wrapped = BoundingBox(longitude = (267.5, 268.5), latitude = (36.5, 37.5))
+    @test occursin("bounding_box=-92.5,36.5,-91.5,37.5", cmr_granules_url("MCD15A2H", "061", wrapped))
+    seam = BoundingBox(longitude = (179, 181), latitude = (36, 37))
+    @test occursin("bounding_box=179,36,-179,37", cmr_granules_url("AG100", "003", seam))
+    globe = BoundingBox(longitude = (0, 360), latitude = (-90, 90))
+    @test occursin("bounding_box=-180,-90,180,90", cmr_granules_url("AG100", "003", globe))
+
+    # A static-epoch product searches the whole record; a dated one narrows to the day.
+    @test !occursin("temporal=", url)
+    dated = cmr_granules_url("MCD15A2H", "061", region; date = DateTime(2020, 7, 3))
+    @test occursin("temporal=2020-07-03T00:00:00Z,2020-07-04T00:00:00Z", dated)
+end
+
+@testset "Cached Earthdata granules" begin
+    cache = mktempdir()
+    url = "https://data.lpdaac.earthdatacloud.nasa.gov/lp-prod-protected/" *
+          "MCD15A2H.061/MCD15A2H.A2020185.h10v05.061.2020340132006.hdf"
+    path = joinpath(cache, basename(url))
+    write(path, "granule")
+
+    # A granule already in the cache is returned as it stands, so a repeated ingestion
+    # needs neither the network nor credentials.
+    @test earthdata_download_cached(url, cache) == path
+    @test read(path, String) == "granule"
 end
