@@ -18,10 +18,11 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, EarthSystemModel, boundary_strips,
+                                        relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent
+                                   VectorComponent, interpolate_from_parent!
 
 using Oceananigans:
     Oceananigans,
@@ -39,8 +40,9 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
+using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
-using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
+using Oceananigans.Grids: znode, ξnode, ηnode, rnode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, geographic_to_conformal_conic
@@ -66,6 +68,46 @@ using Breeze:
     moisture_specific_name
 
 using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
+
+# A terrain-following grid's `znodes` are its reference levels, so a terrain-following parent is
+# sampled at the child's reference node.
+@inline NumericalEarth.NestedModels.interpolation_node(i, j, k, grid, ℓx, ℓy, ℓz, ::TerrainFollowingGrid) =
+    (ξnode(i, j, k, grid, ℓx, ℓy, ℓz), ηnode(i, j, k, grid, ℓx, ℓy, ℓz), rnode(i, j, k, grid, ℓx, ℓy, ℓz))
+
+# The height of a terrain-following grid's lowest face.
+NumericalEarth.Grids.surface_elevation(grid::TerrainFollowingGrid) =
+    KernelFunctionOperation{Center, Center, Nothing}(znode, grid, Center(), Center(), Face()) |> Field
+
+#####
+##### Live parents: a Breeze model, a nest whose child is one, or a coupled model whose atmosphere is
+#####
+
+const LiveParentAtmosphere = Union{BreezeAtmosphere, NestedModel, EarthSystemModel}
+
+# The parent's own fields, under the keys of the state exchanger's derived prognostics.
+function parent_prognostic(parent::LiveParentAtmosphere, moisture_name)
+    f = Oceananigans.fields(parent)
+    return (ρᵈ = f.ρᵈ, ρu = f.ρu, ρv = f.ρv, ρθ = f.ρθ, ρqᵛᵉ = f[moisture_name], θ = f.θ, u = f.u, v = f.v)
+end
+
+parent_prognostic(coupled_model::EarthSystemModel, moisture_name) =
+    parent_prognostic(component_model(coupled_model.atmosphere), moisture_name)
+
+state_exchanger(::LiveParentAtmosphere, pˢᵗ, constants; kw...) = nothing
+default_parent_condensates(::LiveParentAtmosphere) = nothing
+resident_time_indices(::LiveParentAtmosphere) = nothing
+
+NumericalEarth.Grids.surface_elevation(parent::LiveParentAtmosphere) =
+    surface_elevation(first(Oceananigans.fields(parent)).grid)
+
+NumericalEarth.Grids.surface_elevation(coupled_model::EarthSystemModel) =
+    surface_elevation(component_model(coupled_model.atmosphere))
+
+# A live parent covers the child, so the child starts from it; a prescribed parent's child is
+# initialized by the caller.
+initialize_from_parent!(nested_model, parent, prognostic; balancer) = nested_model
+initialize_from_parent!(nested_model, ::LiveParentAtmosphere, prognostic; balancer) =
+    initialize_nested_child!(nested_model; balancer, prognostic)
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -304,6 +346,12 @@ interpolate that side's strip, and the lateral boundary relaxation acts only on 
 relaxation zone, through a tendency callback the `NestedModel` adds to the child's at every time step.
 `parent_condensates` is then keyed by side.
 
+`parent_atmosphere` may instead be a live Breeze `AtmosphereModel`, a `NestedModel` whose child is
+one, or an `EarthSystemModel` (e.g. an `AtmosphereLandModel`) whose atmosphere is either, so nests
+telescope, each level with its own surface: `nested_atmosphere_model(nested_atmosphere_model(coarse_grid, dataset; dates), fine_grid)`.
+The child's boundary conditions and relaxation then sample the parent's own fields, its terrain blends
+toward the parent's, and it starts from the parent's state, balanced unless `balancer = false`.
+
 Liquid/ice inputs to the combine default to the parent's hydrometeors — total liquid `qᶜˡ + qʳ`
 (cloud liquid + rain) and total ice `qᶜⁱ + qˢ` (cloud ice + snow) — but may be supplied from any
 source via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qʳ`/`qᶜⁱ`/`qˢ` entries. Any missing or
@@ -340,8 +388,10 @@ or overridden directly with `terrain_blend_width`), so the terrain at the open b
 orography the parent state was produced with — and the blend slope stays fixed across resolutions
 rather than steepening. `parent_surface_elevation` replaces the parent's own surface elevation in that blend.
 """
-function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere, BoundaryPrescribedComponent},
-                                                              child_grid;
+function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::Union{PrescribedAtmosphere,
+                                                                                      BoundaryPrescribedComponent,
+                                                                                      LiveParentAtmosphere},
+                                                             child_grid;
     relaxation_rate = nothing,
     relaxation_width = default_relaxation_width,
     relaxation_mask = boundary_relaxation_mask(child_grid, relaxation_width),
@@ -371,6 +421,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     forcing = NamedTuple(),
     time_step_ratio = 1,
     time_indices_in_memory = resident_time_indices(parent_atmosphere),
+    balancer = true,
     kw...)
 
     if !isnothing(terrain)
@@ -386,7 +437,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
     exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
                                  moisture_name, time_indices_in_memory)
-    prognostic = parent_prognostic(exchanger)
+    prognostic = isnothing(exchanger) ? parent_prognostic(parent_atmosphere, moisture_name) : parent_prognostic(exchanger)
 
     ρqᵛᵉ = prognostic.ρqᵛᵉ
     moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛᵉ))
@@ -474,7 +525,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
                       (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
 
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks; time_step_ratio)
+    nested_model = NestedModel(parent_atmosphere, child, exchanger, child_callbacks; time_step_ratio)
+    return initialize_from_parent!(nested_model, parent_atmosphere, prognostic; balancer)
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -553,7 +605,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        kw...)
 
     initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
+    initialize_nested_child!(nested_model; balancer, prognostic = initial_state)
     return nested_model
 end
 
@@ -570,24 +622,24 @@ vector_component(::Val{C}, eastward::NamedTuple, northward::NamedTuple) where C 
 @inline rotated_x_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[1]
 @inline rotated_y_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[2]
 
-child_momentum(prognostic, child_grid, t₀) =
-    (interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center)),
-     interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center)))
+child_momentum(prognostic, child_grid) =
+    (interpolate_to_child(prognostic.ρu, child_grid, (Face, Center, Center)),
+     interpolate_to_child(prognostic.ρv, child_grid, (Center, Face, Center)))
 
 # Rotate at cell centers with `intrinsic_vector`, then interpolate to the staggered locations.
-function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
-    ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid, t₀)
-    ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid, t₀)
+function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid)
+    ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid)
+    ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid)
     ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
     ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
     return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
 end
 
-function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
-    field = Field{loc...}(child_grid)
-    interpolate!(field, fts[Time(t₀)])
-    return field
-end
+interpolate_to_child(source, child_grid, loc = (Center, Center, Center)) =
+    interpolate_from_parent!(Field{loc...}(child_grid), initial_snapshot(source))
+
+initial_snapshot(fts::FieldTimeSeries) = fts[Time(@allowscalar first(fts.times))]
+initial_snapshot(field) = field
 
 # Initialize the nested child from the parent-derived `prognostic` (by default the exchanger's, the SAME
 # state that drives the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
@@ -595,16 +647,14 @@ end
 # domain-mean state, graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic
 # balance. `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
 # memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
-function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true,
-                                  prognostic = nested_model.exchanger.prognostic)
+function initialize_nested_child!(nested_model; balancer = true, prognostic = nested_model.exchanger.prognostic)
     child = nested_model.child
     child_grid = child.grid
-    t₀ = @allowscalar first(prognostic.ρᵈ.times)
 
-    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
-    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
-    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
-    ρu, ρv = child_momentum(prognostic, child_grid, t₀)
+    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid)
+    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid)
+    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid)
+    ρu, ρv = child_momentum(prognostic, child_grid)
 
     ρ   = Field(ρᵈ + ρqᵛᵉ)
     qᵛᵉ = Field(ρqᵛᵉ / ρ)

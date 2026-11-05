@@ -1,15 +1,16 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, interpolate_from_parent!, interpolation_node
 using NumericalEarth.DataWrangling: BoundingBox
+using NumericalEarth.EarthSystemModels: component_model
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, OnDisk, InMemory, Cyclical
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, rnode, znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
@@ -1088,7 +1089,7 @@ end
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing,
                 time_indices_in_memory = 3)
-    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
     conjure_time_step_wizard!(sim, IterationInterval(1); cfl = 0.3, max_Δt = 2.0)
@@ -1127,7 +1128,7 @@ end
 
     model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
                                     base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
-    ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
     expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
@@ -1198,7 +1199,7 @@ end
                       unrelaxed_model.exchanger.prognostic)
 
     for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
-        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        ext.initialize_nested_child!(model; balancer = false, prognostic)
         for _ in 1:8
             time_step!(model, 0.5)
         end
@@ -1213,7 +1214,7 @@ end
 
     # Running the strip child in two `run!` calls reproduces its continuous run.
     rerun_model = nest(strips, 1/30)
-    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    ext.initialize_nested_child!(rerun_model; balancer = false, prognostic = initial_states[2])
     simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
     run!(simulation)
     simulation.stop_iteration = 8
@@ -1371,4 +1372,148 @@ end
     @test parent.clock.time == nested.child.clock.time == 3
     @test parent.west.clock.time == parent.east.clock.time == 3
     @test parent.west.clock.iteration == parent.east.clock.iteration == 3
+end
+
+# `interpolate` locates the vertical through the source grid's `znodes`, which on a terrain-following
+# grid are the reference levels, so a terrain-following source is queried at the reference node.
+@testset "interpolation_node samples a terrain-following source in its own vertical coordinate" begin
+    plateau = 400.0
+    z = collect(range(0, 12000, length = 25))
+    horizontal = (size = (6, 6, length(z) - 1), longitude = (-100, -96), latitude = (34, 38), halo = (5, 5, 5),
+                  topology = (Bounded, Bounded, Bounded))
+    grid = LatitudeLongitudeGrid(; horizontal..., z = TerrainFollowingVerticalDiscretization(z))
+    Breeze.materialize_terrain!(grid, (λ, φ) -> plateau)
+    flat_grid = LatitudeLongitudeGrid(; horizontal..., z)
+
+    reference = interpolation_node(3, 3, 1, grid, Center(), Center(), Center(), grid)
+    physical  = interpolation_node(3, 3, 1, grid, Center(), Center(), Center(), flat_grid)
+    @test reference[3] ≈ rnode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3]  ≈ znode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3] - reference[3] ≈ plateau rtol = 0.05
+
+    source = CenterField(grid)
+    set!(source, (λ, φ, z) -> z)
+    target = interpolate_from_parent!(CenterField(grid), source)
+    @test Array(interior(target)) ≈ Array(interior(source))
+end
+
+telescope_vertical_levels = collect(range(0, 12000, length = 17))
+ridge(λ, φ) = 400 * exp(-((λ + 98)^2 + (φ - 36)^2) / 0.5)
+
+telescope_grid(extent; arch = CPU()) =
+    LatitudeLongitudeGrid(arch; size = (8, 8, length(telescope_vertical_levels) - 1),
+                          longitude = (-98 - extent / 2, -98 + extent / 2),
+                          latitude = (36 - extent / 2, 36 + extent / 2),
+                          z = TerrainFollowingVerticalDiscretization(telescope_vertical_levels), halo = (5, 5, 5),
+                          topology = (Bounded, Bounded, Bounded))
+
+function telescope_terrain(grid)
+    terrain = Field{Center, Center, Nothing}(grid)
+    set!(terrain, ridge)
+    return terrain
+end
+
+function live_telescope_root(extent; arch = CPU())
+    grid = telescope_grid(extent; arch)
+    Breeze.materialize_terrain!(grid, ridge)
+    root = atmosphere_model(grid)
+    set!(root; θ = 300, u = 8, qᵗ = 4e-3)
+    update_state!(root)
+    return root
+end
+
+function telescope_nest(parent, extent; arch = CPU(), kw...)
+    grid = telescope_grid(extent; arch)
+    return nested_atmosphere_model(parent, grid; terrain = telescope_terrain(grid), terrain_blend_width = 2,
+                                   relaxation_rate = 1/300, relaxation_width = 2, balancer = false, kw...)
+end
+
+@testset "nested_atmosphere_model in a live parent inherits its state and steps with it" begin
+    parent = live_telescope_root(4.0)
+    nest = telescope_nest(parent, 2.0)
+
+    @test maximum(abs, Array(interior(nest.child.velocities.u)) .- 8) < 0.1
+
+    run!(Simulation(nest; Δt = 0.5, stop_iteration = 3))
+
+    @test parent.clock.iteration == 3
+    @test parent.clock.time ≈ nest.child.clock.time
+    for field in prognostic_fields(nest.child)
+        @test all(isfinite, Array(interior(field)))
+    end
+end
+
+@testset "nested_atmosphere_model: time_step_ratio refines a live Breeze parent" begin
+    parent = live_telescope_root(4.0)
+    nest = telescope_nest(parent, 2.0; time_step_ratio = 2)
+
+    run!(Simulation(nest; Δt = 0.5, stop_iteration = 4))
+
+    @test nest.child.clock.iteration == 4
+    @test parent.clock.iteration == 2
+    @test parent.clock.time ≈ nest.child.clock.time
+    for field in prognostic_fields(nest.child)
+        @test all(isfinite, Array(interior(field)))
+    end
+end
+
+function telescope_land(extent)
+    grid = LatitudeLongitudeGrid(size = (8, 8), longitude = (-98 - extent / 2, -98 + extent / 2),
+                                 latitude = (36 - extent / 2, 36 + extent / 2), halo = (5, 5),
+                                 topology = (Bounded, Bounded, Flat))
+    land = SlabLand(grid)
+    set!(land.temperature, 295)
+    set!(land.water_storage, 50)
+    update_state!(land)
+    return land
+end
+
+land_coupled(nest, extent) = AtmosphereLandModel(Simulation(nest; Δt = 0.5, verbose = false), telescope_land(extent))
+
+# A prescribed parent drives three Breeze nests, each coupled to its own land and each the live parent
+# of the next, refined 2:1 at the two inner levels.
+@testset "Three-level telescope of land-coupled nests steps every level and every land" begin
+    root_grid = LatitudeLongitudeGrid(size = (12, 12, 16), longitude = (-101, -95), latitude = (33, 39),
+                                      z = (0, 16000), halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    root = PrescribedAtmosphere(root_grid, [0.0, 3600.0])
+    set!(root.temperature,       (λ, φ, z, t) -> 300 - 6.5e-3 * z)
+    set!(root.specific_humidity, (λ, φ, z, t) -> 4e-3)
+    set!(root.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(root.velocities.v,      (λ, φ, z, t) -> 0)
+    set!(root.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    outer_grid = telescope_grid(4.0)
+    outer = nested_atmosphere_model(root, outer_grid; terrain = telescope_terrain(outer_grid),
+                                    terrain_blend_width = 2, base_pressure = 1e5, parent_condensates = nothing,
+                                    relaxation_rate = 1/300, relaxation_width = 2)
+    ext.initialize_nested_child!(outer; balancer = false)
+
+    outer_alm  = land_coupled(outer, 4.0)
+    middle_alm = land_coupled(telescope_nest(outer_alm, 2.0; time_step_ratio = 2), 2.0)
+    inner_alm  = land_coupled(telescope_nest(middle_alm, 1.0; time_step_ratio = 2), 1.0)
+
+    middle = component_model(middle_alm.atmosphere)
+    inner  = component_model(inner_alm.atmosphere)
+    @test middle.parent === outer_alm
+    @test inner.parent === middle_alm
+    @test isempty(Oceananigans.OutputReaders.extract_field_time_series((fields(inner.child), inner.child.forcing)))
+
+    Δt = 0.5
+    run!(Simulation(inner_alm; Δt, stop_iteration = 4))
+
+    for (alm, steps) in ((inner_alm, 4), (middle_alm, 2), (outer_alm, 1))
+        nest = component_model(alm.atmosphere)
+        @test alm.clock.iteration == steps
+        @test nest.child.clock.iteration == steps
+        @test alm.land.clock.iteration == steps
+        @test alm.clock.time ≈ 4Δt
+        @test nest.child.clock.time ≈ 4Δt
+        @test alm.land.clock.time ≈ 4Δt
+        for field in prognostic_fields(nest.child)
+            @test all(isfinite, Array(interior(field)))
+        end
+        @test all(isfinite, Array(interior(alm.land.temperature)))
+    end
+    @test root.clock.time ≈ 4Δt
 end
