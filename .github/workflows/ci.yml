@@ -12,10 +12,6 @@ on:
       - "ext/**"
       - "src/**"
       - "Project.toml"
-  push:
-    paths: *paths
-    branches:
-      - dkz/differentiable-coupled-forecast
   workflow_dispatch:
 
 concurrency:
