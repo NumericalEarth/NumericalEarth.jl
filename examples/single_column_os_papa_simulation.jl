@@ -2,8 +2,8 @@
 #
 # In this example, we simulate the evolution of an ocean water column
 # forced by an atmosphere derived from the JRA55 re-analysis.
-# The simulated column is located at ocean station
-# Papa (144.9ᵒ W and 50.1ᵒ N).
+# The simulated column is located at Ocean Station
+# Papa (144.9ᵒ W, 50.1ᵒ N).
 #
 # ## Install dependencies
 #
@@ -17,7 +17,6 @@
 using CopernicusMarine
 using NumericalEarth
 using Oceananigans
-using Oceananigans: prognostic_fields
 using Oceananigans.Units
 using Oceananigans.Models: buoyancy_frequency
 using Dates
@@ -25,10 +24,9 @@ using Printf
 
 # # Construct the grid
 #
-# First, we construct a single-column grid with 2 meter spacing
-# located at ocean station Papa.
+# First, we construct a single-column grid with 2-meter spacing
+# located at Ocean Station Papa.
 
-# Ocean station papa location
 location_name = "ocean_station_papa"
 λ★, φ★ = -144.9, 50.1
 
@@ -45,7 +43,7 @@ grid = RectilinearGrid(size = 200,
 
 ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))
 
-# which wraps around the ocean model
+# which wraps the ocean model
 
 ocean.model
 
@@ -60,8 +58,8 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
 
 # # A prescribed atmosphere based on JRA55 re-analysis
 #
-# We build a `JRA55PrescribedAtmosphere` at the same location as the single-colunm grid
-# which is based on the JRA55 reanalysis.
+# We build a `JRA55PrescribedAtmosphere` and a `JRA55PrescribedRadiation`
+# at the same location as the single-column grid.
 
 atmosphere = JRA55PrescribedAtmosphere(region   = Column(λ★, φ★),
                                        end_date = DateTime(1990, 1, 31), # Last day of the simulation
@@ -71,17 +69,22 @@ radiation = JRA55PrescribedRadiation(region   = Column(λ★, φ★),
                                      end_date = DateTime(1990, 1, 31),
                                      time_indices_in_memory = 1000)
 
-# This builds a representation of the atmosphere on the small grid
+# The atmosphere lives on its own single-column grid.
 
 atmosphere.grid
 
-# Let's take a look at the atmospheric state
+# Let's take a look at the atmospheric state.
 
-ua = interior(atmosphere.velocities.u, 1, 1, 1, :)
-va = interior(atmosphere.velocities.v, 1, 1, 1, :)
-Ta = interior(atmosphere.temperature, 1, 1, 1, :)
-qa = interior(atmosphere.specific_humidity, 1, 1, 1, :)
-t_days = atmosphere.times / days
+uᵃᵗ = atmosphere.velocities.u
+vᵃᵗ = atmosphere.velocities.v
+Tᵃᵗ = atmosphere.temperature
+qᵃᵗ = atmosphere.specific_humidity
+ℐꜜˡʷ = radiation.downwelling_longwave
+ℐꜜˢʷ = radiation.downwelling_shortwave
+Jʳⁿ = atmosphere.precipitation_flux.rain
+Jˢⁿ = atmosphere.precipitation_flux.snow
+
+atmosphere_days = atmosphere.times / days
 
 using CairoMakie
 
@@ -89,21 +92,22 @@ set_theme!(Theme(linewidth=3, fontsize=24))
 
 fig = Figure(size=(800, 1000))
 axu = Axis(fig[2, 1]; ylabel="Atmosphere \n velocity (m s⁻¹)")
-axT = Axis(fig[3, 1]; ylabel="Atmosphere \n temperature (ᵒK)")
+axT = Axis(fig[3, 1]; ylabel="Atmosphere \n temperature (K)")
 axq = Axis(fig[4, 1]; ylabel="Atmosphere \n specific humidity", xlabel = "Days since Jan 1, 1990")
 Label(fig[1, 1], "Atmospheric state over ocean station Papa", tellwidth=false)
 
-lines!(axu, t_days, ua, label="Zonal velocity")
-lines!(axu, t_days, va, label="Meridional velocity")
+lines!(axu, atmosphere_days, uᵃᵗ, label="Zonal velocity")
+lines!(axu, atmosphere_days, vᵃᵗ, label="Meridional velocity")
 ylims!(axu, -6, 6)
 axislegend(axu, framevisible=false, nbanks=2, position=:lb)
 
-lines!(axT, t_days, Ta)
-lines!(axq, t_days, qa)
+lines!(axT, atmosphere_days, Tᵃᵗ)
+lines!(axq, atmosphere_days, qᵃᵗ)
 
 current_figure()
 
-# We continue constructing a simulation.
+# Next, we couple the ocean to the prescribed atmosphere and radiation and build a simulation.
+
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
@@ -111,7 +115,7 @@ wall_clock = Ref(time_ns())
 
 function progress(sim)
     msg = "Ocean Station Papa"
-    msg *= string(", iter: ", iteration(sim), ", time: ", prettytime(sim))
+    msg *= string(", iteration: ", iteration(sim), ", time: ", prettytime(sim))
 
     elapsed = 1e-9 * (time_ns() - wall_clock[])
     msg *= string(", wall time: ", prettytime(elapsed))
@@ -123,22 +127,22 @@ function progress(sim)
     T = sim.model.ocean.model.tracers.T
     S = sim.model.ocean.model.tracers.S
     e = sim.model.ocean.model.tracers.e
-    ρ = sim.model.interfaces.ocean_properties.reference_density
-    c = sim.model.interfaces.ocean_properties.heat_capacity
+    ρᵒᶜ = sim.model.interfaces.ocean_properties.reference_density
+    cᵒᶜ = sim.model.interfaces.ocean_properties.heat_capacity
 
     τˣ = first(sim.model.interfaces.net_fluxes.ocean.u)
     τʸ = first(sim.model.interfaces.net_fluxes.ocean.v)
-    Q  = first(sim.model.interfaces.net_fluxes.ocean.T) * ρ * c
+    Q  = first(sim.model.interfaces.net_fluxes.ocean.T) * ρᵒᶜ * cᵒᶜ
 
     u★ = sqrt(sqrt(τˣ^2 + τʸ^2))
 
     Nz = size(T, 3)
     msg *= @sprintf(", u★: %.2f m s⁻¹", u★)
     msg *= @sprintf(", Q: %.2f W m⁻²",  Q)
-    msg *= @sprintf(", T₀: %.2f ᵒC", first(interior(T, 1, 1, Nz)))
+    msg *= @sprintf(", T₀: %.2f ᵒC", T[1, 1, Nz])
     msg *= @sprintf(", extrema(T): (%.2f, %.2f) ᵒC", minimum(T), maximum(T))
-    msg *= @sprintf(", S₀: %.2f g/kg", first(interior(S, 1, 1, Nz)))
-    msg *= @sprintf(", e₀: %.2e m² s⁻²", first(interior(e, 1, 1, Nz)))
+    msg *= @sprintf(", S₀: %.2f g kg⁻¹", S[1, 1, Nz])
+    msg *= @sprintf(", e₀: %.2e m² s⁻²", e[1, 1, Nz])
 
     @info msg
 
@@ -147,10 +151,11 @@ end
 
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(100))
 
-# Build flux outputs
+# We save the ocean state, the surface fluxes, and the ocean-side friction velocity `u★`.
+
 τˣ = simulation.model.interfaces.net_fluxes.ocean.u
 τʸ = simulation.model.interfaces.net_fluxes.ocean.v
-JT = simulation.model.interfaces.net_fluxes.ocean.T
+Jᵀ = simulation.model.interfaces.net_fluxes.ocean.T
 Jˢ = simulation.model.interfaces.net_fluxes.ocean.S
 Jᵛ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
 𝒬ᵀ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
@@ -158,19 +163,18 @@ Jᵛ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
 ρᵒᶜ = simulation.model.interfaces.ocean_properties.reference_density
 cᵒᶜ = simulation.model.interfaces.ocean_properties.heat_capacity
 
-Q = ρᵒᶜ * cᵒᶜ * JT
+Q = ρᵒᶜ * cᵒᶜ * Jᵀ
 ρτˣ = ρᵒᶜ * τˣ
 ρτʸ = ρᵒᶜ * τʸ
+u★ = sqrt(sqrt(τˣ^2 + τʸ^2))
 N² = buoyancy_frequency(ocean.model)
 κc = ocean.model.closure_fields.κc
 
-fluxes = (; ρτˣ, ρτʸ, Jᵛ, Jˢ, 𝒬ᵛ, 𝒬ᵀ)
+fluxes = (; ρτˣ, ρτʸ, u★, Jᵛ, Jˢ, 𝒬ᵛ, 𝒬ᵀ)
 auxiliary_fields = (; N², κc)
 u, v, w = ocean.model.velocities
 T, S, e = ocean.model.tracers
 fields = merge((; u, v, T, S, e), auxiliary_fields)
-
-# Slice fields at the surface
 outputs = merge(fields, fluxes)
 
 filename = "single_column_omip_$(location_name)"
@@ -181,7 +185,7 @@ ocean.output_writers[:jld2] = JLD2Writer(ocean.model, outputs; filename,
 
 run!(simulation)
 
-# Now let's load the saved output and visualize.
+# Now let's load the saved output and visualize it.
 
 filename *= ".jld2"
 
@@ -196,50 +200,29 @@ N² = FieldTimeSeries(filename, "N²")
 𝒬ᵛ = FieldTimeSeries(filename, "𝒬ᵛ")
 𝒬ᵀ = FieldTimeSeries(filename, "𝒬ᵀ")
 Jˢ = FieldTimeSeries(filename, "Jˢ")
-Ev = FieldTimeSeries(filename, "Jᵛ")
+Jᵛ = FieldTimeSeries(filename, "Jᵛ")
 ρτˣ = FieldTimeSeries(filename, "ρτˣ")
 ρτʸ = FieldTimeSeries(filename, "ρτʸ")
+u★ = FieldTimeSeries(filename, "u★")
 
 Nz = size(T, 3)
 times = 𝒬ᵀ.times
 
-ua  = atmosphere.velocities.u
-va  = atmosphere.velocities.v
-Ta  = atmosphere.temperature
-qa  = atmosphere.specific_humidity
-ℐꜜˡʷ = radiation.downwelling_longwave
-ℐꜜˢʷ = radiation.downwelling_shortwave
-Pr  = atmosphere.precipitation_flux.rain
-Ps  = atmosphere.precipitation_flux.snow
+# The prescribed atmosphere and radiation are interpolated to the output times.
 
-Nt   = length(times)
-uat  = zeros(Nt)
-vat  = zeros(Nt)
-Tat  = zeros(Nt)
-qat  = zeros(Nt)
-ℐꜜˢʷt = zeros(Nt)
-ℐꜜˡʷt = zeros(Nt)
-Pt   = zeros(Nt)
-
-for n = 1:Nt
-    t = Oceananigans.Units.Time(times[n])
-    uat[n]  =  ua[1, 1, 1, t]
-    vat[n]  =  va[1, 1, 1, t]
-    Tat[n]  =  Ta[1, 1, 1, t]
-    qat[n]  =  qa[1, 1, 1, t]
-    ℐꜜˢʷt[n] = ℐꜜˢʷ[1, 1, 1, t]
-    ℐꜜˡʷt[n] = ℐꜜˡʷ[1, 1, 1, t]
-    Pt[n]   =  Pr[1, 1, 1, t] + Ps[1, 1, 1, t]
-end
+atmosphere_temperature = [Tᵃᵗ[1, 1, 1, Time(t)] - 273.15 for t in times]
+precipitation = [Jʳⁿ[1, 1, 1, Time(t)] + Jˢⁿ[1, 1, 1, Time(t)] for t in times]
+shortwave_flux = [- ℐꜜˢʷ[1, 1, 1, Time(t)] for t in times]
+longwave_flux  = [- ℐꜜˡʷ[1, 1, 1, Time(t)] for t in times]
 
 fig = Figure(size=(1800, 1800))
 
-axτ = Axis(fig[1, 1:3], xlabel="Days since Oct 1 1992", ylabel="Wind stress (N m⁻²)")
-axQ = Axis(fig[1, 4:6], xlabel="Days since Oct 1 1992", ylabel="Heat flux (W m⁻²)")
-axu = Axis(fig[2, 1:3], xlabel="Days since Oct 1 1992", ylabel="Velocities (m s⁻¹)")
-axT = Axis(fig[2, 4:6], xlabel="Days since Oct 1 1992", ylabel="Surface temperature (ᵒC)")
-axF = Axis(fig[3, 1:3], xlabel="Days since Oct 1 1992", ylabel="Freshwater volume flux (m s⁻¹)")
-axS = Axis(fig[3, 4:6], xlabel="Days since Oct 1 1992", ylabel="Surface salinity (g kg⁻¹)")
+axτ = Axis(fig[1, 1:3], xlabel="Days since Jan 1, 1990", ylabel="Wind stress (N m⁻²)")
+axQ = Axis(fig[1, 4:6], xlabel="Days since Jan 1, 1990", ylabel="Heat flux (W m⁻²)")
+axu = Axis(fig[2, 1:3], xlabel="Days since Jan 1, 1990", ylabel="Velocities (m s⁻¹)")
+axT = Axis(fig[2, 4:6], xlabel="Days since Jan 1, 1990", ylabel="Surface temperature (ᵒC)")
+axF = Axis(fig[3, 1:3], xlabel="Days since Jan 1, 1990", ylabel="Freshwater volume flux (m s⁻¹)")
+axS = Axis(fig[3, 4:6], xlabel="Days since Jan 1, 1990", ylabel="Surface salinity (g kg⁻¹)")
 
 axuz = Axis(fig[4:5, 1:2], xlabel="Velocities (m s⁻¹)",                ylabel="z (m)")
 axTz = Axis(fig[4:5, 3:4], xlabel="Temperature (ᵒC)",                  ylabel="z (m)")
@@ -253,16 +236,11 @@ Label(fig[0, 1:6], title)
 
 n = Observable(1)
 
-times = (times .- times[1]) ./days
+times = (times .- times[1]) ./ days
 Nt = length(times)
 tn = @lift times[$n]
 
 colors = Makie.wong_colors()
-
-ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
-τˣ = interior(ρτˣ, 1, 1, 1, :) ./ ρᵒᶜ
-τʸ = interior(ρτʸ, 1, 1, 1, :) ./ ρᵒᶜ
-u★ = @. (τˣ^2 + τʸ^2)^(1/4)
 
 lines!(axu, times, interior(u, 1, 1, Nz, :), color=colors[1], label="Zonal")
 lines!(axu, times, interior(v, 1, 1, Nz, :), color=colors[2], label="Meridional")
@@ -270,25 +248,25 @@ lines!(axu, times, u★, color=colors[3], label="Ocean-side u★")
 vlines!(axu, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axu)
 
-lines!(axτ, times, interior(ρτˣ, 1, 1, 1, :), label="Zonal")
-lines!(axτ, times, interior(ρτʸ, 1, 1, 1, :), label="Meridional")
+lines!(axτ, times, ρτˣ, label="Zonal")
+lines!(axτ, times, ρτʸ, label="Meridional")
 vlines!(axτ, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axτ)
 
-lines!(axT, times, Tat[1:Nt] .- 273.15,      color=colors[1], linewidth=2, linestyle=:dash, label="Atmosphere temperature")
+lines!(axT, times, atmosphere_temperature,   color=colors[1], linewidth=2, linestyle=:dash, label="Atmosphere temperature")
 lines!(axT, times, interior(T, 1, 1, Nz, :), color=colors[2], linewidth=4, label="Ocean surface temperature")
 vlines!(axT, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axT)
 
-lines!(axQ, times, interior(𝒬ᵛ, 1, 1, 1, 1:Nt),    color=colors[2], label="Latent",    linewidth=2)
-lines!(axQ, times, interior(𝒬ᵀ, 1, 1, 1, 1:Nt),    color=colors[3], label="Sensible",  linewidth=2)
-lines!(axQ, times, - interior(ℐꜜˢʷ, 1, 1, 1, 1:Nt), color=colors[4], label="Shortwave", linewidth=2)
-lines!(axQ, times, - interior(ℐꜜˡʷ, 1, 1, 1, 1:Nt), color=colors[5], label="Longwave",  linewidth=2)
+lines!(axQ, times, 𝒬ᵛ,             color=colors[2], label="Latent",    linewidth=2)
+lines!(axQ, times, 𝒬ᵀ,             color=colors[3], label="Sensible",  linewidth=2)
+lines!(axQ, times, shortwave_flux, color=colors[4], label="Shortwave", linewidth=2)
+lines!(axQ, times, longwave_flux,  color=colors[5], label="Longwave",  linewidth=2)
 vlines!(axQ, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axQ)
 
-lines!(axF, times, Pt[1:Nt], label="Prescribed freshwater flux")
-lines!(axF, times, - interior(Ev, 1, 1, 1, 1:Nt), label="Evaporation")
+lines!(axF, times, precipitation, label="Prescribed freshwater flux")
+lines!(axF, times, - interior(Jᵛ, 1, 1, 1, :), label="Evaporation")
 vlines!(axF, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axF)
 
@@ -334,7 +312,6 @@ Smin, Smax = extrema(S)
 xlims!(axSz, Smin - 0.2, Smax + 0.2)
 
 CairoMakie.record(fig, "single_column_profiles.mp4", 1:Nt, framerate=24) do nn
-    @info "Drawing frame $nn of $Nt..."
     n[] = nn
 end
 nothing #hide
