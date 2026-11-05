@@ -28,7 +28,7 @@ using Statistics: Statistics, mean
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity, prescribed_radiation,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
-                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
+                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend, PrefetchingBackend,
                        instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
 using ...EarthSystemModels: default_clock
