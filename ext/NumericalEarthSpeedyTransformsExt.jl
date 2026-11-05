@@ -2,13 +2,13 @@ module NumericalEarthSpeedyTransformsExt
 
 using NumericalEarth
 using NumericalEarth.Oceans: Oceans
-using Oceananigans
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture, on_architecture, CPU
-using Oceananigans.DistributedComputations: Distributed, MPI, child_architecture
+using Oceananigans.DistributedComputations: Distributed, all_reduce!, child_architecture
 using Oceananigans.Fields: interior
-using Oceananigans.Grids: λnode, φnode
+using Oceananigans.Grids: Center, λnode, φnode
 using Oceananigans.ImmersedBoundaries: underlying_grid
-using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, TripolarGrid
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 using ConservativeRegridding: ConservativeRegridding, Regridder, regrid!
@@ -218,7 +218,10 @@ function Oceans.spherical_harmonic_loading_operator(grid::DistributedGrid; kwarg
     # model needs, and only the horizontal cells matter.
     local_grid = underlying_grid(grid)
     Nx, Ny, _ = size(local_grid)
-    counts = MPI.Allgather(Nx * Ny, arch.communicator)
+    # All-gather the number of cells of each rank by a sum-reduction of a vector that is zero except at this rank.
+    counts = zeros(Int, prod(arch.ranks))
+    counts[arch.local_rank + 1] = Nx * Ny
+    all_reduce!(+, counts, arch)
     mapping = local_grid.conformal_mapping
     global_grid = TripolarGrid(CPU(), eltype(grid);
                                size = (Nx, sum(counts) ÷ Nx, 1),
@@ -243,11 +246,19 @@ function Oceans.apply_loading_operator!(Ψ, op::DistributedSpectralLoadingOperat
     arch = architecture(pᵇ.grid)
     root = arch.local_rank == 0
     op.local_values .= view(Array(interior(pᵇ)), :, :, 1)
-    MPI.Gatherv!(op.local_values, root ? MPI.VBuffer(op.global_values, op.counts) : nothing, arch.communicator; root = 0)
 
+    # Gather pᵇ by a sum-reduction: each rank fills its own band of the (otherwise zero) global array. Bands are
+    # contiguous in memory because ranks hold whole rows, stacked in rank order.
+    offset = sum(view(op.counts, 1:arch.local_rank))
+    fill!(op.global_values, 0)
+    view(vec(op.global_values), offset+1:offset+op.counts[arch.local_rank + 1]) .= vec(op.local_values)
+    all_reduce!(+, op.global_values, arch)
+
+    # Rank 0 computes the coefficients; the others contribute zeros to the sum-reduction that broadcasts them.
     global_operator = op.global_operator
-    root && compute_loading_coefficients!(global_operator, op.global_values)
-    MPI.Bcast!(global_operator.coefficients.data, arch.communicator; root = 0)
+    coefficients = global_operator.coefficients.data
+    root ? compute_loading_coefficients!(global_operator, op.global_values) : fill!(coefficients, 0)
+    all_reduce!(+, coefficients, arch)
 
     copyto!(op.device_coefficients, global_operator.coefficients.data)
     launch!(arch, pᵇ.grid, :xy, _synthesize_loading_potential!, Ψ, pᵇ.grid, op.device_coefficients, op.recursion,
