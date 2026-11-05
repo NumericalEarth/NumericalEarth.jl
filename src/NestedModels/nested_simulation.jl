@@ -12,7 +12,7 @@ dispatch.
 const NestedSimulation = Simulation{<:NestedModel}
 
 """
-    NestedSimulation(parent, child_model::AbstractModel; simulation_kwargs...)
+    NestedSimulation(parent, child_model::AbstractModel; time_step_ratio=1, simulation_kwargs...)
 
 Convenience for `Simulation(NestedModel(parent, child_model); simulation_kwargs...)`.
 
@@ -21,5 +21,5 @@ Convenience for `Simulation(NestedModel(parent, child_model); simulation_kwargs.
 `NestedModel`'s `time_step!`, so no callback is installed — the result is a
 plain Oceananigans `Simulation` whose model happens to be a `NestedModel`.
 """
-NestedSimulation(parent, child_model::AbstractModel; simulation_kwargs...) =
-    Simulation(NestedModel(parent, child_model); simulation_kwargs...)
+NestedSimulation(parent, child_model::AbstractModel; time_step_ratio=1, simulation_kwargs...) =
+    Simulation(NestedModel(parent, child_model; time_step_ratio); simulation_kwargs...)
