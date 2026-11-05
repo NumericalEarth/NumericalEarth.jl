@@ -239,3 +239,17 @@ function Oceananigans.TimeSteppers.update_state!(ocean::PrescribedOcean)
     update_field_time_series!(ocean.velocities.v, time)
     return nothing
 end
+
+#####
+##### Checkpointing
+#####
+
+Oceananigans.prognostic_state(ocean::PrescribedOcean) = (; clock = Oceananigans.prognostic_state(ocean.clock))
+
+function Oceananigans.restore_prognostic_state!(ocean::PrescribedOcean, state)
+    Oceananigans.restore_prognostic_state!(ocean.clock, state.clock)
+    update_state!(ocean)
+    return ocean
+end
+
+Oceananigans.restore_prognostic_state!(ocean::PrescribedOcean, ::Nothing) = ocean
