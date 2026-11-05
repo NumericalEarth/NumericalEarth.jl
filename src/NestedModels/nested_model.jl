@@ -87,10 +87,46 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; callbacks=())
     exchange_state!(nm.exchanger, nm.clock.time + Δt)
+    set_forcing_time_step!((child_forcing(nm.child), nm.child_callbacks), Δt)
     time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
     advance_parent!(nm.parent, nm.child.clock)
     return nothing
 end
+
+#####
+##### Step-size-aware forcings
+#####
+
+"""
+    StepSize(Δt = 0.0)
+
+Host-side holder of the outer time step a step-size-aware forcing (e.g. the Breeze extension's
+`StableRelaxation`) integrates over. `NestedModel`'s `time_step!` writes the step about to be
+taken into every `StepSize` reachable from the child's forcing, through `set_forcing_time_step!`,
+before stepping the child. `Δt = 0` until the first step, which step-size-aware forcings treat as
+the explicit limit.
+"""
+mutable struct StepSize
+    Δt :: Float64
+end
+
+StepSize() = StepSize(0.0)
+
+@inline step_size(s::StepSize) = s.Δt
+@inline step_size(Δt::Number) = Δt
+
+child_forcing(child) = hasproperty(child, :forcing) ? child.forcing : nothing
+
+"""
+    set_forcing_time_step!(forcing, Δt)
+
+Tell a step-size-aware `forcing` the outer time step `Δt` about to be taken. A no-op for ordinary
+forcings; `NamedTuple`s and `Tuple`s of forcings, and callback parameters, are traversed.
+"""
+set_forcing_time_step!(forcing, Δt) = nothing
+set_forcing_time_step!(forcings::Union{NamedTuple, Tuple}, Δt) = foreach(f -> set_forcing_time_step!(f, Δt), forcings)
+set_forcing_time_step!(s::StepSize, Δt) = (s.Δt = Δt; nothing)
+set_forcing_time_step!(callback::Oceananigans.Simulations.Callback, Δt) = set_forcing_time_step!(callback.parameters, Δt)
 
 # A prescribed parent is a function of time: it takes the child's clock and refreshes its state there.
 # No branch on the gap between the clocks, which is a traced number inside a compiled step.

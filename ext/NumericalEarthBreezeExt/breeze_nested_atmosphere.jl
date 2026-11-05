@@ -21,7 +21,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent
+                                   VectorComponent, StepSize, step_size, set_forcing_time_step!
 
 using Oceananigans:
     Oceananigans,
@@ -38,7 +38,7 @@ using Oceananigans:
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: all_reduce
 using Oceananigans.Coriolis: SphericalCoriolis
-using Oceananigans.Fields: AbstractField, interior, interpolate!
+using Oceananigans.Fields: AbstractField, ConstantField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation, FieldTimeSeriesTarget
 using Oceananigans.Grids: znode, minimum_xspacing, x_domain, y_domain
 using Oceananigans.Grids: OrthogonalSphericalShellGrid
@@ -50,6 +50,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: KernelParameters
 using Oceananigans.Simulations: Callback
 
+using Adapt: Adapt
 using GPUArraysCore: @allowscalar
 
 using Breeze:
@@ -156,8 +157,8 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
     fts_target(target) = FieldTimeSeriesTarget(target, target.grid)
     fts_target(target::VectorComponent) = target
 
-    relaxation(field, target) = Relaxation(rate, field, mask, fts_target(target),
-                                           Oceananigans.instantiated_location(field), nothing)
+    relaxation(field, target) = StableRelaxation(Relaxation(rate, field, mask, fts_target(target),
+                                                            Oceananigans.instantiated_location(field), nothing))
     specific(name, field, target) = SpecificForcing(relaxation(field, target), ρᵈ,
                                                     Oceananigans.instantiated_location(child_fields[name]))
 
@@ -195,6 +196,48 @@ end
 # Only the Lambert-conformal mapping carries a projected plane to measure the wall distance in.
 boundary_relaxation_mask(grid::OrthogonalSphericalShellGrid, width; ramp = SmoothStepRamp()) =
     throw(ArgumentError("boundary_relaxation_mask requires a ConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
+
+#####
+##### Relaxation stable at any rate * Δt
+#####
+
+"""
+    StableRelaxation(relaxation::Relaxation, step = StepSize())
+
+Wrap a `Relaxation` so that its local rate `κ = rate * mask` enters the tendency as
+`κ / (1 + (κ Δt)⁴)^¼`, where `Δt` is the outer step held by `step` (set by `NestedModel`'s
+`time_step!`). The rate is unchanged to `O((κ Δt)⁴)` and the effective `κ Δt` never exceeds 1,
+inside the stability region of the Runge-Kutta time steppers for any `rate * Δt`. With `Δt = 0`
+the tendency is the explicit `Relaxation`'s.
+"""
+struct StableRelaxation{R, K, S}
+    relaxation :: R
+    local_rate :: K
+    step :: S
+end
+
+StableRelaxation(relaxation::Relaxation{<:Any, Nothing}) = StableRelaxation(relaxation, nothing, StepSize())
+
+# `local_rate` relaxes a unit field toward zero, so it evaluates to `-rate * mask`.
+function StableRelaxation(r::Relaxation, step = StepSize())
+    local_rate = Relaxation(r.rate, ConstantField(one(eltype(r.relaxed))), r.mask, 0, r.location, nothing)
+    return StableRelaxation(r, local_rate, step)
+end
+
+Oceananigans.Forcings.materialize_forcing(f::StableRelaxation, field, name, model_field_names) =
+    StableRelaxation(Oceananigans.Forcings.materialize_forcing(f.relaxation, field, name, model_field_names), f.step)
+
+Adapt.adapt_structure(to, f::StableRelaxation) =
+    StableRelaxation(Adapt.adapt(to, f.relaxation), Adapt.adapt(to, f.local_rate), step_size(f.step))
+
+NumericalEarth.NestedModels.set_forcing_time_step!(f::StableRelaxation, Δt) = set_forcing_time_step!(f.step, Δt)
+NumericalEarth.NestedModels.set_forcing_time_step!(f::SpecificForcing, Δt) = set_forcing_time_step!(f.forcing, Δt)
+
+@inline function (f::StableRelaxation)(i, j, k, grid, clock, model_fields)
+    κ = - f.local_rate(i, j, k, grid, clock, model_fields)
+    Δt = convert(typeof(κ), step_size(f.step))
+    return f.relaxation(i, j, k, grid, clock, model_fields) / sqrt(sqrt(1 + (κ * Δt)^4))
+end
 
 # Default lid-sponge depth: the top ~25% of the vertical extent (≈5 km for a ~19.5 km column, base ≈15 km).
 # Thin enough to leave the deep-convective layer (~12–16 km) undamped, yet deep enough to absorb genuine
@@ -437,8 +480,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         specific_targets = (ρθ = prognostic.θ,
                             ρu = vector_component(Val(:u), prognostic.u, prognostic.v),
                             ρv = vector_component(Val(:v), prognostic.u, prognostic.v))
-        specific = parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask)
-        moist = parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask)
+        specific = map(StableRelaxation, parent_forcings(; variables = specific_targets, rate = relaxation_rate, mask = relax_mask))
+        moist = map(StableRelaxation, parent_forcings(; variables = moist_variables, rate = relaxation_rate, mask = relax_mask))
         merge(map(SpecificForcing, specific), moist)
     end
 

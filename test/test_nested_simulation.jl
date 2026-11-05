@@ -1229,6 +1229,18 @@ end
     for (name, field) in pairs(prognostic_fields(strip_model.child))
         @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
     end
+
+    # relaxation_rate * Δt = 5, past the explicit RK3 limit: the strip relaxation stays bounded.
+    stiff_model = nest(strips, 10)
+    ext.initialize_nested_child!(stiff_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    for _ in 1:8
+        time_step!(stiff_model, 0.5)
+    end
+    for (name, field) in pairs(prognostic_fields(stiff_model.child))
+        scale = maximum(abs, prognostic_fields(strip_model.child)[name])
+        @test maximum(abs, field) ≤ 2 * scale
+    end
+    @test minimum(prognostic_fields(stiff_model.child)[moisture_prognostic_name(stiff_model.child.microphysics)]) ≥ 0
 end
 
 @testset "StateExchanger: a single-time parent fills its derived state on $(arch)" for arch in test_architectures
@@ -1265,3 +1277,29 @@ end
     @test parent.clock.time == nested.child.clock.time == 4
 end
 
+@testset "StableRelaxation is stable for any rate * Δt on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    set_forcing_time_step! = NumericalEarth.NestedModels.set_forcing_time_step!
+    grid = RectilinearGrid(arch, size = (4, 4, 4), extent = (1, 1, 1))
+    rate = 1/5
+
+    function decay(forcing, Δt, Nt)
+        model = NonhydrostaticModel(grid; timestepper = :RungeKutta3, tracers = :c, forcing = (; c = forcing))
+        set!(model, c = 1)
+        set_forcing_time_step!(model.forcing, Δt)
+        for _ in 1:Nt
+            time_step!(model, Δt)
+        end
+        return maximum(abs, interior(model.tracers.c))
+    end
+
+    # rate * Δt = 0.01: matches the explicit Relaxation and exp(-rate t).
+    explicit = decay(Relaxation(; rate), 0.05, 100)
+    stable = decay(ext.StableRelaxation(Relaxation(; rate)), 0.05, 100)
+    @test stable ≈ explicit rtol = 1e-4
+    @test stable ≈ exp(-rate * 5) rtol = 1e-4
+
+    # rate * Δt = 10: explicit RK3 amplifies, the limited rate decays.
+    @test decay(Relaxation(; rate), 50, 5) > 1
+    @test decay(ext.StableRelaxation(Relaxation(; rate)), 50, 5) < exp(-1)
+end
