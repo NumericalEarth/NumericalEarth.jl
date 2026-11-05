@@ -496,27 +496,27 @@ function Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel)
     return NaNChecker((; T_ocean))
 end
 
-@kernel function _above_freezing_ocean_temperature!(T, grid, S, ℵ, liquidus)
+@kernel function _above_freezing_ocean_temperature!(Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
     i, j = @index(Global, NTuple)
     Nz = size(grid, 3)
 
     @inbounds begin
         for k in 1:Nz
             z  = znode(i, j, k, grid, Center(), Center(), Center())
-            Tm = melting_temperature(liquidus, S[i, j, k], z)
-            T[i, j, k] = max(T[i, j, k], Tm)
+            Tm = melting_temperature(liquidus, Sᵒᶜ[i, j, k], z)
+            Tᵒᶜ[i, j, k] = max(Tᵒᶜ[i, j, k], Tm)
         end
     end
 end
 
 function above_freezing_ocean_temperature!(ocean, grid, sea_ice)
-    T = ocean_temperature(ocean)
-    S = ocean_salinity(ocean)
-    ℵ = sea_ice_concentration(sea_ice)
+    Tᵒᶜ = ocean_temperature(ocean)
+    Sᵒᶜ = ocean_salinity(ocean)
+    ℵˢⁱ = sea_ice_concentration(sea_ice)
     liquidus = sea_ice.model.phase_transitions.liquidus
 
     arch = architecture(grid)
-    launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, T, grid, S, ℵ, liquidus)
+    launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
 
     return nothing
 end
