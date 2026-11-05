@@ -18,3 +18,7 @@ Breeze = "0.12"
 Oceananigans = "0.114"
 Reactant = "0.2.300"
 julia = "1.10"
+
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
+Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"

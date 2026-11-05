@@ -15,7 +15,8 @@ using Printf, Random, Statistics
 
 include("patches.jl")
 
-Reactant.set_default_backend("cpu")
+# GPU_TEST=true puts Reactant on the GPU, as in the Reactant tests; the default is the CPU
+Reactant.set_default_backend(get(ENV, "GPU_TEST", "false") == "true" ? "gpu" : "cpu")
 arch = ReactantState()
 
 # ## Domain
