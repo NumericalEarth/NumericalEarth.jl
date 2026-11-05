@@ -27,8 +27,8 @@ const ERA5LandMetadatum   = Metadatum{<:ERA5LandDataset}
 ##### ERA5-Land data availability
 #####
 
-DataWrangling.all_dates(::ERA5HourlyLand,  var) = range(DateTime("1950-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-DataWrangling.all_dates(::ERA5MonthlyLand, var) = range(DateTime("1950-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+DataWrangling.all_dates(::ERA5HourlyLand,  var) = range(DateTime("1950-01-01"), stop=era5_last_hourly_date(), step=Hour(1))
+DataWrangling.all_dates(::ERA5MonthlyLand, var) = range(DateTime("1950-01-01"), stop=era5_last_monthly_date(), step=Month(1))
 
 # ERA5-Land is a spatially 2-D dataset
 DataWrangling.is_three_dimensional(::ERA5LandMetadata) = false
