@@ -182,7 +182,7 @@ Returns `(Q, Tb, Sb, q)` where:
                                              liquidus, ocean_properties, ℰ, u★)
     Tᵒᶜ = ocean_state.T
     Sᵒᶜ = ocean_state.S
-    ℵ  = ice_state.ℵ
+    ℵˢⁱ = ice_state.ℵ
 
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
@@ -192,7 +192,7 @@ Returns `(Q, Tb, Sb, q)` where:
     Tₘ = melting_temperature(liquidus, Sᵒᶜ)
 
     # Heat flux: Q > 0 means heat flux from ocean to ice (ocean cooling)
-    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵ
+    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵˢⁱ
 
     # Implied ocean-driven melt rate (positive for melting), consistent with Qᵢₒ
     q = Qᵢₒ / ℰ
@@ -225,7 +225,7 @@ Dispatches to the appropriate `solve_interface_conditions` based on whether the 
 conductive flux or not.
 
 Returns `(Q, Tb, Sb, q)` where:
-- `Q = ρᵒᶜ cᵒᶜ αₕ u★ (Tᵒᶜ - Tb) ℵ` is the turbulent ocean heat flux at the interface;
+- `Q = ρᵒᶜ cᵒᶜ αₕ u★ (Tᵒᶜ - Tb) ℵˢⁱ` is the turbulent ocean heat flux at the interface;
   `Q > 0` means heat flux from ocean to ice (ocean cooling)
 - `Tb, Sb` are the interface temperature and salinity
 - `q` is the three-equation balance's own ocean-driven melt rate (positive for melting),
@@ -247,7 +247,7 @@ leaking top-surface melt into the ocean's heat/salt budget.
     # Unpack states
     Tᵒᶜ = ocean_state.T
     Sᵒᶜ = ocean_state.S
-    ℵ  = ice_state.ℵ
+    ℵˢⁱ = ice_state.ℵ
 
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
@@ -260,7 +260,7 @@ leaking top-surface melt into the ocean's heat/salt budget.
     T★, S★, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
     # Turbulent ocean flux only: the sea-ice model accounts for conduction through the ice
-    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - T★) * ℵ
+    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - T★) * ℵˢⁱ
 
     return Qᵢₒ, T★, S★, q
 end
