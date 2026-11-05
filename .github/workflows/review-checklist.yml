@@ -1,0 +1,60 @@
+name: Review checklist
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review, review_requested, synchronize]
+  # TODO: remove before merging. Lets the workflow run on its own pull request,
+  # which `pull_request_target` cannot do until it reaches the default branch.
+  pull_request:
+    types: [opened, ready_for_review, review_requested, synchronize]
+  issue_comment:
+    types: [edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  checklist:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+       github.event.comment.user.login == 'github-actions[bot]' &&
+       startsWith(github.event.comment.body, '<!-- review-checklist -->'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const MARKER = '<!-- review-checklist -->'
+            const {owner, repo} = context.repo
+            const number = context.payload.pull_request?.number ?? context.payload.issue.number
+
+            const {data: pull_request} = await github.rest.pulls.get({owner, repo, pull_number: number})
+            if (pull_request.draft) return
+
+            const comments = await github.paginate(github.rest.issues.listComments,
+                                                   {owner, repo, issue_number: number, per_page: 100})
+            let checklist = comments.find(comment => comment.body.startsWith(MARKER))
+
+            if (!checklist) {
+              const body = MARKER + '\n' + require('fs').readFileSync('.github/review-checklist.md', 'utf8')
+              checklist = (await github.rest.issues.createComment({owner, repo, issue_number: number, body})).data
+            }
+
+            const boxes = checklist.body.match(/^\s*[-*]\s*\[[ xX]\]/gm) ?? []
+            const ticked = boxes.filter(box => /\[[xX]\]/.test(box)).length
+
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: pull_request.head.sha,
+              state: boxes.length > 0 && ticked === boxes.length ? 'success' : 'failure',
+              context: 'review-checklist',
+              description: boxes.length === 0 ? 'checklist comment has no items' : `${ticked} of ${boxes.length} items ticked`,
+              target_url: checklist.html_url,
+            })
