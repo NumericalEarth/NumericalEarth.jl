@@ -76,7 +76,7 @@ using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
 
 # The height of a terrain-following grid's lowest face.
 NumericalEarth.Grids.surface_elevation(grid::TerrainFollowingGrid) =
-    compute!(Field(KernelFunctionOperation{Center, Center, Nothing}(znode, grid, Center(), Center(), Face())))
+    KernelFunctionOperation{Center, Center, Nothing}(znode, grid, Center(), Center(), Face()) |> Field
 
 #####
 ##### Live parents: a Breeze model, a nest whose child is one, or a coupled model whose atmosphere is
