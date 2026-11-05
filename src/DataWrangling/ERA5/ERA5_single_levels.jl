@@ -47,6 +47,7 @@ ERA5_dataset_variable_names = Dict(
     :surface_pressure                => "surface_pressure",
     :mean_sea_level_pressure         => "mean_sea_level_pressure",
     :total_precipitation             => "total_precipitation",
+    :snowfall                        => "snowfall",
     :mean_surface_momentum_flux_x    => "mean_eastward_turbulent_surface_stress",
     :mean_surface_momentum_flux_y    => "mean_northward_turbulent_surface_stress",
     :skin_temperature                => "skin_temperature",
@@ -88,6 +89,7 @@ ERA5_netcdf_variable_names = Dict(
     :surface_pressure                => "sp",
     :mean_sea_level_pressure         => "msl",
     :total_precipitation             => "tp",
+    :snowfall                        => "sf",
     :mean_surface_momentum_flux_x    => "avg_iews", # shortName: metss
     :mean_surface_momentum_flux_y    => "avg_inss", # shortName: mntss
     :skin_temperature                => "skt",
@@ -130,10 +132,10 @@ DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_nam
 # - `topography` divides the (surface) geopotential by g to give ERA5's model
 #   surface elevation in meters (`geopotential` is left in m² s⁻²);
 # - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
-# - total and convective precipitation are hourly-accumulated depths (m) → mass flux (kg/m²/s).
+# - total and convective precipitation and snowfall are hourly-accumulated depths (m of water equivalent) → mass flux (kg/m²/s).
 function DataWrangling.conversion_units(md::ERA5Metadata)
     md.name == :topography && return InverseGravity()
-    md.name in (:total_precipitation, :convective_precipitation) && return MetersPerHour()
+    md.name in (:total_precipitation, :convective_precipitation, :snowfall) && return MetersPerHour()
     md.name in (:downwelling_shortwave_radiation, :downwelling_longwave_radiation) &&
         return JoulesPerSquareMeterPerHour()
     return nothing
@@ -145,6 +147,7 @@ DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 # backwards from it. Every other single-level variable is instantaneous.
 const ERA5_window_averaged_variables = (:total_precipitation,
                                         :convective_precipitation,
+                                        :snowfall,
                                         :evaporation,
                                         :mean_evaporation_rate,
                                         :downwelling_shortwave_radiation,

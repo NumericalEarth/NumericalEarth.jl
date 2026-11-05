@@ -78,7 +78,7 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
 
     exchangers = gas_transfer_parametrisations(biogeochemistry, coupled_model.interfaces.properties)
 
-    ℵ = coupled_model.sea_ice.model.ice_concentration
+    ℵˢⁱ = coupled_model.sea_ice.model.ice_concentration
 
     required_ocean_tracers = (:T, :S,
                               if_phosphate_available(ocean.model.tracers)...,
@@ -96,7 +96,7 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
             grid,
             ocean.model.clock,
             fluxes,
-            ℵ,
+            ℵˢⁱ,
             ocean_tracers,
             biogeochemistry.underlying_biogeochemistry,
             exchangers)
@@ -126,29 +126,29 @@ end
 @kernel function compute_all_gas_exchange!(grid, clock, fluxes, ice_concentration, ocean_tracers, biogeochemistry, exchangers)
     i, j = @index(Global, NTuple)
 
-    @inbounds ℵ = ice_concentration[i, j, 1]
+    @inbounds ℵˢⁱ = ice_concentration[i, j, 1]
 
-    compute_gas_exchange!(i, j, grid, clock, biogeochemistry.oxygen, fluxes, ℵ, ocean_tracers, exchangers)
-    compute_gas_exchange!(i, j, grid, clock, biogeochemistry.inorganic_carbon, fluxes, ℵ, ocean_tracers, exchangers)
+    compute_gas_exchange!(i, j, grid, clock, biogeochemistry.oxygen, fluxes, ℵˢⁱ, ocean_tracers, exchangers)
+    compute_gas_exchange!(i, j, grid, clock, biogeochemistry.inorganic_carbon, fluxes, ℵˢⁱ, ocean_tracers, exchangers)
 end
 
-@inline compute_gas_exchange!(i, j, grid, clock, ::Nothing, fluxes, ℵ, ocean_tracers, exchangers) = nothing
+@inline compute_gas_exchange!(i, j, grid, clock, ::Nothing, fluxes, ℵˢⁱ, ocean_tracers, exchangers) = nothing
 
-@inline function compute_gas_exchange!(i, j, grid, clock, ::Oxygen, fluxes, ℵ, ocean_tracers, exchangers)
-    @inbounds fluxes.O₂[i, j, 1] = exchangers.O₂(i, j, grid, clock, ocean_tracers) * (1 - ℵ)
+@inline function compute_gas_exchange!(i, j, grid, clock, ::Oxygen, fluxes, ℵˢⁱ, ocean_tracers, exchangers)
+    @inbounds fluxes.O₂[i, j, 1] = exchangers.O₂(i, j, grid, clock, ocean_tracers) * (1 - ℵˢⁱ)
     return nothing
 end
 
-@inline function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{1}, fluxes, ℵ, ocean_tracers, exchangers)
-    @inbounds fluxes.DIC[i, j, 1] = exchangers.DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵ)
+@inline function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{1}, fluxes, ℵˢⁱ, ocean_tracers, exchangers)
+    @inbounds fluxes.DIC[i, j, 1] = exchangers.DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵˢⁱ)
     return nothing
 end
 
 # `Symbol(:DIC, n)` can not be constructed on the GPU so the replicates are unrolled here
-@generated function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{N}, fluxes, ℵ, ocean_tracers, exchangers) where N
+@generated function compute_gas_exchange!(i, j, grid, clock, ::AbstractInorganicCarbon{N}, fluxes, ℵˢⁱ, ocean_tracers, exchangers) where N
     exprs = map(1:N) do n
         DIC = Symbol(:DIC, n)
-        :(@inbounds fluxes.$DIC[i, j, 1] = exchangers.$DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵ))
+        :(@inbounds fluxes.$DIC[i, j, 1] = exchangers.$DIC(i, j, grid, clock, ocean_tracers) * (1 - ℵˢⁱ))
     end
 
     return quote
