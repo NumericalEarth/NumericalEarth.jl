@@ -1,10 +1,21 @@
+# # Downloading GLORYS data
+#
+# This script downloads a daily GLORYS temperature snapshot from the Copernicus Marine Service over a
+# 20° × 20° patch of the northeast Pacific and loads it into a `Field`. Loading `CopernicusMarine`
+# activates NumericalEarth's Copernicus Marine extension, which performs the download; it requires a
+# Copernicus Marine account.
+
 using NumericalEarth
 using Oceananigans
 using CopernicusMarine
 
+# The download region is the horizontal extent of the grid we intend to initialize: a 1/12° grid with
+# 50 exponentially stretched levels down to 6000 m.
+
 arch = CPU()
-Nx = 20 * 12
-Ny = 20 * 12
+resolution = 1/12 # degrees
+Nx = 20 * Int(1 / resolution)
+Ny = 20 * Int(1 / resolution)
 Nz = 50
 
 depth = 6000
@@ -17,45 +28,13 @@ grid = LatitudeLongitudeGrid(arch;
                              latitude  = (35, 55),
                              longitude = (200, 220))
 
-region = NumericalEarth.DataWrangling.BoundingBox(longitude=(200, 220), latitude=(35, 55))
+region = BoundingBox(grid)
 
-# dataset = NumericalEarth.DataWrangling.Copernicus.GLORYSStatic()
-# static_meta = NumericalEarth.DataWrangling.Metadatum(:depth; dataset, region)
-# coords_path = download(static_meta)
-# @info "Downloaded coordinates data to $coords_path"
+# We download the temperature and load it, without inpainting, on the native GLORYS grid.
+# Salinity (`:salinity`) and velocities (`:u_velocity`, `:v_velocity`) are downloaded the same way.
 
-# T_ecco = NumericalEarth.DataWrangling.ECCOMetadatum(:temperature; dataset, region)
-# T_en4_meta = NumericalEarth.DataWrangling.EN4Metadatum(:temperature)
-# T_en4_path = download(T_en4_meta)
-# T_en4 = Field(T_en4_meta)
+dataset = GLORYSDaily()
+temperature_metadatum = Metadatum(:temperature; dataset, region)
+download(temperature_metadatum)
 
-dataset = NumericalEarth.DataWrangling.Copernicus.GLORYSDaily()
-T_meta = NumericalEarth.DataWrangling.Metadatum(:temperature; dataset, region)
-T_path = download(T_meta)
-@info "Downloaded temperature data to $T_path"
-T = Field(T_meta, inpainting=nothing)
-
-#=
-u_meta = NumericalEarth.DataWrangling.Metadatum(:u_velocity; dataset)
-u_path = download(u_meta)
-@info "Downloaded u velocity data to $u_path"
-u = Field(u_meta)
-
-v_meta = NumericalEarth.DataWrangling.Metadatum(:v_velocity; dataset)
-v_path = download(v_meta)
-@info "Downloaded data to $v_path"
-v = Field(v_meta)
-
-S_meta = NumericalEarth.DataWrangling.Metadatum(:salinity; dataset)
-S_path = download(S_meta)
-@info "Downloaded data to $S_path"
-S = Field(S_meta)
-=#
-
-#=
-# FOR ERA5:
-# account: https://cds.climate.copernicus.eu/how-to-api
-CondaPkg.add("cdsapi"; channel = "conda-forge")
-cds = pyimport("cdsapi")          # should succeed instantly
-client = cds.Client()
-=#
+T = Field(temperature_metadatum, inpainting=nothing)

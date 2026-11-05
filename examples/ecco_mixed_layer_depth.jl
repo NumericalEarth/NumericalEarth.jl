@@ -1,18 +1,23 @@
+# # Mixed layer depth from ECCO
+#
+# We compute the mixed layer depth from ECCO temperature and salinity, month by month,
+# and animate its evolution over ten years.
+
 using NumericalEarth
 using NumericalEarth.Diagnostics: MixedLayerDepthField
 using Oceananigans
+using Oceananigans.Models: buoyancy_operation
 using CairoMakie
-using Printf
 using Dates
 
 using SeawaterPolynomials: TEOS10EquationOfState
-using Oceananigans.Models: buoyancy_operation
 
 arch = CPU()
 Nx = 360
 Ny = 160
 
-z = NumericalEarth.DataWrangling.ECCO.ECCO_z
+dataset = ECCO4Monthly()
+z = NumericalEarth.DataWrangling.z_interfaces(dataset)
 z = z[20:end]
 Nz = length(z) - 1
 
@@ -28,50 +33,52 @@ bottom_height = regrid_bathymetry(grid;
 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 
-start_date = DateTime(1993, 1, 1)
-end_date   = DateTime(2003, 1, 1)
+dates = (DateTime(1993, 1, 1), DateTime(2003, 1, 1))
+temperature_metadata = Metadata(:temperature; dataset, dates)
+salinity_metadata    = Metadata(:salinity;    dataset, dates)
 
-Tt = ECCOFieldTimeSeries(:temprature, grid; start_date, end_date, time_indices_in_memory=2)
-St = ECCOFieldTimeSeries(:salinity,   grid; start_date, end_date, time_indices_in_memory=2)
-ht = FieldTimeSeries{Center, Center, Nothing}(grid, Tt.times)
+T_ts = FieldTimeSeries(temperature_metadata, grid; time_indices_in_memory=2)
+S_ts = FieldTimeSeries(salinity_metadata,    grid; time_indices_in_memory=2)
+h_ts = FieldTimeSeries{Center, Center, Nothing}(grid, T_ts.times)
 
-equation_of_state = TEOS10EquationOfState()
-sb = SeawaterBuoyancy(; equation_of_state)
-tracers = (T=Tt[1], S=St[1])
-h = MixedLayerDepthField(sb, grid, tracers)
+# The mixed layer depth `h` is diagnosed from the buoyancy of the temperature
+# and salinity fields `T` and `S`, which we update every month.
 
-Nt = length(ht)
+T = CenterField(grid)
+S = CenterField(grid)
+
+buoyancy = SeawaterBuoyancy(equation_of_state=TEOS10EquationOfState())
+h = MixedLayerDepthField(buoyancy, grid, (; T, S))
+
+Nt = length(h_ts)
+
 for n = 1:Nt-1
-    local tracers
-    tracers = (T=Tt[n], S=St[n])
-    h.operand.buoyancy_perturbation = buoyancy_operation(sb, grid, tracers)
-    @show n
-    @time compute!(h)
-    parent(ht[n]) .= parent(h)
+    set!(T, T_ts[n])
+    set!(S, S_ts[n])
+    compute!(h)
+    set!(h_ts, h, n)
 end
 
-function titlestr(n)
-    d = dates[n]
-    yr = year(d)
-    mn = monthname(d)
-    return string("ECCO mixed layer depth on ", mn, " ", yr)
-end
+# We plot the mixed layer depth,
 
 fig = Figure(size=(1500, 800))
-axh = Axis(fig[2, 1], xlabel="Longitude", ylabel="Latitude")
+ax = Axis(fig[2, 1], xlabel="Longitude", ylabel="Latitude")
 n = Observable(1)
 
-str = @lift titlestr($n)
-Label(fig[1, 1], str, tellwidth=false)
+title = @lift "ECCO mixed layer depth in " * Dates.format(temperature_metadata.dates[$n], "U yyyy")
+Label(fig[1, 1], title, tellwidth=false)
 
-hn = @lift ht[$n]
-hm = heatmap!(axh, hn, colorrange=(0, 500), colormap=:magma, nan_color=:lightgray)
+hn = @lift h_ts[$n]
+hm = heatmap!(ax, hn, colorrange=(0, 500), colormap=:magma, nan_color=:lightgray)
 Colorbar(fig[2, 2], hm, label="Mixed layer depth (m)")
+
 fig
 
-# And record a movie
+# and record a movie.
 
 CairoMakie.record(fig, "ecco_mld.mp4", 1:Nt-1, framerate=4) do nn
-    @info "Drawing frame $nn of $Nt..."
     n[] = nn
 end
+nothing #hide
+
+# ![](ecco_mld.mp4)
