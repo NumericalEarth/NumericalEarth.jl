@@ -97,7 +97,7 @@ function coupled_model(arch)
         storage_height = 1000,
         retention_curve = VanGenuchtenRetention(inverse_air_entry_head = 1, pore_size_uniformity = 2),
         hydraulic_conductivity = VanGenuchtenConductivity(matching_point_conductivity = 1e-7, pore_size_uniformity = 2),
-        deep_liquid_flux = NoDeepLiquidFlux(),
+        deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
         runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 
     energy = WaterCoupledEnergy(eltype(land_grid);
@@ -138,7 +138,7 @@ function coupled_model(arch)
     atmosphere_land_fluxes = NumericalEarth.EarthSystemModels.InterfaceComputations.default_atmosphere_land_fluxes(
         slab_land, FT; solver_stop_criteria = FixedIterations(8))
 
-    atmosphere_land_interface_specific_humidity = DryLayerHumidity(;
+    soil_humidity = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
             maximum_dry_layer_depth = 0.05,
             dry_layer_onset_saturation = 0.5,
@@ -146,14 +146,13 @@ function coupled_model(arch)
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4,
             molecular_diffusivity = 2.5e-5,
-            tortuosity = PowerLawTortuosity()),
-        thermal_exchange_depth = 0.10,
-        porosity = slab_land.hydrology.porosity)
+            tortuosity = PowerLawTortuosity()))
 
     return AtmosphereOceanModel(atmosphere, ocean; land = slab_land,
                                 atmosphere_ocean_fluxes,
                                 atmosphere_land_fluxes,
-                                atmosphere_land_interface_specific_humidity,
+                                atmosphere_land_interface_state = (temperature = BulkTemperature(),
+                                                                   specific_humidity = soil_humidity),
                                 ocean_fraction,
                                 clock = Clock(grid))
 end
