@@ -359,16 +359,22 @@ end
     @inbounds target_z[i, j, 1] = z
 end
 
+# The passes span the target's domain on a `LatitudeLongitudeGrid` and the dataset's domain otherwise.
+pass_domain(native_grid, target_grid::LatitudeLongitudeGrid) = x_domain(target_grid), y_domain(target_grid)
+pass_domain(native_grid, target_grid) = x_domain(native_grid), y_domain(native_grid)
+
 # Here we can either use `regrid!` (three dimensional version) or `interpolate!`.
 function interpolate_bathymetry_in_passes(native_z, target_grid;
                                           passes = 10)
 
     Nλt, Nφt = Nt = size(target_grid)
-    Nλn, Nφn = Nn = size(native_z)
 
-    # Interpolate in passes
-    latitude  = y_domain(native_z.grid)
-    longitude = x_domain(native_z.grid)
+    # Interpolate in passes, starting from the number of native points across the passes' domain
+    longitude, latitude = pass_domain(native_z.grid, target_grid)
+    native_longitude, native_latitude = x_domain(native_z.grid), y_domain(native_z.grid)
+    Nλn = round(Int, size(native_z, 1) * (longitude[2] - longitude[1]) / (native_longitude[2] - native_longitude[1]))
+    Nφn = round(Int, size(native_z, 2) * (latitude[2] - latitude[1]) / (native_latitude[2] - native_latitude[1]))
+    passes = Nλn ≤ Nλt && Nφn ≤ Nφt ? 1 : passes
 
     ΔNλ = floor((Nλn - Nλt) / passes)
     ΔNφ = floor((Nφn - Nφt) / passes)
