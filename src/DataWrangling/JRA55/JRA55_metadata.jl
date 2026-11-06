@@ -62,29 +62,7 @@ function native_repeat_year_JRA55_dates(name)
     end
 end
 
-const repeat_year_JRA55_instant_counts = Dict{Tuple{String, Int}, Int}()
-
-# Keyed on the file size too, so that re-downloading a file replaces its entry instead of reusing it.
-function repeat_year_JRA55_instants(path, native_instants)
-    return get!(repeat_year_JRA55_instant_counts, (path, filesize(path))) do
-        ds = Dataset(path)
-        instants = ds.dim["time"]
-        close(ds)
-        instants < native_instants && @warn "$(basename(path)) holds $instants of the $native_instants JRA55 time instants; the time axis follows the file."
-        return instants
-    end
-end
-
-function DataWrangling.all_dates(dataset::RepeatYearJRA55, name)
-    dates = native_repeat_year_JRA55_dates(name)
-    path = joinpath(DataWrangling.default_download_directory(dataset), DataWrangling.metadata_filename(dataset, name, nothing, nothing))
-
-    isfile(path) || return dates
-
-    # The file on disk owns the time axis: CI runs against RYF files cropped to a few days.
-    return dates[1:min(repeat_year_JRA55_instants(path, length(dates)), length(dates))]
-end
-
+DataWrangling.all_dates(::RepeatYearJRA55, name) = native_repeat_year_JRA55_dates(name)
 DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
