@@ -3,11 +3,13 @@ using Reactant
 using Reactant: @trace
 using Oceananigans: Oceananigans, CPU, interior, set!
 using Oceananigans.Architectures: ReactantState
-using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
+using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic, RectilinearGrid
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: ExplicitFreeSurface, HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.TimeSteppers: Clock, time_step!, update_state!, first_time_step!
 using Oceananigans.Units: minutes
 using NumericalEarth
+using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization
 using CUDA
 using Statistics: mean
 
@@ -135,6 +137,41 @@ end
     T_reactant = Reactant.to_number(compiled_run(reactant_model, Δt, N))
 
     @test T_reactant ≈ T_cpu rtol=1e-4
+end
+
+# A compiled step of a NestedModel advances a prescribed parent with the child: the parent takes the
+# child's (device) clock instead of branching on the traced gap between them (issue #816).
+@testset "NestedModel with a prescribed parent steps under compilation" begin
+    grid = RectilinearGrid(ReactantState(); size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 10.0])
+    # An explicit free surface: the implicit one's FFT solver works on complex arrays, which Reactant cannot raise
+    child = HydrostaticFreeSurfaceModel(grid; free_surface = ExplicitFreeSurface())
+    nested = NumericalEarth.NestedModels.NestedModel(parent, child)
+    @test parent.clock.time isa Reactant.ConcreteRNumber
+
+    step! = @compile raise_first = true raise = true time_step!(nested, 1.0)
+    step!(nested, 1.0)
+    step!(nested, 1.0)
+    @test Reactant.to_number(nested.child.clock.time) == 2
+    @test Reactant.to_number(parent.clock.time) == 2
+
+    clock = NumericalEarth.EarthSystemModels.default_clock(ReactantState(), Float32)
+    @test clock.time isa Reactant.ConcreteRNumber{Float64}
+end
+
+# `atmosphere_model` defaults to `Clock(grid)`, a device clock on ReactantState, so a compiled step
+# advances it; a host clock stays where tracing left it (issue #810).
+@testset "atmosphere_model's clock advances through compiled steps" begin
+    grid = RectilinearGrid(ReactantState(); size = (8, 8, 8), x = (0, 8e3), y = (0, 8e3), z = (0, 8e3),
+                           topology = (Periodic, Periodic, Bounded), halo = (5, 5, 5))
+    dynamics = CompressibleDynamics(SplitExplicitTimeDiscretization(substeps = 4); reference_potential_temperature = 300)
+    model = atmosphere_model(grid; dynamics, microphysics = nothing)
+    @test model.clock.time isa Reactant.ConcreteRNumber
+
+    step! = @compile raise_first = true raise = true time_step!(model, 1.0)
+    step!(model, 1.0)
+    step!(model, 1.0)
+    @test Reactant.to_number(model.clock.time) == 2
 end
 
 # Broadcasting into `interior` of a ReactantState field reads device memory element by element, which
