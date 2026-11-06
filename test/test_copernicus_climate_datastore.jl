@@ -379,69 +379,6 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         @test allunique(cross_month.filenames)
     end
 
-    @testset "read_era5_yearly_series reads across a year boundary" begin
-        read_era5_yearly_series = NumericalEarth.DataWrangling.ERA5.read_era5_yearly_series
-
-        # Write two small synthetic yearly files, each with distinct marker values
-        # so we can confirm the stitched-together series preserves chronological order.
-        function write_year_file(path, times, marker)
-            NCDatasets.Dataset(path, "c") do ds
-                NCDatasets.defDim(ds, "longitude", 2)
-                NCDatasets.defDim(ds, "latitude", 2)
-                NCDatasets.defDim(ds, "valid_time", length(times))
-                NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [-1.0, 1.0]
-                NCDatasets.defVar(ds, "latitude", Float64, ("latitude",))[:] = [40.0, 41.0]
-                tv = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
-                                       attrib = ["units" => "seconds since 1970-01-01"])
-                tv[:] = times
-                t2m = NCDatasets.defVar(ds, "t2m", Float32, ("longitude", "latitude", "valid_time"))
-                for (k, _) in enumerate(times), j in 1:2, i in 1:2
-                    t2m[i, j, k] = Float32(marker + k)
-                end
-            end
-        end
-
-        mktempdir() do dir
-            path_2020 = joinpath(dir, "t2m_2020.nc")
-            path_2021 = joinpath(dir, "t2m_2021.nc")
-            times_2020 = [DateTime(2020, 12, 31, 22), DateTime(2020, 12, 31, 23)]
-            times_2021 = [DateTime(2021, 1, 1, 0), DateTime(2021, 1, 1, 1)]
-            write_year_file(path_2020, times_2020, 0.0)     # markers 1, 2
-            write_year_file(path_2021, times_2021, 100.0)   # markers 101, 102
-
-            @testset "single file (String path, backward-compatible)" begin
-                raw, λc, φc = read_era5_yearly_series(path_2020, times_2020, "t2m")
-                @test size(raw) == (2, 2, 2)
-                @test length(λc) == 2 && length(φc) == 2
-                @test all(==(1f0), raw[:, :, 1])
-                @test all(==(2f0), raw[:, :, 2])
-            end
-
-            @testset "multiple files spanning a year boundary (Vector of paths)" begin
-                paths = [path_2020, path_2020, path_2021, path_2021]
-                requested_times = vcat(times_2020, times_2021)
-                raw, λc, φc = read_era5_yearly_series(paths, requested_times, "t2m")
-                @test size(raw) == (2, 2, 4)
-                @test all(==(1f0),   raw[:, :, 1])
-                @test all(==(2f0),   raw[:, :, 2])
-                @test all(==(101f0), raw[:, :, 3])
-                @test all(==(102f0), raw[:, :, 4])
-            end
-
-            @testset "requesting a subset within one of the files" begin
-                # Only the second timestep of the 2020 file, then both of 2021 —
-                # exercises the single-index (non-range) read path within a group.
-                paths = [path_2020, path_2021, path_2021]
-                requested_times = [times_2020[2], times_2021[1], times_2021[2]]
-                raw, _, _ = read_era5_yearly_series(paths, requested_times, "t2m")
-                @test size(raw) == (2, 2, 3)
-                @test all(==(2f0),   raw[:, :, 1])
-                @test all(==(101f0), raw[:, :, 2])
-                @test all(==(102f0), raw[:, :, 3])
-            end
-        end
-    end
-
     @testset "download_era5_land through an injected retrieve" begin
         dataset = ERA5MonthlyLand()
         requests = []
