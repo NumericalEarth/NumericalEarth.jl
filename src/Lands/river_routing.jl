@@ -1,7 +1,8 @@
-using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology
-using Oceananigans.Operators: Azᶜᶜᶜ
+using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Flat
 using Oceananigans.ImmersedBoundaries: underlying_grid
+using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
@@ -97,28 +98,33 @@ end
 
 """
     build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                        maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing)
+                        maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing,
+                        maximum_weighting_depth = 50)
 
 Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
 `outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
-area for a per-area mass flux (kg m⁻² s⁻¹).
+area for a per-area mass flux (kg m⁻² s⁻¹). Within a footprint, each cell takes a share of the discharge proportional to its
+water-column depth capped at `maximum_weighting_depth` (m).
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                              maximum_search_radius = 5,
                              spread_radius = 1.2,
-                             maximum_spread_cells = nothing)
+                             maximum_spread_cells = nothing,
+                             maximum_weighting_depth = 50)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
     kᴺ = size(target_grid, 3)
 
-    wet_field  = Field{Center, Center, Nothing}(target_grid, Bool)
-    area_field = Field{Center, Center, Nothing}(target_grid)
-    launch!(arch, target_grid, :xy, _compute_wet_mask_and_area!,
-            wet_field, area_field, target_grid, kᴺ)
+    wet_field   = Field{Center, Center, Nothing}(target_grid, Bool)
+    area_field  = Field{Center, Center, Nothing}(target_grid)
+    depth_field = Field{Center, Center, Nothing}(target_grid)
+    launch!(arch, target_grid, :xy, _compute_wet_mask_area_and_depth!,
+            wet_field, area_field, depth_field, target_grid, kᴺ)
 
-    wet  = Array(interior(wet_field))[:, :, 1]
-    area = Array(interior(area_field))[:, :, 1]
+    wet   = Array(interior(wet_field))[:, :, 1]
+    area  = Array(interior(area_field))[:, :, 1]
+    depth = Array(interior(depth_field))[:, :, 1]
 
     # TODO: use `target_grid` once Oceananigans' `on_architecture(CPU(), grid)` returns a `Distributed(CPU())`
     # grid for a distributed `grid`; the serial rebuild keeps `Connected` topologies and cannot fill its halos.
@@ -132,8 +138,9 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n], maximum_degrees) for n in eachindex(outlet_i)]
     owned = mouth_ownership(arch, last.(nearest_cells))
 
-    # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
-    # a runaway freshwater flux (which drives salinity to zero and crashes the run).
+    # Split each mouth's discharge over its plume footprint so no single coastal cell receives a runaway
+    # freshwater flux (which drives salinity to zero and crashes the run). Shallow cells take a smaller
+    # share because their thinner column dilutes faster for the same flux per unit area.
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
@@ -144,8 +151,10 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
             dropped += 1
             continue
         end
-        w = convert(FT, outlet_weight[n]) / length(targets)
-        for (i★, j★) in targets
+        shares = [min(depth[i★, j★], maximum_weighting_depth) for (i★, j★) in targets]
+        total_share = sum(shares)
+        for ((i★, j★), share) in zip(targets, shares)
+            w = convert(FT, outlet_weight[n] * share / total_share)
             push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
         end
     end
@@ -212,11 +221,16 @@ function build_flux_routing(target_grid, flux_time_series;
                                maximum_search_radius, spread_radius, maximum_spread_cells)
 end
 
-@kernel function _compute_wet_mask_and_area!(wet, area, grid, kᴺ)
+@kernel function _compute_wet_mask_area_and_depth!(wet, area, depth, grid, kᴺ)
     i, j = @index(Global, NTuple)
+    H = zero(grid)
+    for k in 1:kᴺ
+        H += ifelse(inactive_node(i, j, k, grid, Center(), Center(), Center()), zero(grid), Δzᶜᶜᶜ(i, j, k, grid))
+    end
     @inbounds begin
         wet[i, j, 1] = !inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
         area[i, j, 1] = Azᶜᶜᶜ(i, j, kᴺ, grid)
+        depth[i, j, 1] = H
     end
 end
 
