@@ -284,16 +284,16 @@ function atmosphere_sea_ice_interface(grid,
                                        (temperature = temperature_formulation, specific_humidity = specific_humidity_formulation),
                                        velocity_formulation)
 
-    snow_thermo = sea_ice.model.snow_thermodynamics
-    interface_temperature = if isnothing(snow_thermo)
-        sea_ice.model.ice_thermodynamics.top_surface_temperature
-    else
-        snow_thermo.top_surface_temperature
-    end
-
+    interface_temperature = sea_ice_surface_temperature(sea_ice)
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
     return AtmosphereInterface(fluxes, interface_temperature, interface_specific_humidity, formulation)
+end
+
+function sea_ice_surface_temperature(sea_ice)
+    snow_thermo = sea_ice.model.snow_thermodynamics
+    return isnothing(snow_thermo) ? sea_ice.model.ice_thermodynamics.top_surface_temperature :
+                                    snow_thermo.top_surface_temperature
 end
 
 #####
@@ -351,6 +351,10 @@ end
 #####
 
 default_ai_temperature(::Nothing) = nothing
+
+# The liquidus of sea ice that exchanges heat with the atmosphere, or `nothing` without one.
+sea_ice_liquidus(sea_ice) = nothing
+sea_ice_liquidus(sea_ice::Simulation) = sea_ice.model.phase_transitions.liquidus
 biogeochemical_interface(exchanger, ocean; kwargs...) = NamedTuple()
 biogeochemical_interface(exchanger, ocean::Simulation; kwargs...) = biogeochemical_interface(exchanger, ocean, ocean.model.biogeochemistry; kwargs...)
 biogeochemical_interface(exchanger, ocean, biogeochemistry; kwargs...) = NamedTuple()
@@ -449,15 +453,16 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                         latent_heat_of_fusion = latent_heat_of_fusion,
                         temperature_units     = ocean_temperature_units)
 
-    # Only build sea_ice_properties if sea_ice is an actual Simulation with a model
-    if sea_ice isa Simulation
+    liquidus = sea_ice_liquidus(sea_ice)
+
+    if isnothing(liquidus)
+        sea_ice_properties = nothing
+    else
         sea_ice_properties = (reference_density  = sea_ice_reference_density,
                               heat_capacity      = sea_ice_heat_capacity,
                               freshwater_density = freshwater_density,
-                              liquidus           = sea_ice.model.phase_transitions.liquidus,
+                              liquidus           = liquidus,
                               temperature_units  = sea_ice_temperature_units)
-    else
-        sea_ice_properties = nothing
     end
 
     # Component interfaces
