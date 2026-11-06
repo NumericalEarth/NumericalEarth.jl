@@ -3,7 +3,8 @@
                     time_indices_in_memory = 2,
                     time_indexing = Cyclical(),
                     inpainting = nothing,
-                    cache_inpainted_data = true)
+                    cache_inpainted_data = true,
+                    prefetch = false)
 
 Create a FieldTimeSeries from a dataset that corresponds to `metadata`.
 
@@ -28,6 +29,10 @@ Keyword Arguments
 
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
+
+- `prefetch`: If `true`, the next window is loaded on a background task, so that reloading it costs one copy.
+              Doubles the memory the series holds, needs at least two Julia threads, and is not available
+              on a distributed grid. Default: `false`.
 """
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
     Downloads.download(metadata)
@@ -39,7 +44,8 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     time_indices_in_memory = 2,
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
-                                                    cache_inpainted_data = true)
+                                                    cache_inpainted_data = true,
+                                                    prefetch = false)
 
     Downloads.download(metadata)
 
@@ -66,6 +72,8 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+
+    prefetch && (backend = PrefetchingBackend(FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)))
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)
