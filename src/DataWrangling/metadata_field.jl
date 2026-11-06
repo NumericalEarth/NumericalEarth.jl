@@ -340,7 +340,8 @@ below the surface of a `PressureLevelGrid` source.
     from the physical `znode` for mutable grids.
 """
 function interpolate_physical!(to_field, from_field)
-    to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
+    # A surface (Nothing-z) target has no deformed vertical node to sample
+    (to_field.grid isa AbstractMutableGrid && location(to_field, 3) !== Nothing) || return interpolate!(to_field, from_field)
 
     to_grid       = to_field.grid
     from_grid     = from_field.grid
