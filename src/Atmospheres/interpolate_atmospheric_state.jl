@@ -2,6 +2,9 @@ using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Fields: FractionalIndices, interpolate
 using Oceananigans.OutputReaders: cpu_interpolating_time_indices, FTS0
 
+using Oceananigans.TimeSteppers: next_time
+
+using ..EarthSystemModels: component_model
 using ..Oceans: forcing_barotropic_potential
 
 """Interpolate the atmospheric state onto the ocean / sea-ice grid."""
@@ -71,16 +74,49 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
             snowfall_flux,
             snowfall_time_arguments)
 
-    # Set ocean barotropic pressure forcing
-    #
-    # TODO: find a better design for this that doesn't have redundant
-    # arrays for the barotropic potential
-    potential = forcing_barotropic_potential(coupled_model.ocean)
-    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+    return nothing
+end
 
-    if !isnothing(potential)
-        parent(potential) .= parent(atmosphere_data.p) ./ ρᵒᶜ
+"""Fill the ocean's barotropic potential `p / ρᵒᶜ` at the start and end of the coupled time step."""
+function EarthSystemModels.update_barotropic_potential!(atmosphere::PrescribedAtmosphere, coupled_model, Δt)
+    Φ = forcing_barotropic_potential(coupled_model.ocean)
+    isnothing(Φ) && return nothing
+
+    exchanger = coupled_model.interfaces.exchanger
+    grid = exchanger.grid
+    arch = architecture(grid)
+    regridder = exchanger.atmosphere.regridder
+    space_fractional_indices = (i = regridder.i, j = regridder.j)
+    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+    p = atmosphere.pressure
+    clock = coupled_model.clock
+
+    for (potential, t) in ((Φ.previous, clock.time), (Φ.next, next_time(clock, Δt)))
+        update_field_time_series!(p, Time(t))
+        time_interpolator = cpu_interpolating_time_indices(arch, p.times, p.time_indexing, t)
+        launch!(arch, grid, interface_kernel_parameters(grid),
+                _interpolate_barotropic_potential!,
+                potential, space_fractional_indices, time_interpolator,
+                p.data, p.backend, p.time_indexing, ρᵒᶜ)
     end
+
+    ocean_clock = component_model(coupled_model.ocean).clock
+    KT = eltype(Φ.times)
+    copyto!(Φ.times, KT[ocean_clock.time, next_time(ocean_clock, Δt)])
+
+    return nothing
+end
+
+@kernel function _interpolate_barotropic_potential!(Φ, space_fractional_indices, time_interpolator,
+                                                     pressure, backend, time_indexing, ρᵒᶜ)
+    i, j = @index(Global, NTuple)
+
+    fi = get_fractional_index(i, j, space_fractional_indices.i)
+    fj = get_fractional_index(i, j, space_fractional_indices.j)
+    X = FractionalIndices(fi, fj, nothing)
+    pᵃᵗ = interp_atmos_time_series(pressure, X, time_interpolator, backend, time_indexing)
+
+    @inbounds Φ[i, j, 1] = pᵃᵗ / ρᵒᶜ
 end
 
 @inline @generated function unwrap_fields(fields::NamedTuple{names}) where names
