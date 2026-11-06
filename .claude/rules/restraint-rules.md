@@ -207,9 +207,9 @@ Reread `style-rules.md` Rules 1–3 before naming anything: identifiers are **fu
 
 ## Rule 12 — Use constructors as designed
 
-Already pitfall 6 in `AGENTS.md`; it is broken most often in new doctests and examples. Never reach into a
-constructor's result to prove it worked, and never write a doctest whose assertion is that `set!` assigned a
-number.
+Already in the Design section of `AGENTS.md` ("never unpack a property immediately after a constructor"); it
+is broken most often in new doctests and examples. Never reach into a constructor's result to prove it worked,
+and never write a doctest whose assertion is that `set!` assigned a number.
 
 ❌ ```jldoctest``` that builds a full coupled interface to check
    `interface.flux_formulation.zero_plane_displacement[2, 1, 1] == 4.0`
