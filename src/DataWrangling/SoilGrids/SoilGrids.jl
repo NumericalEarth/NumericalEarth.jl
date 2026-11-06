@@ -30,7 +30,7 @@ remote islands, deserts, and the Arctic.
 @enum Statistic Mean Q5 Q50 Q95
 
 """
-    Resolution
+    GridType
 
 The three ways [`SoilGrids2`](@ref) can source its data:
 
@@ -45,7 +45,7 @@ The three ways [`SoilGrids2`](@ref) can source its data:
 Note that `SoilGrids1000m`/`SoilGrids250m` require `using ArchGDAL` (for the Homolosine → EPSG:4326
 reprojection).
 """
-@enum Resolution SoilGrids250m SoilGrids1000m Clenshaw10km
+@enum GridType SoilGrids250m SoilGrids1000m Clenshaw10km
 
 download_SoilGrids2_cache::String = ""
 function __init__()
@@ -54,7 +54,7 @@ function __init__()
 end
 
 """
-    SoilGrids2(; statistic = Mean, resolution = SoilGrids1000m)
+    SoilGrids2(; statistic = Mean, grid_type = SoilGrids1000m)
 
 SoilGrids 2.0 global soil properties (ISRIC, Poggio et al., 2021), predicted by quantile
 regression forest over a large set of environmental covariates.
@@ -64,8 +64,8 @@ Provides `:sand_fraction`, `:silt_fraction`, `:clay_fraction`, `:coarse_fraction
 intervals 0–5, 5–15, 15–30, 30–60, 60–100, and 100–200 cm — stored as a three-dimensional field
 whose vertical axis carries the depths (deepest first).
 
-`statistic` selects which prediction layer to load (see [`Statistic`](@ref)); `resolution`
-selects how the data is sourced (see [`Resolution`](@ref)) — the default
+`statistic` selects which prediction layer to load (see [`Statistic`](@ref)); `grid_type`
+selects how the data is sourced (see [`GridType`](@ref)) — the default
 `SoilGrids1000m` downloads directly from ISRIC and requires `using ArchGDAL`.
 
 Data source: https://www.isric.org/explore/soilgrids (CC-BY 4.0).
@@ -76,17 +76,17 @@ using NumericalEarth
 SoilGrids2()
 
 # output
-SoilGrids2(statistic = Mean, resolution = SoilGrids1000m)
+SoilGrids2(statistic = Mean, grid_type = SoilGrids1000m)
 ```
 """
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
     "Specifies which dataset layer to load variables from; see [SoilGrids.Statistic](@ref). Defaults to `Mean`"
     statistic::Statistic = Mean
-    "Specifies how the data is sourced; see [`Resolution`](@ref). Defaults to `SoilGrids1000m`"
-    resolution::Resolution = SoilGrids1000m
+    "Specifies how the data is sourced; see [`GridType`](@ref). Defaults to `SoilGrids1000m`"
+    grid_type::GridType = SoilGrids1000m
 end
 
-Base.summary(dataset::SoilGrids2) = string("SoilGrids2(statistic = ", dataset.statistic, ", resolution = ", dataset.resolution, ")")
+Base.summary(dataset::SoilGrids2) = string("SoilGrids2(statistic = ", dataset.statistic, ", grid_type = ", dataset.grid_type, ")")
 Base.show(io::IO, dataset::SoilGrids2) = print(io, summary(dataset))
 
 # Variable name mappings from NumericalEarth names to SoilGrids2 variable names
@@ -105,16 +105,16 @@ const SoilGrids2Metadatum = Metadatum{<:SoilGrids2}
 const clenshaw_10km_url = "https://syncandshare.lrz.de/dl/fiVMyHskjL3FNbceuUFJev/soilgrids2_clenshaw989_10km.nc"
 
 """
-    soilgrids_pixel_size(resolution::Resolution)
+    soilgrids_pixel_size(grid_type::GridType)
 
-The native pixel size in meters of a [`Resolution`](@ref). Note that, for the postprocessed `Clenshaw10km`
+The native pixel size in meters of a [`GridType`](@ref). Note that, for the postprocessed `Clenshaw10km`
 dataset, the native grid is spherical so the grid spacing in meters is only approximate.
 """
-function soilgrids_spacing_meters(resolution::Resolution)
-    resolution === SoilGrids250m  && return 250
-    resolution === SoilGrids1000m && return 1000
-    resolution === Clenshaw10km && return 10_000
-    error("unsupported resolution $resolution")
+function soilgrids_spacing_meters(grid_type::GridType)
+    grid_type === SoilGrids250m  && return 250
+    grid_type === SoilGrids1000m && return 1000
+    grid_type === Clenshaw10km && return 10_000
+    error("unsupported grid_type $grid_type")
 end
 
 """
@@ -158,10 +158,10 @@ DataWrangling.available_variables(::SoilGrids2) = soil_variable_names
 DataWrangling.default_download_directory(::SoilGrids2) = download_SoilGrids2_cache
 
 function Base.size(dataset::SoilGrids2, variable)
-    if dataset.resolution === Clenshaw10km
+    if dataset.grid_type === Clenshaw10km
         return (3956, 1979, 6, 4)
     else
-        Δ = soilgrids_spacing_meters(dataset.resolution) / 111320
+        Δ = soilgrids_spacing_meters(dataset.grid_type) / 111320
         Nx = round(Int, 360 / Δ)
         Ny = round(Int, 180 / Δ)
         return (Nx, Ny, 6)
@@ -169,45 +169,45 @@ function Base.size(dataset::SoilGrids2, variable)
 end
 
 function DataWrangling.longitude_interfaces(dataset::SoilGrids2)
-    dataset.resolution === Clenshaw10km && return (0, 360)
+    dataset.grid_type === Clenshaw10km && return (0, 360)
     return (-180, 180)
 end
 
 function DataWrangling.z_interfaces(dataset::SoilGrids2)
     # ISRIC depth-range URL fragments, deepest first
-    dataset.resolution === Clenshaw10km && return [-200, -100, -60, -30, -15, -5, 0]
+    dataset.grid_type === Clenshaw10km && return [-200, -100, -60, -30, -15, -5, 0]
     return [-2.0, -1.0, -0.6, -0.3, -0.15, -0.05, 0]
 end
 
 DataWrangling.latitude_interfaces(::SoilGrids2) = (-90, 90)
-DataWrangling.reversed_latitude_axis(dataset::SoilGrids2)  = dataset.resolution === Clenshaw10km
-DataWrangling.reversed_vertical_axis(dataset::SoilGrids2)  = dataset.resolution === Clenshaw10km
-DataWrangling.windowed_retrieval(dataset::SoilGrids2)      = dataset.resolution === SoilGrids250m
+DataWrangling.reversed_latitude_axis(dataset::SoilGrids2)  = dataset.grid_type === Clenshaw10km
+DataWrangling.reversed_vertical_axis(dataset::SoilGrids2)  = dataset.grid_type === Clenshaw10km
+DataWrangling.windowed_retrieval(dataset::SoilGrids2)      = dataset.grid_type === SoilGrids250m
 
 function DataWrangling.metadata_filename(dataset::SoilGrids2, name, date, region)
-    dataset.resolution === Clenshaw10km && return "SoilGrids2_clenshaw_10km_full.nc"
-    resolution_tag = dataset.resolution === SoilGrids1000m ? "1000m" : "250m"
-    return string("SoilGrids2_", name, "_", dataset.statistic, "_", resolution_tag, "_",
+    dataset.grid_type === Clenshaw10km && return "SoilGrids2_clenshaw_10km_full.nc"
+    grid_type_tag = dataset.grid_type === SoilGrids1000m ? "1000m" : "250m"
+    return string("SoilGrids2_", name, "_", dataset.statistic, "_", grid_type_tag, "_",
                  bounding_box_suffix(region), ".nc")
 end
 
 """
     validate_dataset_coverage(grid, metadata::SoilGrids2Metadatum)
 
-`SoilGrids2(resolution = SoilGrids250m)` must be used with a bounded region; at the native 250m
-resolution, a global read would be ~300 GB per variable. `SoilGrids1000m` and `Clenshaw10km` are
+`SoilGrids2(grid_type = SoilGrids250m)` must be used with a bounded region; at the native 250m
+grid_type, a global read would be ~300 GB per variable. `SoilGrids1000m` and `Clenshaw10km` are
 unrestricted and default to global coverage.
 """
 function DataWrangling.validate_dataset_coverage(grid, metadata::SoilGrids2Metadatum)
     dataset = metadata.dataset
-    dataset.resolution === SoilGrids250m || return nothing
+    dataset.grid_type === SoilGrids250m || return nothing
 
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
-        error("SoilGrids2(resolution = SoilGrids250m) must be used with a bounded region. " *
+        error("SoilGrids2(grid_type = SoilGrids250m) must be used with a bounded region. " *
               "At native 250 m a global read would be ~300 GB per variable; it is never read " *
               "in full. Build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
-              "    metadatum = Metadatum(:$(metadata.name); dataset = SoilGrids2(resolution = SoilGrids250m),\n" *
+              "    metadatum = Metadatum(:$(metadata.name); dataset = SoilGrids2(grid_type = SoilGrids250m),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))\n" *
               "    Field(metadatum, grid)")
     end
@@ -227,7 +227,7 @@ DataWrangling.default_inpainting(md::SoilGrids2Metadatum) = nothing
 # Only the pre-baked LRZ file carries a raw integer sentinel; the other two resolutions are
 # already NaN-masked on disk.
 DataWrangling.missing_value(md::SoilGrids2Metadatum) =
-    md.dataset.resolution === Clenshaw10km ? -32768 : missing
+    md.dataset.grid_type === Clenshaw10km ? -32768 : missing
 
 function DataWrangling.conversion_units(metadatum::SoilGrids2Metadatum)
     if metadatum.name ∈ (:sand_fraction, :silt_fraction, :clay_fraction, :coarse_fraction)
@@ -273,9 +273,9 @@ end
 #####
 
 function DataWrangling.metadata_url(m::SoilGrids2Metadatum)
-    m.dataset.resolution === Clenshaw10km && return clenshaw_10km_url
-    error("metadata_url is only defined for SoilGrids2(resolution = Clenshaw10km); the " *
-          "$(m.dataset.resolution) pipeline downloads directly from ISRIC per depth inside " *
+    m.dataset.grid_type === Clenshaw10km && return clenshaw_10km_url
+    error("metadata_url is only defined for SoilGrids2(grid_type = Clenshaw10km); the " *
+          "$(m.dataset.grid_type) pipeline downloads directly from ISRIC per depth inside " *
           "`Downloads.download`, with no single URL.")
 end
 
@@ -283,7 +283,7 @@ function Downloads.download(metadatum::SoilGrids2Metadatum)
     dataset = metadatum.dataset
     filepath = metadata_path(metadatum)
 
-    if dataset.resolution === Clenshaw10km
+    if dataset.grid_type === Clenshaw10km
         @root if !isfile(filepath)
             @info "Downloading SoilGrids2 (~10 km) data: $(metadatum.name) in $(metadatum.dir)..."
             download_with_retries(metadata_url(metadatum), filepath; progress = DownloadProgress())
@@ -293,7 +293,7 @@ function Downloads.download(metadatum::SoilGrids2Metadatum)
 
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
     @root if !isfile(filepath)
-        @info "Downloading SoilGrids2 ($(soilgrids_spacing_meters(dataset.resolution)) m) " *
+        @info "Downloading SoilGrids2 ($(soilgrids_spacing_meters(dataset.grid_type)) m) " *
               "data: $(metadatum.name) ($(dataset.statistic)) over $(summary(metadatum.region))..."
         soilgrids_variable_to_netcdf(metadatum, filepath)
     end
@@ -311,7 +311,7 @@ Implemented in `ext/NumericalEarthArchGDALExt/soilgrids.jl` when ArchGDAL is loa
 fallback below fires only when the extension is not active.
 """
 soilgrids_variable_to_netcdf(metadatum, nc_path) =
-    error("Reading SoilGrids2 ISRIC data ($(metadatum.dataset.resolution)) requires the ArchGDAL " *
+    error("Reading SoilGrids2 ISRIC data ($(metadatum.dataset.grid_type)) requires the ArchGDAL " *
           "package (for the Homolosine → EPSG:4326 reprojection). Load it with `using ArchGDAL`.")
 
 #####
@@ -323,7 +323,7 @@ function DataWrangling.retrieve_data(metadata::SoilGrids2Metadatum)
     name = dataset_variable_name(metadata)
     dataset = metadata.dataset
 
-    if dataset.resolution === Clenshaw10km
+    if dataset.grid_type === Clenshaw10km
         data = Dataset(path) do ds
             l = Int(dataset.statistic) + 1
             data = ds[name][:, :, :, l]
