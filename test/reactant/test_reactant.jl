@@ -198,3 +198,5 @@ end
     @test Reactant.to_number(clock.time) == 1
     @test Reactant.to_number(clock.iteration) == 1
 end
+
+include("test_reactant_nested.jl")
