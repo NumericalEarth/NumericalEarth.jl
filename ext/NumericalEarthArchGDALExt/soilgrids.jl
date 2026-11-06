@@ -5,6 +5,8 @@
 ##### six depths into the global or regional NetCDF the read path expects.
 #####
 
+# ISRIC depth-range URL fragments, deepest first (matching `z_interfaces(::SoilGrids2)`).
+const soilgrids_depth_ranges = ("100-200cm", "60-100cm", "30-60cm", "15-30cm", "5-15cm", "0-5cm")
 
 # Warp one depth's remote VRT directly onto `raster`'s EPSG:4326 grid.
 function soilgrids_depth_window(source, raster)
@@ -32,12 +34,20 @@ end
 function NumericalEarth.DataWrangling.SoilGrids.soilgrids_variable_to_netcdf(metadatum::SoilGrids2Metadatum, nc_path)
     var = dataset_variable_name(metadatum)
     stat_name = soilgrids_statistic_url_name(metadatum.dataset.statistic)
+    sources = [soilgrids_vsicurl_source(var, depth, stat_name) for depth in soilgrids_depth_ranges]
     raster = soilgrids_raster_geometry(metadatum)
-    Nz = length(SoilGrids2_depth_ranges)
+    soilgrids_sources_to_netcdf(sources, var, raster, nc_path)
+    return nothing
+end
+
+# Warp each depth's source (deepest first) onto `raster` and stack them into a
+# `(lon, lat, depth)` NetCDF. Separate from the URL construction above so that it
+# can be exercised on local rasters.
+function soilgrids_sources_to_netcdf(sources, var, raster, nc_path)
+    Nz = length(sources)
 
     data = Array{Float32}(undef, raster.Nx, raster.Ny, Nz)
-    for (k, depth) in enumerate(SoilGrids2_depth_ranges)
-        source = soilgrids_vsicurl_source(var, depth, stat_name)
+    for (k, source) in enumerate(sources)
         data[:, :, k] = soilgrids_depth_window(source, raster)
     end
 

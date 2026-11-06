@@ -42,8 +42,7 @@ using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_y
                                                ESA_WORLDCOVER_CLASS_NAMES,
                                                ESA_WORLDCOVER_NATIVE_STEP,
                                                ESA_WORLDCOVER_PIXELS_PER_DEGREE
-                                               ESA_WORLDCOVER_NATIVE_STEP
-using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2Metadatum, SoilGrids2_depth_ranges,
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2Metadatum,
                                               soilgrids_raster_geometry,
                                               soilgrids_statistic_url_name,
                                               soilgrids_vsicurl_source
