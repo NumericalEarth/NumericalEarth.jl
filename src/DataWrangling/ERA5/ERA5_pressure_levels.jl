@@ -132,17 +132,26 @@ DataWrangling.default_inpainting(md::ERA5PressureMetadata) = nothing
 """
     retrieve_data(metadata::ERA5PressureMetadatum)
 
-Retrieve ERA5 pressure-level data from a NetCDF file.
-Returns a 3D array (lon, lat, level) with levels ordered bottom-to-top
-(highest pressure at k=1, lowest pressure at k=Nz).
+Retrieve ERA5 pressure-level data from a NetCDF file holding at least the dataset's
+pressure levels. Returns a 3D array (lon, lat, level) with the dataset's levels ordered
+bottom-to-top (highest pressure at k=1, lowest pressure at k=Nz).
 """
 function DataWrangling.retrieve_data(metadata::ERA5PressureMetadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
+    i, j, _, _ = cached_window(metadata, path)
     ds   = NCDatasets.Dataset(path)
-    data = ds[name][:, :, :, 1]   # (lon, lat, pressure_level, time=1)
+    data = ds[name][:, j, :, 1]   # (lon, lat, pressure_level, time=1)
+    file_levels = file_pressure_levels(ds)
     close(ds)
-    return reverse(data, dims=2)  # Latitude is stored from 90°N → 90°S
+
+    k = map(requested_pressure_levels(metadata.dataset)) do level
+        index = findfirst(==(level), file_levels)
+        isnothing(index) && error("$path holds no $level hPa level.")
+        return index
+    end
+
+    return reverse(data[i, :, k], dims=2)  # Latitude is stored from 90°N → 90°S
 end
 
 #####
@@ -214,12 +223,6 @@ function mean_geopotential_heights(metadata::ERA5PressureMetadata)
     # average over time
     for ϕ_datum in ϕ_metadata
         data = retrieve_data(ϕ_datum) ./ Float32(ERA5_gravitational_acceleration)   # Φ → Z (m)
-        if size(data, 3) != Nz
-            error("Cached geopotential file at $(metadata_path(ϕ_datum)) has " *
-                  "$(size(data, 3)) pressure levels, but the dataset configuration " *
-                  "expects $Nz. This is most likely a stale cache from a previous " *
-                  "run with different `pressure_levels`. Delete the file and re-run.")
-        end
         # average over horizontal dims
         data_mean = mean(data; dims=(1, 2))
         heights .+= dropdims(data_mean; dims=(1, 2))
