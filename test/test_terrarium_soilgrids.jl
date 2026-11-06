@@ -5,6 +5,7 @@ using RingGrids: OctahedralGaussianGrid
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans.Fields: interior
 
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2
 import NumericalEarth.DataWrangling.SoilGrids as SoilGridsModule
 
 const NumericalEarthTerrariumExt = Base.get_extension(NumericalEarth, :NumericalEarthTerrariumExt)
@@ -25,6 +26,8 @@ function write_synthetic_soilgrids(path)
         defDim(ds, "lat", Nφ)
         defDim(ds, "depth", Nz)
         defDim(ds, "statistic", 1)
+        defVar(ds, "lon", collect(range(0, step = 360 / Nλ, length = Nλ)), ("lon",))
+        defVar(ds, "lat", collect(range(90, -90, length = Nφ)), ("lat",))
         for name in ("sand", "silt", "clay", "bdod")
             data = Array{Int16}(undef, Nλ, Nφ, Nz, 1)
             for d in 1:Nz
@@ -87,8 +90,8 @@ end
                 @test all(clay .≈ (50 + 10d) / total)
                 @test all(sand .+ silt .+ clay .≈ 1)
 
-                # cg/cm³ → kg/dm³
-                @test all(bulk_density .≈ 1.3)
+                # cg/cm³ → kg/m³
+                @test all(bulk_density .≈ 1300)
             end
         finally
             setglobal!(SoilGridsModule, :download_SoilGrids2_cache, default_cache)
