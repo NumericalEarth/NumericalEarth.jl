@@ -70,7 +70,7 @@ using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
 using Oceananigans.Grids: x_domain, y_domain
-using Oceananigans.Utils: launch!, prettytime
+using Oceananigans.Utils: @apply_regionally, launch!, prettytime
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
 default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)

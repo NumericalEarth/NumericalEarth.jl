@@ -37,7 +37,7 @@ function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSyste
     surface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
 
-    launch!(arch, grid, :xy,
+    @apply_regionally launch!(arch, grid, :xy,
             _apply_air_sea_ice_radiative_fluxes!,
             top_heat_flux,
             interface_fluxes.sea_ice,

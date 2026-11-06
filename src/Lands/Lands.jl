@@ -62,7 +62,7 @@ using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!, clock_convert, kernel_time_type
 using Oceananigans.Units: Time
-using Oceananigans.Utils: launch!, prettysummary, prettytime
+using Oceananigans.Utils: @apply_regionally, launch!, prettysummary, prettytime
 using Base: ForwardOrdering
 
 using ..NumericalEarth: NumericalEarth, stateindex

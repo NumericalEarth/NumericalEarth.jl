@@ -87,7 +87,7 @@ end
 # energy closures; the physics lives in their `temperature_tendency` methods.
 function step_land_temperature!(energy, land, Δt, time)
     grid = land.grid
-    launch!(architecture(grid), grid, :xy, _step_land_temperature!,
+    @apply_regionally launch!(architecture(grid), grid, :xy, _step_land_temperature!,
             Oceananigans.prognostic_fields(land), land.fluxes, land.diagnostics,
             energy, grid, Δt, time)
     return nothing

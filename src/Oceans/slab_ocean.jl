@@ -154,7 +154,7 @@ function Oceananigans.TimeSteppers.time_step!(ocean::SlabOcean, Δt)
     tick!(ocean.clock, Δt)
     grid = ocean.grid
     arch = architecture(grid)
-    launch!(arch, grid, :xy, _step_slab_temperature!,
+    @apply_regionally launch!(arch, grid, :xy, _step_slab_temperature!,
             ocean.temperature, ocean.temperature_flux, Δt, ocean.depth)
     fill_halo_regions!(ocean.temperature)
     return nothing

@@ -30,7 +30,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVertic
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
 using Oceananigans.Units: minutes, hours
-using Oceananigans.Utils: with_tracers, launch!
+using Oceananigans.Utils: @apply_regionally, with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
@@ -112,7 +112,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation
     arch = architecture(ocean.model.grid)
     # Over the halo columns too, which the interface flux kernels visit: the ocean's own tracer
     # halos are already filled, so this needs no separate fill of `Tᵉˣ`.
-    launch!(arch, grid, interface_kernel_parameters(grid), _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    @apply_regionally launch!(arch, grid, interface_kernel_parameters(grid), _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
     return nothing
 end
 
