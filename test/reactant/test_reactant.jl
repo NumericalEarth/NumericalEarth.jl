@@ -185,6 +185,7 @@ end
     end
 end
 
+include("test_reactant_nested.jl")
 # The coupled model's default clock around an atmosphere `Simulation` on ReactantState is a device clock in every
 # field, so a compiled step can tick it: `Clock{TT}(time = 0)` left the iteration a host `Int`.
 @testset "EarthSystemModel default clock ticks under compilation" begin
