@@ -295,7 +295,7 @@ those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcin
 prognostics hold `time_indices_in_memory` time levels, by default as many as the parent holds, so a parent
 with every snapshot in memory gives a window that never moves; fewer (at least 3) stream a moving window.
 
-`parent_time_step` is the step taken by a parent that integrates its own dynamics: `nothing` keeps it in
+`parent_Δt` is the step taken by a parent that integrates its own dynamics: `nothing` keeps it in
 lockstep with the child, a number is a fixed parent `Δt`, and a `TimeStepWizard` sizes it from the parent's own
 CFL. A prescribed parent is sampled at the end of every child step, whatever the value.
 
@@ -369,7 +369,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
                                        time_discretization_kwargs),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
-    parent_time_step = nothing,
+    parent_Δt = nothing,
     time_indices_in_memory = resident_time_indices(parent_atmosphere),
     kw...)
 
@@ -474,7 +474,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
                       (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
 
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks; parent_time_step)
+    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks; parent_Δt)
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.

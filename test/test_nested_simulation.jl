@@ -676,7 +676,7 @@ end
     @test length(moving.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
-@testset "Breeze nested_atmosphere_model forwards parent_time_step" begin
+@testset "Breeze nested_atmosphere_model forwards parent_Δt" begin
     parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -693,9 +693,9 @@ end
 
     condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
     lockstep = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates)
-    minutely = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, parent_time_step = 60)
-    @test isnothing(lockstep.parent_time_step)
-    @test minutely.parent_time_step == 60
+    minutely = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, parent_Δt = 60)
+    @test isnothing(lockstep.parent_Δt)
+    @test minutely.parent_Δt == 60
 end
 
 # A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
@@ -1262,7 +1262,7 @@ nest_test_model(extent) =
     NonhydrostaticModel(RectilinearGrid(size = (4, 4, 4), x = (-extent, extent), y = (-extent, extent),
                                         z = (0, 1), topology = (Bounded, Bounded, Bounded)))
 
-@testset "NestedModel: the default parent_time_step keeps parent and child in lockstep" begin
+@testset "NestedModel: the default parent_Δt keeps parent and child in lockstep" begin
     Δt = 0.1
     nested = NestedModel(nest_test_model(2), nest_test_model(1))
 
@@ -1275,9 +1275,9 @@ nest_test_model(extent) =
     @test nested.parent.clock.time ≈ 4Δt
 end
 
-@testset "NestedModel: parent_time_step = 2Δt steps the parent at the start of each pair" begin
+@testset "NestedModel: parent_Δt = 2Δt steps the parent at the start of each pair" begin
     Δt = 0.1
-    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_time_step = 2Δt)
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_Δt = 2Δt)
 
     time_step!(nested, Δt)
     @test nested.child.clock.iteration == 1
@@ -1304,7 +1304,7 @@ end
 @testset "NestedModel: a parent on a TimeStepWizard sizes its own step" begin
     Δt = 0.1
     wizard = TimeStepWizard(min_Δt = 0.25, max_Δt = 0.25)
-    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_time_step = wizard)
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_Δt = wizard)
 
     time_step!(nested, Δt)
     @test nested.parent.clock.iteration == 1
@@ -1323,10 +1323,10 @@ end
     @test nested.parent.clock.time == 0.5
 end
 
-@testset "NestedModel: parent_time_step sets each level's rate in a three-level telescope" begin
+@testset "NestedModel: parent_Δt sets each level's rate in a three-level telescope" begin
     Δt = 0.1
     coarse, medium, fine = nest_test_model(4), nest_test_model(2), nest_test_model(1)
-    telescope = NestedModel(NestedModel(coarse, medium; parent_time_step = 4Δt), fine; parent_time_step = 2Δt)
+    telescope = NestedModel(NestedModel(coarse, medium; parent_Δt = 4Δt), fine; parent_Δt = 2Δt)
 
     for _ in 1:4
         time_step!(telescope, Δt)
@@ -1344,7 +1344,7 @@ end
 # parent is never behind.
 @testset "NestedModel: the parent leads every child step, steady or ramping Δt" begin
     Δt = 0.1
-    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_time_step = 3Δt)
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_Δt = 3Δt)
 
     for _ in 1:9
         time_step!(nested, Δt)
@@ -1358,10 +1358,10 @@ end
 
 # A fixed parent Δt cannot hold a ratio against an adapting child, but a rule relative to the child's
 # step can: the parent still takes one step per three child steps as the child's Δt ramps.
-@testset "NestedModel: a parent_time_step rule holds its ratio as the child's Δt ramps" begin
+@testset "NestedModel: a parent_Δt rule holds its ratio as the child's Δt ramps" begin
     Δt = 0.1
     nested = NestedModel(nest_test_model(2), nest_test_model(1);
-                         parent_time_step = Δt_child -> 3Δt_child)
+                         parent_Δt = Δt_child -> 3Δt_child)
 
     for _ in 1:9
         time_step!(nested, Δt)
@@ -1392,7 +1392,7 @@ end
 @testset "NestedModel: a prescribed parent follows the child's clock whatever its own step" begin
     grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
     parent = PrescribedAtmosphere(grid, [0.0, 10.0])
-    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); parent_time_step = 3.0)
+    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); parent_Δt = 3.0)
 
     for _ in 1:3
         time_step!(nested, 1.0)
@@ -1406,7 +1406,7 @@ end
     grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
     parent = BoundaryPrescribedComponent(west = PrescribedAtmosphere(grid, [0.0, 10.0]),
                                          east = PrescribedAtmosphere(grid, [0.0, 10.0]))
-    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); parent_time_step = 3.0)
+    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); parent_Δt = 3.0)
 
     for _ in 1:3
         time_step!(nested, 1.0)

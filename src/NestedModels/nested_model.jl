@@ -25,7 +25,7 @@ import Oceananigans.Simulations: iteration
 using Oceananigans.Simulations: new_time_step
 
 """
-    NestedModel(parent, child::AbstractModel, exchanger=nothing, child_callbacks=(); parent_time_step=nothing)
+    NestedModel(parent, child::AbstractModel, exchanger=nothing, child_callbacks=(); parent_Δt=nothing)
 
 Pair a `child` Oceananigans model with a `parent` state (e.g. a 3D
 `PrescribedAtmosphere`). The result is itself an `AbstractModel` whose
@@ -35,13 +35,13 @@ child's step so the child cannot pass the parent's state. The clipped step
 lands the child exactly on the parent's time, so the two clocks coincide at
 every rendezvous.
 
-`parent_time_step` is the step taken by a parent that integrates its own dynamics: `nothing` keeps the
+`parent_Δt` is the step taken by a parent that integrates its own dynamics: `nothing` keeps the
 parent in lockstep with the child, a number is a fixed parent `Δt`, a function of the child's `Δt` such as
 `Δt -> 3Δt` holds a refinement ratio while the child's `Δt` adapts, and a `TimeStepWizard` sizes each
 parent step from the parent's own CFL. A fixed `Δt` cannot hold a ratio against an adapting child: once
 the child's `Δt` outgrows it, the child is clipped down to the parent's rate. Each level's value is absolute, not a ratio to the child's `Δt`,
 so a telescope whose `fine` child runs at `Δt`,
-`NestedModel(NestedModel(coarse, medium; parent_time_step=4Δt), fine; parent_time_step=2Δt)`, steps
+`NestedModel(NestedModel(coarse, medium; parent_Δt=4Δt), fine; parent_Δt=2Δt)`, steps
 `medium` at `2Δt` and `coarse` at `4Δt`. A parent `Δt` below the child's own CFL limit drags the child
 down to the parent's rate, since the child never steps past the parent; [`time_step_ratio`](@ref) gives
 a parent `Δt` commensurate with the child's. A prescribed parent is a function of time rather than an
@@ -52,12 +52,12 @@ Construct via [`child_model`](@ref) plus this wrapper, or use the
 `Simulation` wrapping.
 """
 mutable struct NestedModel{P, M, X, CB, D, C, TS, A} <: AbstractModel{TS, A}
-    parent           :: P
-    child            :: M
-    exchanger        :: X    # mediates parent state → child variables (see `exchange_state!`); `nothing` if unused
-    child_callbacks  :: CB   # callbacks added to the child's at every time step (e.g. boundary relaxation)
-    parent_time_step :: D    # the parent's own Δt; `nothing` keeps the parent in lockstep with the child
-    clock            :: C    # shared reference to the child's clock (Simulation/run! read `model.clock`)
+    parent          :: P
+    child           :: M
+    exchanger       :: X    # mediates parent state → child variables (see `exchange_state!`); `nothing` if unused
+    child_callbacks :: CB   # callbacks added to the child's at every time step (e.g. boundary relaxation)
+    parent_Δt       :: D    # the parent's own Δt; `nothing` keeps the parent in lockstep with the child
+    clock           :: C    # shared reference to the child's clock (Simulation/run! read `model.clock`)
 end
 
 """
@@ -65,7 +65,7 @@ $(TYPEDSIGNATURES)
 
 Integer time-refinement factor between two nest levels: the ratio of the parent's smallest horizontal
 grid spacing to the child's, rounded and floored at 1. Scaling the child's `Δt` by it gives a
-`parent_time_step` commensurate with the child's step; an incommensurate parent `Δt` costs the child one
+`parent_Δt` commensurate with the child's step; an incommensurate parent `Δt` costs the child one
 short step per parent interval, since the child lands on the parent's time.
 
 ```jldoctest
@@ -90,10 +90,10 @@ function time_step_ratio(parent_grid, child_grid)
 end
 
 NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callbacks=();
-            parent_time_step=nothing) where {TS, A} =
+            parent_Δt=nothing) where {TS, A} =
     NestedModel{typeof(parent), typeof(child), typeof(exchanger), typeof(child_callbacks),
-                typeof(parent_time_step), typeof(child.clock), TS, A}(
-        parent, child, exchanger, child_callbacks, parent_time_step, child.clock)
+                typeof(parent_Δt), typeof(child.clock), TS, A}(
+        parent, child, exchanger, child_callbacks, parent_Δt, child.clock)
 
 # Refresh the parent-derived child state held by the exchanger to the current `time`. The exchanger
 # (a NumericalEarth object; see the Breeze extension's `StateExchanger`) recomputes the child
@@ -133,7 +133,7 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # step (a 2-level window cannot span a parent interval). `Simulation` calls
 # `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; callbacks=())
-    parent_time = advance_parent!(nm.parent, nm.child.clock, Δt, nm.parent_time_step)
+    parent_time = advance_parent!(nm.parent, nm.child.clock, Δt, nm.parent_Δt)
     Δt_child = aligned_child_time_step(Δt, nm.clock.time, parent_time)
     exchange_state!(nm.exchanger, nm.clock.time + Δt_child)
     time_step!(nm.child, Δt_child; callbacks = (callbacks..., nm.child_callbacks...))
@@ -151,34 +151,34 @@ end
 # A prescribed parent is a function of time: it refreshes its state at the end of the step the child is
 # about to take, and is defined arbitrarily far ahead of it. No branch on the gap between the clocks,
 # which is a traced number inside a compiled step.
-function advance_parent!(parent::AbstractPrescribedComponent, clock, Δt, parent_time_step)
+function advance_parent!(parent::AbstractPrescribedComponent, clock, Δt, parent_Δt)
     copy_clock!(parent.clock, clock, Δt)
     update_state!(parent)
     return Inf
 end
 
-function advance_parent!(parent::BoundaryPrescribedComponent, clock, Δt, parent_time_step)
+function advance_parent!(parent::BoundaryPrescribedComponent, clock, Δt, parent_Δt)
     copy_clock!(parent.clock, clock, Δt)
-    foreach(strip -> advance_parent!(strip, clock, Δt, parent_time_step), boundary_strips(parent))
+    foreach(strip -> advance_parent!(strip, clock, Δt, parent_Δt), boundary_strips(parent))
     return Inf
 end
 
 # A parent with its own dynamics steps whenever the child has caught up with it, and reports the time
 # the child may not step past.
-function advance_parent!(parent, clock, Δt, parent_time_step)
-    parent.clock.time ≤ clock.time && time_step!(parent, next_parent_time_step(parent_time_step, parent, Δt))
+function advance_parent!(parent, clock, Δt, parent_Δt)
+    parent.clock.time ≤ clock.time && time_step!(parent, next_parent_Δt(parent_Δt, parent, Δt))
     return parent.clock.time
 end
 
 # The parent's own step. `nothing` keeps it in lockstep with the child.
-next_parent_time_step(::Nothing, parent, Δt) = Δt
-next_parent_time_step(Δt_parent::Number, parent, Δt) = Δt_parent
+next_parent_Δt(::Nothing, parent, Δt) = Δt
+next_parent_Δt(parent_Δt::Number, parent, Δt) = parent_Δt
 
 # A rule relative to the child's step, which holds a refinement ratio while the child's Δt adapts.
-next_parent_time_step(rule::Function, parent, Δt) = rule(Δt)
+next_parent_Δt(rule::Function, parent, Δt) = rule(Δt)
 
 # A fresh clock's `last_Δt` is `Inf`, so seed the wizard with the child's step instead.
-function next_parent_time_step(wizard, parent, Δt)
+function next_parent_Δt(wizard, parent, Δt)
     last_Δt = parent.clock.last_Δt
     return new_time_step(isfinite(last_Δt) ? last_Δt : Δt, wizard, parent)
 end
