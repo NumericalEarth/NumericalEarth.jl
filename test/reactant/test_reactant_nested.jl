@@ -13,7 +13,7 @@ include("patches.jl")
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
 Reactant.set_default_backend(gpu_test ? "gpu" : "cpu")
 
-# Construction only allocates on `ReactantState`; `initialize!` is compiled, the child setup is eager.
+# On `ReactantState` construction leaves the exchanger's window empty; `initialize!` fills it compiled.
 @testset "Nested atmosphere: compiled initialize!, initialize_nested_child! and time_step!" begin
     arch  = ReactantState()
     ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
@@ -43,7 +43,6 @@ Reactant.set_default_backend(gpu_test ? "gpu" : "cpu")
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
 
     @test all(iszero, Array(interior(model.exchanger.prognostic.ρᵈ[1])))
-    @test all(iszero, Array(interior(model.child.dynamics.reference_state.pressure)))
 
     @info "Compiling initialize!..."
     compile_time = @elapsed compiled_initialize! = Reactant.@compile sync=true initialize!(model)

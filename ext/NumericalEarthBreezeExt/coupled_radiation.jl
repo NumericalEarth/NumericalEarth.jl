@@ -52,6 +52,12 @@ struct CoupledRadiation{F, R}
 end
 
 CoupledRadiation() = CoupledRadiation(nothing, nothing)
+
+# From Breeze 0.14, `AtmosphereModel` validates `radiation.schedule` at construction
+# (`validate_radiation(radiation, clock, arch)`); the proxy carries no schedule of its own, since the
+# wrapped radiative transfer model is validated where it is built. Breeze 0.13 calls a two-argument
+# method, so this one is unused there.
+Breeze.AtmosphereModels.validate_radiation(::CoupledRadiation, clock, arch) = nothing
 CoupledRadiation(radiative_transfer_model::Breeze.RadiativeTransferModel) =
     CoupledRadiation(radiative_transfer_model.flux_divergence, radiative_transfer_model)
 
@@ -71,6 +77,9 @@ Breeze.AtmosphereModels.radiation_flux_divergence(r::CoupledRadiation) = r.flux_
 Breeze.AtmosphereModels.update_radiation!(::CoupledRadiation{Nothing, Nothing}, model) = nothing
 Breeze.AtmosphereModels.update_radiation!(r::CoupledRadiation, model) =
     Breeze.AtmosphereModels.update_radiation!(r.radiative_transfer_model, model)
+
+# The proxy carries no state of its own: what it aliases is checkpointed with the radiative transfer model.
+Oceananigans.prognostic_state(::CoupledRadiation) = nothing
 
 # Time step at the EarthSystemModel level is a no-op for the RTM: the
 # atmosphere's own `update_state!` (which runs each step) drives the radiation
