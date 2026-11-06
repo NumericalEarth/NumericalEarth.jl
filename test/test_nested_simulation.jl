@@ -729,12 +729,16 @@ end
                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
+    default = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    breeze_damping = Breeze.SplitExplicitTimeDiscretization().damping
+    @test typeof(default.child.dynamics.time_discretization.damping) == typeof(breeze_damping)
+
     nested = nested_atmosphere_model(parent, child_grid;
-                                     time_discretization_kwargs = (; damping = ThermalDivergenceDamping()),
+                                     time_discretization_kwargs = (; damping = Breeze.NoDivergenceDamping()),
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
 
     time_discretization = nested.child.dynamics.time_discretization
-    @test time_discretization.damping isa ThermalDivergenceDamping
+    @test time_discretization.damping isa Breeze.NoDivergenceDamping
     @test time_discretization.sponge isa UpperSponge
 end
 
