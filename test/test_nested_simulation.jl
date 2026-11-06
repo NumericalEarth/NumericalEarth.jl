@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, nested_atmosphere_model
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
@@ -292,7 +292,8 @@ end
     child = NonhydrostaticModel(child_grid; tracers = :c, boundary_conditions = bcs)
     set!(child, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
 
-    nested = NestedSimulation(parent, child; Δt = 0.001, stop_iteration = 3, verbose = false)
+    nested = NestedSimulation(Simulation(parent; Δt = 0.001, verbose = false), child;
+                              Δt = 0.001, stop_iteration = 3, verbose = false)
     run!(nested)
 
     @test child.clock.iteration == 3
@@ -707,7 +708,7 @@ end
 
     nested = nested_atmosphere_model(parent, child_grid; closure,
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
-    child_tke_advection = nested.child.advection[tke_name]
+    child_tke_advection = nested.child.model.advection[tke_name]
     @test child_tke_advection isa WENO
     @test !(child_tke_advection isa Centered)
     @test !isnothing(child_tke_advection.bounds)
@@ -733,7 +734,7 @@ end
                                      time_discretization_kwargs = (; damping = ThermalDivergenceDamping()),
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
 
-    time_discretization = nested.child.dynamics.time_discretization
+    time_discretization = nested.child.model.dynamics.time_discretization
     @test time_discretization.damping isa ThermalDivergenceDamping
     @test time_discretization.sponge isa UpperSponge
 end
@@ -760,7 +761,7 @@ end
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing),
                                      forcing = (θ = Relaxation(rate = 1/600, target = 300.0),))
 
-    ρθ_forcing = nested.child.forcing.ρθ
+    ρθ_forcing = nested.child.model.forcing.ρθ
     @test ρθ_forcing isa MultipleForcings
     @test length(ρθ_forcing.forcings) == 2                       # boundary relaxation + the caller's θ forcing
     @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
@@ -1074,7 +1075,7 @@ end
 
     @test model.exchanger.prognostic.ρᵈ.backend.start > 1        # actually crossed the window move
     @test model.clock.time ≥ 10.0 - 2.0                          # reached the end (no NaN Δt stall)
-    for (name, field) in pairs(prognostic_fields(model.child))
+    for (name, field) in pairs(prognostic_fields(model.child.model))
         @test all(isfinite, Array(interior(field)))
     end
 end
@@ -1109,8 +1110,8 @@ end
 
     expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
     expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
-    @test maximum(abs, Array(interior(model.child.velocities.u)) .- Array(interior(expected_u))) < 0.05
-    @test maximum(abs, Array(interior(model.child.velocities.v)) .- Array(interior(expected_v))) < 0.05
+    @test maximum(abs, Array(interior(model.child.model.velocities.u)) .- Array(interior(expected_u))) < 0.05
+    @test maximum(abs, Array(interior(model.child.model.velocities.v)) .- Array(interior(expected_v))) < 0.05
 end
 
 # `terrain_blend_length` is a physical length converted to a cell count per grid, so the blend slope is
@@ -1182,8 +1183,8 @@ end
         end
     end
 
-    for (name, full_field) in pairs(prognostic_fields(full_model.child))
-        difference(model) = maximum(abs, Field(prognostic_fields(model.child)[name] - full_field))
+    for (name, full_field) in pairs(prognostic_fields(full_model.child.model))
+        difference(model) = maximum(abs, Field(prognostic_fields(model.child.model)[name] - full_field))
         scale = maximum(abs, full_field)
         @test difference(strip_model) ≤ 1e-12 * scale
         name in (:ρθ, :ρu, :ρv) && @test difference(unrelaxed_model) > 1e-6 * scale
@@ -1197,8 +1198,8 @@ end
     simulation.stop_iteration = 8
     run!(simulation)
 
-    for (name, field) in pairs(prognostic_fields(strip_model.child))
-        @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
+    for (name, field) in pairs(prognostic_fields(strip_model.child.model))
+        @test maximum(abs, Field(prognostic_fields(rerun_model.child.model)[name] - field)) == 0
     end
 end
 
@@ -1228,11 +1229,65 @@ end
     for _ in 1:3
         time_step!(nested, 1.0)
     end
-    @test parent.clock.time == nested.child.clock.time == 3
-    @test parent.clock.iteration == nested.child.clock.iteration == 3
+    @test parent.clock.time == nested.child.model.clock.time == 3
+    @test parent.clock.iteration == nested.child.model.clock.iteration == 3
 
     parent.clock.time = 7
     time_step!(nested, 1.0)
-    @test parent.clock.time == nested.child.clock.time == 4
+    @test parent.clock.time == nested.child.model.clock.time == 4
 end
 
+# A live parent and its child each step with their own Δt and meet at every exchange time.
+function exchange_test_nest(; parent_Δt, child_Δt)
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = Simulation(NonhydrostaticModel(grid); Δt = parent_Δt, verbose = false)
+    child = Simulation(NonhydrostaticModel(grid); Δt = child_Δt, verbose = false)
+    return NestedModel(parent, child)
+end
+
+@testset "NestedModel: parent and child subcycle to each exchange time" begin
+    nested = exchange_test_nest(parent_Δt = 0.5, child_Δt = 0.25)
+    parent_clock = nested.parent.model.clock
+    child_clock = nested.child.model.clock
+
+    for n in 1:3
+        time_step!(nested, 1.0)
+        @test parent_clock.time == child_clock.time == nested.clock.time == n
+    end
+    @test parent_clock.iteration == 6
+    @test child_clock.iteration == 12
+    @test nested.clock.iteration == 3
+end
+
+@testset "NestedModel: an incommensurate child Δt still lands on the exchange time" begin
+    nested = exchange_test_nest(parent_Δt = 1.0, child_Δt = 0.3)
+    child = nested.child
+
+    time_step!(nested, 1.0)
+    @test child.model.clock.time == 1
+    @test child.model.clock.iteration == 4
+    @test child.Δt == 0.3
+end
+
+@testset "NestedModel: three levels meet at every exchange time" begin
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    coarse = Simulation(NonhydrostaticModel(grid); Δt = 1.0, verbose = false)
+    medium = Simulation(NonhydrostaticModel(grid); Δt = 0.5, verbose = false)
+    fine = Simulation(NonhydrostaticModel(grid); Δt = 0.25, verbose = false)
+
+    nest = NestedModel(NestedSimulation(coarse, medium; Δt = 1.0, verbose = false), fine)
+    for _ in 1:2
+        time_step!(nest, 1.0)
+    end
+
+    @test coarse.model.clock.time == medium.model.clock.time == fine.model.clock.time == 2
+    @test (coarse.model.clock.iteration, medium.model.clock.iteration, fine.model.clock.iteration) == (2, 4, 8)
+end
+
+@testset "NestedSimulation: stop_time lands every level" begin
+    nested = exchange_test_nest(parent_Δt = 0.4, child_Δt = 0.15)
+    simulation = Simulation(nested; Δt = 0.4, stop_time = 1.0, verbose = false)
+    run!(simulation)
+
+    @test nested.parent.model.clock.time == nested.child.model.clock.time == 1
+end
