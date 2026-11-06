@@ -18,7 +18,8 @@ using Oceananigans.Utils: launch!
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,
                                     available_variables, bounding_box_intersects,
                                     cmr_granules, earthdata_download_cached,
-                                    figshare_article_url, tile_indices, default_tile_bytes
+                                    figshare_article_url, tile_indices, default_tile_bytes,
+                                    dataset_variable_name
 using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
                                              asterged_decode_emissivity, asterged_decode_uncertainty,
                                              broadband_map, place_tile!,
