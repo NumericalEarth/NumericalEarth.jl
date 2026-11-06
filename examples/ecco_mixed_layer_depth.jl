@@ -7,6 +7,7 @@ using Dates
 
 using SeawaterPolynomials: TEOS10EquationOfState
 using Oceananigans.Models: buoyancy_operation
+using NumericalEarth.Bathymetry: Interpolate
 
 arch = CPU()
 Nx = 360
@@ -23,7 +24,7 @@ grid = LatitudeLongitudeGrid(arch; z,
 
 bottom_height = regrid_bathymetry(grid;
                                   minimum_depth = 10,
-                                  interpolation_passes = 5,
+                                  method = Interpolate(5),
                                   major_basins = 1)
 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))

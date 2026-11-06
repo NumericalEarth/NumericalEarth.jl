@@ -23,6 +23,8 @@ using Dates
 using Printf
 using CUDA
 
+using NumericalEarth.Bathymetry: Interpolate
+
 # ### Grid configuration
 #
 # We define a global grid with a horizontal resolution of 1/4 degree and 40 vertical levels.
@@ -55,7 +57,7 @@ grid = LatitudeLongitudeGrid(arch;
 
 bottom_height = regrid_bathymetry(grid;
                                   minimum_depth = 10meters,
-                                  interpolation_passes = 5,
+                                  method = Interpolate(5),
                                   major_basins = 3)
 
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)

@@ -3,7 +3,8 @@ include("download_utils.jl")
 
 using JLD2
 using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key, meridional_barrier,
-                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
+                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers,
+                                 Interpolate, Averaging, MedianAveraging
 using NumericalEarth.Bathymetry.ImageMorphology: label_components
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO
@@ -104,10 +105,15 @@ end
                                      z = (-6000, 0))
 
         control_bottom_height = regrid_bathymetry(grid)
-        interpolated_bottom_height = regrid_bathymetry(grid; interpolation_passes=10)
+        interpolated_bottom_height = regrid_bathymetry(grid; method=Interpolate(10))
 
         # Testing that multiple passes _do_ change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(interpolated_bottom_height)
+
+        averaged_bottom_height = regrid_bathymetry(grid; method=Averaging())
+
+        # Testing that averaging does change the solution when coarsening the grid
+        @test parent(control_bottom_height) != parent(averaged_bottom_height)
     end
 end
 
@@ -122,9 +128,9 @@ end
 
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
-    key(; height_above_water = nothing, minimum_depth = 0, interpolation_passes = 1, major_basins = 1, connections = ()) =
+    key(; height_above_water = nothing, minimum_depth = 0, method = Interpolate(1), major_basins = 1, connections = ()) =
         bathymetry_regridding_key(grid, metadata; height_above_water, minimum_depth,
-                                  interpolation_passes, major_basins, connections)
+                                  method, major_basins, connections)
 
     # Test construction and equality
     config1 = key()
@@ -133,7 +139,7 @@ end
     @test hash(config1) == hash(config2)
 
     # Test that different parameters produce different configs
-    config3 = key(interpolation_passes = 5)
+    config3 = key(method = Interpolate(5))
     @test config1 != config3
     @test hash(config1) != hash(config3)
 
@@ -180,7 +186,7 @@ end
     @test parent(result1) == parent(result2)
 
     # Different parameters should produce different results (cache invalidation)
-    result3 = regrid_bathymetry(grid; cache=true, interpolation_passes=5)
+    result3 = regrid_bathymetry(grid; cache=true, method=Interpolate(5))
     @test parent(result1) != parent(result3)
 
     # cache=false should still produce correct results
@@ -191,7 +197,7 @@ end
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
     config = bathymetry_regridding_key(grid, metadata;
                                        height_above_water = nothing, minimum_depth = 0,
-                                       interpolation_passes = 1, major_basins = 1)
+                                       method = Interpolate(1), major_basins = 1)
     save_field_cache(config, zeros(size(grid, 1), size(grid, 2)))
     poisoned = regrid_bathymetry(grid; cache=true)
     @test all(iszero, interior(poisoned))

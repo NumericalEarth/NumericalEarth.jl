@@ -6,6 +6,7 @@ using Oceananigans.Diagnostics: NaNChecker, nan_detected
 using Oceananigans.Grids: MutableVerticalDiscretization, CenterFolded, FaceFolded
 using Oceananigans.Operators: volume
 using Oceananigans.Units
+using NumericalEarth.Bathymetry: Interpolate
 using NumericalEarth.Oceans: get_radiative_forcing
 
 # Heat and freshwater have different noise floors, so they get separate tolerances.
@@ -105,7 +106,7 @@ end
 
             bottom_height = synthetic_bottom_height(underlying_grid;
                                                     minimum_depth=15,
-                                                    interpolation_passes=1,
+                                                    method=Interpolate(1),
                                                     major_basins=1)
 
             grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map = true)

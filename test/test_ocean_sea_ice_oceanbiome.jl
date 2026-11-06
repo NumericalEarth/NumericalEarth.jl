@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using OceanBioME
+using NumericalEarth.Bathymetry: Interpolate
 
 @testset "Time stepping test" begin
     for arch in test_architectures
@@ -11,7 +12,7 @@ using OceanBioME
 
         bottom_height = synthetic_bottom_height(grid;
                                                 minimum_depth = 10,
-                                                interpolation_passes = 5,
+                                                method = Interpolate(5),
                                                 major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)

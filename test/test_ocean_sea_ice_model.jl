@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
+using NumericalEarth.Bathymetry: Interpolate
 using Oceananigans.Grids: znode
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 using ClimaSeaIce.SeaIceDynamics
@@ -22,7 +23,7 @@ using ClimaSeaIce.Rheologies
 
         bottom_height = synthetic_bottom_height(grid;
                                                 minimum_depth = 10,
-                                                interpolation_passes = 5,
+                                                method = Interpolate(5),
                                                 major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
