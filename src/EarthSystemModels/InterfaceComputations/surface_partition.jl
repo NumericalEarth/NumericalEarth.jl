@@ -9,9 +9,9 @@ using ..EarthSystemModels: sea_ice_concentration, DegreesCelsius, convert_to_kel
     SurfacePartition{F, T}
 
 Fractional partition of each exchange-grid cell among the surface types the atmosphere
-couples to. `ocean_fraction` (þ) is the fraction of the cell covered by ocean, so the
-land fraction is `1 - þ`, and the sea ice concentration ℵ further splits the ocean
-fraction into an open-ocean part `þ (1 - ℵ)` and an ice-covered part `þ ℵ`.
+couples to. `ocean_fraction` (ℵᵒᶜ) is the fraction of the cell covered by ocean, so the
+land fraction is `1 - ℵᵒᶜ`, and the sea ice concentration ℵˢⁱ further splits the ocean
+fraction into an open-ocean part `ℵᵒᶜ (1 - ℵˢⁱ)` and an ice-covered part `ℵᵒᶜ ℵˢⁱ`.
 `surface_temperature` is the partition-weighted skin temperature (K) — the single
 surface the atmosphere and radiation see; it is `nothing` unless the model carries
 both a land and an ocean interface and an atmosphere that feels the surface.
@@ -48,12 +48,12 @@ function SurfacePartition(grid, atmosphere, ocean_fraction, ao_interface, atmosp
         return SurfacePartition(nothing, nothing)
     end
 
-    þ = Field{Center, Center, Nothing}(grid)
-    set!(þ, ocean_fraction)
-    fill_halo_regions!(þ)
+    ℵᵒᶜ = Field{Center, Center, Nothing}(grid)
+    set!(ℵᵒᶜ, ocean_fraction)
+    fill_halo_regions!(ℵᵒᶜ)
     Tⁱⁿ = feels_surface ? Field{Center, Center, Nothing}(grid) : nothing
 
-    return SurfacePartition(þ, Tⁱⁿ)
+    return SurfacePartition(ℵᵒᶜ, Tⁱⁿ)
 end
 
 #####
@@ -70,7 +70,7 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
     grid = interfaces.exchanger.grid
     arch = architecture(grid)
 
-    ℵ = sea_ice_concentration(coupled_model.sea_ice)
+    ℵˢⁱ = sea_ice_concentration(coupled_model.sea_ice)
     ai_interface = interfaces.atmosphere_sea_ice_interface
     Tᵃⁱ = isnothing(ai_interface) ? ZeroField(eltype(grid)) : ai_interface.temperature
     sea_ice_properties = interfaces.sea_ice_properties
@@ -79,7 +79,7 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
     launch!(arch, grid, :xy, _update_surface_temperature!,
             partition.surface_temperature,
             partition.ocean_fraction,
-            ℵ,
+            ℵˢⁱ,
             interfaces.atmosphere_ocean_interface.temperature,
             Tᵃⁱ,
             EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface),
@@ -89,14 +89,14 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
     return nothing
 end
 
-@kernel function _update_surface_temperature!(Tⁱⁿ, þ, ℵ, Tᵃᵒ, Tᵃⁱ, Tᵃˡ, ocean_units, sea_ice_units)
+@kernel function _update_surface_temperature!(Tⁱⁿ, ℵᵒᶜ, ℵˢⁱ, Tᵃᵒ, Tᵃⁱ, Tᵃˡ, ocean_units, sea_ice_units)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        þᵢ = þ[i, j, 1]
-        ℵᵢ = ℵ[i, j, 1]
+        ℵᵒᶜᵢ = ℵᵒᶜ[i, j, 1]
+        ℵˢⁱᵢ = ℵˢⁱ[i, j, 1]
         Tᵒ = convert_to_kelvin(ocean_units, Tᵃᵒ[i, j, 1])
         Tⁱ = convert_to_kelvin(sea_ice_units, Tᵃⁱ[i, j, 1])
         Tˡ = Tᵃˡ[i, j, 1]
-        Tⁱⁿ[i, j, 1] = (1 - þᵢ) * Tˡ + þᵢ * ((1 - ℵᵢ) * Tᵒ + ℵᵢ * Tⁱ)
+        Tⁱⁿ[i, j, 1] = (1 - ℵᵒᶜᵢ) * Tˡ + ℵᵒᶜᵢ * ((1 - ℵˢⁱᵢ) * Tᵒ + ℵˢⁱᵢ * Tⁱ)
     end
 end
