@@ -6,8 +6,8 @@ using NumericalEarth.SoilGrids: SoilGrids2
 # points do not get NaN texture, which `normalize_texture!` would otherwise turn into pure sand.
 # TODO: This should be fixed in the input data
 function fill_missing_first_longitude!(data::AbstractArray)
-    west = data[end:end, :, :]
-    east = data[2:2, :, :]
+    west = @view data[end:end, :, :]
+    east = @view data[2:2, :, :]
     data[1:1, :, :] .= ifelse.(isnan.(west), east, ifelse.(isnan.(east), west, (west .+ east) ./ 2))
     return data
 end
