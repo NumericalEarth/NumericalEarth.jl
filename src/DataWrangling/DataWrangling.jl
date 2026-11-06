@@ -5,6 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export GLORYSStatic, GLORYSDaily, GLORYSMonthly, GLORYSAnalysisForecastBGCDaily, GLORYSAnalysisForecastBGCMonthly
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly

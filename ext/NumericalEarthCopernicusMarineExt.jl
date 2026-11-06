@@ -14,9 +14,9 @@ using NumericalEarth.DataWrangling.AVISO: AVISO, AVISOMetadata, AVISOMetadatum
 const CopernicusMetadata = Union{GLORYSMetadata, AVISOMetadata}
 const CopernicusMetadatum = Union{GLORYSMetadatum, AVISOMetadatum}
 
-function copernicusmarine_dataset_id(dataset)
-    if dataset isa GLORYS.GLORYSDataset
-        return GLORYS.copernicusmarine_dataset_id(dataset)
+function copernicusmarine_dataset_id(dataset, name)
+    if dataset isa GLORYS.AbstractGLORYSDataset
+        return GLORYS.copernicusmarine_dataset_id(dataset, name)
     elseif dataset isa AVISO.AVISODataset
         return AVISO.copernicusmarine_dataset_id(dataset)
     end
@@ -24,7 +24,9 @@ function copernicusmarine_dataset_id(dataset)
 end
 
 function native_horizontal_resolution(dataset)
-    if dataset isa GLORYS.GLORYSDataset
+    if dataset isa GLORYS.AbstractGLORYSBGCDataset
+        return 1 / 4
+    elseif dataset isa GLORYS.AbstractGLORYSDataset
         return 1 / 12
     elseif dataset isa AVISO.AVISODataset
         return AVISO.native_horizontal_resolution(dataset)
@@ -56,7 +58,7 @@ function Downloads.download(meta::CopernicusMetadatum;
     variable_name = dataset_variable_name(meta)
     variable = [variable_name]
 
-    dataset_id = copernicusmarine_dataset_id(meta.dataset)
+    dataset_id = copernicusmarine_dataset_id(meta.dataset, meta.name)
     version_kw = meta.dataset isa AVISO.AVISODataset ?
                  (; dataset_version = AVISO.copernicusmarine_dataset_version(meta.dataset)) :
                  NamedTuple()
