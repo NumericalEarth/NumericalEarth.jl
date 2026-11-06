@@ -12,7 +12,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
                                        IMEXFluxBoundaryCondition, IMEXFlux, getbc
-using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy, get_temperature_and_salinity, thermal_expansionᶜᶜᶠ
+using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: Forcings, MultipleForcings, DiscreteForcing
