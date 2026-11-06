@@ -3,10 +3,11 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.IBCSO
 using NumericalEarth.DataWrangling.GEBCO
 using NumericalEarth.DataWrangling.IBCAO
+using NumericalEarth.DataWrangling.RTopo
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
-                                    metadata_filename
-using NumericalEarth.Bathymetry: regrid_bathymetry
+                                    metadata_filename, retrieve_bathymetry
+using NumericalEarth.Bathymetry: regrid_bathymetry, regrid_ice_draft, regrid_ocean_fraction
 
 @testset "Polar bathymetry metadata interfaces" begin
 
@@ -133,4 +134,46 @@ end
     # Realistic ocean depths: deeper than 500 m, shallower than the deepest ocean
     @test minimum(z) > -12000
     @test minimum(z) < -500
+end
+
+@testset "RTopo2 metadata" begin
+    ds = RTopo2()
+    Δ = 1 / 120
+    @test longitude_interfaces(ds) == (-180 - Δ / 2, 180 - Δ / 2)
+    @test latitude_interfaces(ds) == (-90 + Δ / 2, 90 - Δ / 2)
+    @test size(ds) == (43200, 21599, 1)
+
+    bottom = Metadatum(:bottom_height, dataset=ds)
+    draft = Metadatum(:ice_draft, dataset=ds)
+    @test dataset_variable_name(bottom) == "bedrock_topography"
+    @test dataset_variable_name(draft) == "ice_base_topography"
+    @test metadata_filename(ds, :ice_draft, nothing, nothing) == "RTopo-2.0.4_30sec_ice_base_topography.nc"
+end
+
+@testset "RTopo2 ice draft regridding" begin
+    @info "Testing RTopo2 regridding (downloads 2 × 3.7 GB on first run)..."
+
+    # Filchner-Ronne Ice Shelf, open ocean to the north
+    grid = LatitudeLongitudeGrid(CPU(), Float32;
+                                 size = (40, 40, 1),
+                                 longitude = (-60, -40),
+                                 latitude = (-80, -72),
+                                 z = (-2000, 0))
+
+    draft_metadata = Metadatum(:ice_draft, dataset=RTopo2())
+    download(draft_metadata)
+    @test size(retrieve_bathymetry(draft_metadata)) == size(RTopo2())[1:2]
+
+    draft = interior(regrid_ice_draft(grid; cache=false), :, :, 1)
+    bottom = interior(regrid_bathymetry(grid; dataset=RTopo2(), major_basins=Inf, cache=false), :, :, 1)
+
+    @test all(isfinite, draft)
+    @test maximum(draft) == 0
+    @test minimum(draft) < -500
+    @test any(draft .== 0 .&& bottom .< -200)
+    @test any(draft .< 0 .&& bottom .< draft)
+
+    fraction = interior(regrid_ocean_fraction(grid, Metadatum(:bottom_height, dataset=RTopo2())), :, :, 1)
+    @test all(0 .<= fraction .<= 1)
+    @test any(fraction .== 1)
 end
