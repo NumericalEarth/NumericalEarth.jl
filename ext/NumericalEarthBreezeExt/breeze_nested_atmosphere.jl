@@ -295,9 +295,9 @@ those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcin
 prognostics hold `time_indices_in_memory` time levels, by default as many as the parent holds, so a parent
 with every snapshot in memory gives a window that never moves; fewer (at least 3) stream a moving window.
 
-`time_step_ratio` is the number of child steps per parent step (see `NumericalEarth.time_step_ratio`, which
-derives it from a pair of grids). A prescribed parent follows the child's clock whatever the ratio, so it takes
-effect when the parent integrates its own dynamics.
+`parent_time_step` is the step taken by a parent that integrates its own dynamics: `nothing` keeps it in
+lockstep with the child, a number is a fixed parent `Δt`, and a `TimeStepWizard` sizes it from the parent's own
+CFL. A prescribed parent is sampled at the end of every child step, whatever the value.
 
 When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
 interpolate that side's strip, and the lateral boundary relaxation acts only on the cells of each strip's
@@ -369,7 +369,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
                                        time_discretization_kwargs),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
-    time_step_ratio = 1,
+    parent_time_step = nothing,
     time_indices_in_memory = resident_time_indices(parent_atmosphere),
     kw...)
 
@@ -474,7 +474,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
                       (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
 
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks; time_step_ratio)
+    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks; parent_time_step)
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
