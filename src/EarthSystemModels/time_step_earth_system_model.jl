@@ -55,6 +55,11 @@ end
 Per-model hooks `hook(coupled_model)` for external couplers, called in `update_state!`: state hooks after
 the component states are interpolated onto the exchange grid, flux hooks after the interface turbulent
 fluxes are computed and before they are assembled into component fluxes.
+
+A state hook that writes the exchanged state must follow its conventions: the radiation state
+(`exchanger.radiation.state.ℐꜜˢʷ`, `ℐꜜˡʷ`) is positive upward, so downwelling radiation is negative; the
+atmosphere velocities (`exchanger.atmosphere.state.u`, `v`) are in the exchange grid's local (intrinsic) frame;
+the atmosphere temperature is in kelvin.
 """
 const interface_state_hooks = IdDict{Any, Any}()
 const interface_flux_hooks  = IdDict{Any, Any}()
