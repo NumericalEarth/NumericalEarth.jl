@@ -1,140 +1,44 @@
 name: CI
 
+# On this branch CI runs one thing: the coupled land-ocean-atmosphere gradient of
+# experiments/differentiable_coupled_forecast, on the GPU. The usual CPU, GPU and Reactant test
+# jobs are left out so that every run of this workflow is a run of that gradient.
+
 on:
   pull_request:
     paths: &paths
       - ".github/workflows/ci.yml"
+      - "experiments/differentiable_coupled_forecast/**"
       - "ext/**"
       - "src/**"
-      - "test/**"
       - "Project.toml"
-  push:
-    paths: *paths
-    branches:
-      - main
-    tags: "*"
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# needed to allow julia-actions/cache to delete old caches that it has created
 permissions:
-  actions: write
   contents: read
 
-# The tests run here are offline; the ones that need real remote data run in DataTests.yml.
 env:
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
-#####
-##### CPU tests (GitHub-hosted runners)
-#####
-
 jobs:
-  cpu_tests:
-    name: (CPU) - Julia ${{ matrix.version }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.12.7"
-        os:
-          - ubuntu-latest
-        arch:
-          - "default"
-    steps:
-      - name: Show available storage at the beginning
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v7
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
-      - name: Set JULIA_CPU_TARGET
-        shell: bash
-        run: |
-          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;x86-64-v4,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
-      - name: Instantiate test environment
-        timeout-minutes: 60
-        shell: bash
-        run: |
-          julia --project=test --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.Registry.update();
-              Pkg.instantiate()
-          '
-      # ParallelTestRunner schedules longest-first from a duration history it keeps in a
-      # scratchspace. Without it every duration defaults to Inf, the sort is a no-op and the
-      # order falls back to random -- leaving the longest test to start last and run alone.
-      # A few KB, keyed to ParallelTestRunner's UUID; the blanket scratchspace cache stays off.
-      - uses: actions/cache@v6
-        with:
-          path: ~/.julia/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
-          key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
-          restore-keys: julia-test-durations;job=cpu_tests;
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          # Cap parallelism at 3 workers. ParallelTestRunner's default_njobs
-          # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
-          # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
-          # runner, the default (4 = core count) intermittently OOMs when several
-          # heavy tests coincide, and the runner reports it as
-          # "The operation was canceled." Three workers keep peak memory well
-          # within budget while staying comfortably under the job timeout.
-          test_args: '--verbose --jobs=3'
-          optimize: 0
-        env:
-          # Reduce memory threshold before recycling ParallelTestRunner's
-          # workers.
-          JULIA_TEST_MAXRSS_MB: 2800
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v7
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Show available storage at the end
-        if: always()
-        timeout-minutes: 2
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-
-  #####
-  ##### GPU tests (AWS self-hosted runners with Docker)
-  #####
-
-  gpu_tests:
-    name: (GPU)
+  coupled_gradient:
+    name: (GPU) - coupled forecast gradient
     runs-on: aws-linux-nvidia-gpu-l4
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
       volumes:
-        # Mount host directories so that we can delete some stuff afterwards
         - /opt:/host-opt
         - /usr/local:/host-usr-local
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
+    timeout-minutes: 180
     env:
+      # coupled_model.jl puts Reactant on the GPU when this is set, as the nested gradient test does
       GPU_TEST: "true"
-      OPENBLAS_NUM_THREADS: 1
-      # Redirect temp to the workspace volume (bind-mounted from the
-      # host's EBS disk) to avoid filling the container's overlay filesystem with
-      # large data downloads and compiled artifacts.
+      EXPERIMENT: experiments/differentiable_coupled_forecast
       TMPDIR: /__w/_temp
       JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
@@ -144,36 +48,11 @@ jobs:
       - name: Configure git safe directory
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
-        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
-      - name: df before cleanup
-        run: |
-          df -hT
+        # The image's CUDA builds of Reactant_jll and CUDA_Runtime_jll, which the experiment lists in [extras]
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml "${EXPERIMENT}/."
       - name: Clean up space on host device
-        # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
         run: |
           rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
-      - name: df after cleanup
-        run: |
-          df -hT
-      - name: "Set test arguments"
-        shell: bash
-        run: |
-          # Run tests in verbose mode
-          TEST_ARGS=(--verbose)
-          # Cap parallelism at 4 workers. `nproc - 1` (== 7 on the 8-vCPU GPU
-          # runner) oversubscribes the box: the GPU job runs the full, heaviest
-          # test set (Breeze compilation, nested atmosphere, ocean-sea-ice,
-          # bathymetry), so workers frequently hit ParallelTestRunner's RSS
-          # limit and get recycled. Each recycle spawns a fresh Malt worker, and
-          # under the resulting contention a spawn occasionally exceeds Malt's
-          # fixed 30 s connect timeout -- which aborts the whole run with
-          # "Worker process exited before we could connect / Timeout" (not OOM;
-          # earlyoom never fires and swap is untouched). Four workers keep half
-          # the cores free for the manager and worker spawns while staying well
-          # under the job timeout. See the CPU job for the sibling OOM cap.
-          njobs=$(($(nproc) - 1))
-          TEST_ARGS+=(--jobs=$((njobs < 4 ? njobs : 4)))
-          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
         run: |
@@ -181,140 +60,60 @@ jobs:
           Pkg.Registry.rm("General")
           Pkg.Registry.add("General")
           Pkg.Registry.update()
-      - name: Instantiate test environment
-        timeout-minutes: 45
-        shell: bash
-        run: |
-          julia --project=test --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.instantiate()
-          '
-      - name: Run tests
-        run: |
-          earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                       test_args=`${{ env.runtest_test_args }}`)
-          '
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v7
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Show available storage at the end
-        if: always()
-        timeout-minutes: 2
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-
-  reactant:
-    name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 80
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.11.9"
-        os:
-          - ubuntu-latest
-        arch:
-          - default
-    steps:
-      - name: Show available storage at the beginning
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v7
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          # `test/reactant` is a much smaller environment than `test`, so it gets its own
-          # (small) cache rather than sharing the `env=test` one.
-          cache-name: julia-cache;env=reactant
-          cache-scratchspaces: false
-      - name: Set JULIA_CPU_TARGET
-        shell: bash
-        run: |
-          echo "JULIA_CPU_TARGET=generic;haswell,-xsaveopt,clone_all;x86-64-v4,-rdrnd,base(1)" | tee -a "${GITHUB_ENV}"
-      # Runs against test/reactant/Project.toml, which carries Reactant and nothing else it
-      # doesn't need. Reactant is the sole path to Enzyme, the largest single precompile unit,
-      # and pulls the very large Reactant_jll artifact; keeping it out of the shared test env
-      # stops every other job from precompiling code it never calls, and keeps their cache
-      # inside GitHub's 10 GB budget.
-      - name: Run tests
+      - name: Instantiate the experiment
         timeout-minutes: 45
         run: |
-          julia --project=test/reactant --color=yes --check-bounds=auto -O0 \
-                --code-coverage=@${PWD}/src -e '
+          julia --project="${EXPERIMENT}" --color=yes -e '
               using Pkg
               Pkg.instantiate()
-              include("test/reactant/test_reactant.jl")
+              Pkg.status(["NumericalEarth", "Breeze", "Oceananigans", "Reactant", "Reactant_jll"]; mode = Pkg.PKGMODE_MANIFEST)
           '
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v7
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Show available storage at the end
-        if: always()
-        timeout-minutes: 2
+      - name: Run the coupled forecast gradient
+        timeout-minutes: 150
+        # -O1: the traced Julia methods run once to emit the program, so optimizing them at the default
+        # -O2 only slows the compile
+        shell: bash
         run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-
-  #####
-  ##### Distributed MPI tests (GitHub-hosted runners)
-  #####
-
-  # distributed_tests:
-  #   name: Distributed MPI tests (4 ranks)
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 60
-  #   env:
-  #     OPENBLAS_NUM_THREADS: 1
-  #     JULIA_NUM_PRECOMPILE_TASKS: 8
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #     - uses: julia-actions/setup-julia@v3
-  #       with:
-  #         version: '1.12.7'
-  #     - name: Instantiate and precompile
-  #       shell: julia --project --color=yes {0}
-  #       run: |
-  #         using Pkg
-  #         Pkg.instantiate(verbose=true)
-  #         Pkg.precompile(strict=true)
-  #     - name: Install mpiexecjl
-  #       run: julia --project --color=yes -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
-  #     - name: Run distributed tests
-  #       env:
-  #         TEST_GROUP: distributed
-  #       run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'
-
-  #####
-  ##### The final test (a final check)
-  #####
-
-  ci:
-    name: CI
-    needs:
-      - cpu_tests
-      - gpu_tests
-      - reactant
-    runs-on: ubuntu-latest
-    if: ${{ success() }}
-    steps:
-      - run: echo "All CI jobs passed successfully."
+          mkdir -p mlir_dumps
+          julia --project="${EXPERIMENT}" --color=yes --check-bounds=auto -O1 -e '
+              # Every module before and after each pass pipeline, to see where a compile stops
+              using Reactant
+              Reactant.MLIR.IR.DUMP_MLIR_DIR[] = joinpath(pwd(), "mlir_dumps")
+              Reactant.MLIR.IR.DUMP_MLIR_ALWAYS[] = true
+              include(joinpath(ENV["EXPERIMENT"], "coupled_forecast_gradient.jl"))
+          ' &
+          julia_pid=$!
+          # Every minute, the host memory, Julia's resident memory and the newest dump, so the log shows where
+          # the run is when it stalls. Under 2 GiB available it kills Julia, so the step fails and the dumps
+          # upload, instead of the host starving the runner (which loses the job and everything in it)
+          (
+            while kill -0 ${julia_pid} 2> /dev/null; do
+              sleep 60
+              avail=$(awk '/MemAvailable/ {print int($2 / 1024)}' /proc/meminfo)
+              rss=$(awk '/VmRSS/ {print int($2 / 1024)}' /proc/${julia_pid}/status 2> /dev/null)
+              newest=$(ls -t mlir_dumps | head -1)
+              echo "[monitor $(date -u +%H:%M:%S)] ${avail} MiB available, Julia at ${rss:-?} MiB;" \
+                   "$(ls mlir_dumps | wc -l) dumps ($(du -sh mlir_dumps | cut -f1)), newest ${newest:-none}"
+              if [ "${avail}" -lt 2048 ]; then
+                echo "[monitor] under 2 GiB available: killing Julia"
+                kill -9 ${julia_pid}
+              fi
+            done
+          ) &
+          wait ${julia_pid}
+      - name: Upload the sensitivity maps
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coupled-forecast-sensitivity
+          path: coupled_forecast_sensitivity.png
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Upload the MLIR dumps
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coupled-gradient-mlir-dumps
+          path: mlir_dumps
+          if-no-files-found: ignore
+          retention-days: 7
