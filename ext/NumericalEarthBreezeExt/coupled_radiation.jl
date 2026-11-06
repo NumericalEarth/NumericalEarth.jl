@@ -106,11 +106,11 @@ end
 # Nested atmosphere: materialize the child, then rebuild the (concretely-typed) nest and
 # Simulation around it; all child fields are shared by reference.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(
-        atmosphere               :: Simulation{<:NestedModel{<:Any, <:Breeze.AtmosphereModel}},
+        atmosphere               :: Simulation{<:NestedModel{<:Any, <:Simulation{<:Breeze.AtmosphereModel}}},
         radiative_transfer_model :: Breeze.RadiativeTransferModel)
     nest = atmosphere.model
     child = nest.child
-    child = @set child.radiation = CoupledRadiation(radiative_transfer_model)
-    nest = NestedModel(nest.parent, child, nest.exchanger, nest.child_callbacks)
+    child = @set child.model.radiation = CoupledRadiation(radiative_transfer_model)
+    nest = NestedModel(nest.parent, child, nest.exchanger)
     return Simulation(nest; Δt = atmosphere.Δt, verbose = atmosphere.verbose)
 end

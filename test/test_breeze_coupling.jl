@@ -402,7 +402,7 @@ end
 
             update_state!(model)
 
-            child = model.atmosphere.model.child
+            child = model.atmosphere.model.child.model
             al = model.interfaces.atmosphere_land_interface
 
             ρu_bc = child.momentum.ρu.boundary_conditions.bottom.condition
@@ -426,9 +426,9 @@ end
             time_step!(model, 1)
 
             nest = model.atmosphere.model
-            @test nest.child.clock.time ≈ 1
-            @test nest.parent.clock.time ≈ nest.child.clock.time
-            @test model.land.clock.time ≈ nest.child.clock.time
+            @test nest.child.model.clock.time ≈ 1
+            @test nest.parent.clock.time ≈ nest.child.model.clock.time
+            @test model.land.clock.time ≈ nest.child.model.clock.time
         end
 
         @testset "Child rain reaches the exchanger and the land bucket on $A" begin
@@ -436,7 +436,7 @@ end
             model = build_nested_land_test_model(arch;
                 microphysics = DCMIP2016KesslerMicrophysics(),
                 thermodynamic_constants = ThermodynamicConstants(saturation_vapor_pressure = TetensFormula(liquid_temperature_offset = 36)))
-            child = model.atmosphere.model.child
+            child = model.atmosphere.model.child.model
             set!(child.microphysical_fields.ρqʳ, 1e-3)
             time_step!(model, 1)
 

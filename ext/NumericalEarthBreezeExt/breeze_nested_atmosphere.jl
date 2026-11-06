@@ -18,7 +18,7 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, component_model, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
                                    VectorComponent
@@ -48,7 +48,7 @@ using Oceananigans.TurbulenceClosures: closure_required_tracers
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: KernelParameters
-using Oceananigans.Simulations: Callback
+using Oceananigans.Simulations: Callback, add_callback!
 
 using GPUArraysCore: @allowscalar
 
@@ -297,7 +297,7 @@ with every snapshot in memory gives a window that never moves; fewer (at least 3
 
 When `parent_atmosphere` is a `BoundaryPrescribedComponent` of `PrescribedAtmosphere`s, each side's boundary conditions
 interpolate that side's strip, and the lateral boundary relaxation acts only on the cells of each strip's
-relaxation zone, through a tendency callback the `NestedModel` adds to the child's at every time step.
+relaxation zone, through a tendency callback on the child `Simulation`.
 `parent_condensates` is then keyed by side.
 
 Liquid/ice inputs to the combine default to the parent's hydrometeors — total liquid `qᶜˡ + qʳ`
@@ -466,10 +466,14 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         initialize = false,
         kw...)
 
-    child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
-                      (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
+    nested_model = NestedModel(parent_atmosphere, child, exchanger)
 
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
+    if !isnothing(relaxation_rate) && boundary_parent
+        relaxation = boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width)
+        add_callback!(nested_model.child, relaxation; name = :boundary_relaxation)
+    end
+
+    return nested_model
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -553,7 +557,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
 end
 
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
-    NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
+    NumericalEarth.Atmospheres.bulk_drag(component_model(model.child); kw...)
 
 # A parent prognostic is one source per variable, or a per-side `NamedTuple` of them for a
 # `BoundaryPrescribedComponent`.
@@ -592,7 +596,7 @@ end
 # memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
 function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true,
                                   prognostic = nested_model.exchanger.prognostic)
-    child = nested_model.child
+    child = component_model(nested_model.child)
     child_grid = child.grid
     t₀ = @allowscalar first(prognostic.ρᵈ.times)
 
