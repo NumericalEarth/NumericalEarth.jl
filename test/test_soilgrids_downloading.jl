@@ -6,11 +6,11 @@ using NCDatasets: NCDataset
 
 using NumericalEarth.DataWrangling: BoundingBox, native_grid
 using NumericalEarth.DataWrangling.SoilGrids
-using NumericalEarth.DataWrangling.SoilGrids: SoilGrids250m
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids250m, Clenshaw10km, soil_variable_names
 
 using Oceananigans.Grids: λnodes, φnodes
 
-# ISRIC needs no credentials. Excluded from CI in runtests.jl; run manually.
+# ISRIC needs no credentials. Run from the DataDownload workflow, not the default (offline) CI.
 
 # Surrey countryside, south of London — real land, away from the Thames/City of London core
 # (SoilGrids has no valid prediction over major open water / dense urban impervious cover,
@@ -24,7 +24,7 @@ const soilgrids_region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.
     # The global path is exercised offline (`test_soilgrids.jl`'s "raster geometry matches
     # native_grid" testset checks its Nx/Ny/extent); a *real* SoilGrids1000m download is a global
     # ~19 GB pull per variable+statistic, too expensive to run here routinely.
-    dataset = SoilGrids2(resolution = SoilGrids250m)
+    dataset = SoilGrids2(grid_type = SoilGrids250m)
     metadatum = Metadatum(:clay_fraction; dataset, region = soilgrids_region)
 
     # Start from a clean file so a stale cache cannot stand in for the download.
@@ -46,7 +46,7 @@ const soilgrids_region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.
 end
 
 @testset "SoilGrids250m lands on the model's own native grid" begin
-    dataset = SoilGrids2(resolution = SoilGrids250m)
+    dataset = SoilGrids2(grid_type = SoilGrids250m)
     metadatum = Metadatum(:clay_fraction; dataset, region = soilgrids_region)
     download(metadatum)
 
@@ -67,10 +67,29 @@ end
 end
 
 @testset "SoilGrids2 corrected depth-unit grid extent" begin
-    dataset = SoilGrids2(resolution = SoilGrids250m)
+    dataset = SoilGrids2(grid_type = SoilGrids250m)
     metadatum = Metadatum(:clay_fraction; dataset, region = soilgrids_region)
     grid = native_grid(metadatum)
 
     # The fixed z_interfaces span 2 m, not the pre-fix 200 m.
     @test grid.Lz ≈ 2.0 rtol = 1e-6
+end
+
+@testset "SoilGrids2 (10 km legacy) metadata download" begin
+    legacy = SoilGrids2(grid_type = Clenshaw10km)
+    sg_sand = Metadatum(:sand_fraction, dataset = legacy)
+    download(sg_sand)
+    @test isfile(metadata_path(sg_sand))
+    for var in keys(soil_variable_names)
+        sgmd = Metadatum(var, dataset = legacy)
+        field = Field(sgmd)
+        @test any(isfinite.(field))
+    end
+    for var in (:sand_fraction, :silt_fraction, :clay_fraction)
+        sgmd = Metadatum(var, dataset = legacy)
+        field = Field(sgmd)
+        # Check that sand/silt/clay fractions are between 0 and 1
+        min, max = extrema(filter(isfinite, field.data))
+        @test 0 <= min <= 1
+    end
 end

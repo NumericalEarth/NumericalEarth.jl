@@ -3,8 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.SoilGrids
 using NumericalEarth.DataWrangling.SoilGrids: Statistic, Mean, Q5, Q50, Q95,
                                               SoilGrids250m, SoilGrids1000m, Clenshaw10km,
-                                              SoilGrids2_dataset_variable_names,
-                                              SoilGrids2_z_interfaces, SoilGrids2_depth_ranges,
+                                              soil_variable_names,
                                               soilgrids_spacing_meters,
                                               soilgrids_statistic_url_name,
                                               soilgrids_vsicurl_source,
@@ -22,6 +21,9 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
 using Oceananigans.Fields: location
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
+soilgrids_depth_ranges = ("100-200cm", "60-100cm", "30-60cm", "15-30cm", "5-15cm", "0-5cm")
+soilgrids_z_interfaces = [-2.0, -1.0, -0.6, -0.3, -0.15, -0.05, 0]
+
 #####
 ##### Pure logic: no network, no ArchGDAL needed.
 #####
@@ -29,12 +31,12 @@ using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 @testset "SoilGrids2 constructor and defaults" begin
     ds = SoilGrids2()
     @test ds.statistic == Mean
-    @test ds.resolution == SoilGrids1000m
-    @test summary(ds) == "SoilGrids2(statistic = Mean, resolution = SoilGrids1000m)"
+    @test ds.grid_type == SoilGrids1000m
+    @test summary(ds) == "SoilGrids2(statistic = Mean, grid_type = SoilGrids1000m)"
 
-    ds2 = SoilGrids2(statistic = Q95, resolution = SoilGrids250m)
+    ds2 = SoilGrids2(statistic = Q95, grid_type = SoilGrids250m)
     @test ds2.statistic == Q95
-    @test ds2.resolution == SoilGrids250m
+    @test ds2.grid_type == SoilGrids250m
 end
 
 @testset "SoilGrids2 Statistic → ISRIC URL fragment" begin
@@ -50,7 +52,7 @@ end
     @test endswith(url, "https://files.isric.org/soilgrids/latest/data/clay/clay_0-5cm_mean.vrt")
 
     # Every combination of variable, depth, and statistic is representable.
-    for name in values(SoilGrids2_dataset_variable_names), depth in SoilGrids2_depth_ranges,
+    for name in values(soil_variable_names), depth in soilgrids_depth_ranges,
         stat in (Mean, Q5, Q50, Q95)
         url = soilgrids_vsicurl_source(name, depth, soilgrids_statistic_url_name(stat))
         @test occursin("$(name)_$(depth)_$(soilgrids_statistic_url_name(stat)).vrt", url)
@@ -65,7 +67,7 @@ end
 
 @testset "SoilGrids2 dataset interface across resolutions" begin
     # Clenshaw10km: unchanged legacy layout.
-    legacy = SoilGrids2(resolution = Clenshaw10km)
+    legacy = SoilGrids2(grid_type = Clenshaw10km)
     @test longitude_interfaces(legacy) == (0, 360)
     @test latitude_interfaces(legacy)  == (-90, 90)
     @test z_interfaces(legacy) == [-200, -100, -60, -30, -15, -5, 0]
@@ -73,11 +75,11 @@ end
     @test (Nx, Ny, Nz) == (3956, 1979, 6)
 
     # SoilGrids1000m / SoilGrids250m: real meters, standard (-180,180) convention.
-    for resolution in (SoilGrids1000m, SoilGrids250m)
-        dataset = SoilGrids2(; resolution)
+    for grid_type in (SoilGrids1000m, SoilGrids250m)
+        dataset = SoilGrids2(; grid_type)
         @test longitude_interfaces(dataset) == (-180, 180)
         @test latitude_interfaces(dataset)  == (-90, 90)
-        @test z_interfaces(dataset) == SoilGrids2_z_interfaces
+        @test z_interfaces(dataset) == soilgrids_z_interfaces
         @test z_interfaces(dataset)[1] == -2.0   # bottom face at 2 m, the true 100-200 cm depth
         Nx, Ny, Nz = size(dataset, :clay_fraction)
         @test Nz == 6
@@ -85,20 +87,20 @@ end
     end
 
     # 250 m is 4× finer than 1000 m.
-    Nx250, _, _ = size(SoilGrids2(resolution = SoilGrids250m), :clay_fraction)
-    Nx1000, _, _ = size(SoilGrids2(resolution = SoilGrids1000m), :clay_fraction)
+    Nx250, _, _ = size(SoilGrids2(grid_type = SoilGrids250m), :clay_fraction)
+    Nx1000, _, _ = size(SoilGrids2(grid_type = SoilGrids1000m), :clay_fraction)
     @test Nx250 ≈ 4 * Nx1000 rtol = 1e-2
 
-    @test windowed_retrieval(SoilGrids2(resolution = SoilGrids250m))
-    @test !windowed_retrieval(SoilGrids2(resolution = SoilGrids1000m))
-    @test !windowed_retrieval(SoilGrids2(resolution = Clenshaw10km))
+    @test windowed_retrieval(SoilGrids2(grid_type = SoilGrids250m))
+    @test !windowed_retrieval(SoilGrids2(grid_type = SoilGrids1000m))
+    @test !windowed_retrieval(SoilGrids2(grid_type = Clenshaw10km))
 end
 
 @testset "SoilGrids2 metadatum interface" begin
     region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.20, 51.27))
 
-    for resolution in (SoilGrids250m, SoilGrids1000m, Clenshaw10km)
-        dataset = SoilGrids2(; resolution)
+    for grid_type in (SoilGrids250m, SoilGrids1000m, Clenshaw10km)
+        dataset = SoilGrids2(; grid_type)
         md = Metadatum(:clay_fraction; dataset, region)
         @test dataset_variable_name(md) == "clay"
         @test is_three_dimensional(md)
@@ -112,9 +114,9 @@ end
 
     # The legacy path carries its own raw integer sentinel; the ISRIC-direct pipeline masks
     # nodata to NaN itself during the reprojection, so no sentinel remains.
-    md_legacy = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = Clenshaw10km))
+    md_legacy = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = Clenshaw10km))
     @test missing_value(md_legacy) == -32768
-    md_isric = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = SoilGrids1000m))
+    md_isric = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = SoilGrids1000m))
     @test missing_value(md_isric) === missing
 end
 
@@ -140,22 +142,22 @@ end
     region_b = BoundingBox(longitude = (0, 2), latitude = (50, 52))
 
     # Clenshaw10km always shares the same filename, regardless of variable/statistic/region.
-    legacy = SoilGrids2(resolution = Clenshaw10km)
+    legacy = SoilGrids2(grid_type = Clenshaw10km)
     @test metadata_filename(legacy, :clay_fraction, nothing, nothing) ==
           metadata_filename(legacy, :sand_fraction, nothing, region_a)
 
     # SoilGrids1000m is global by default: same filename with or without an (unused) region,
     # but distinct per variable and statistic.
-    kilo = SoilGrids2(resolution = SoilGrids1000m)
+    kilo = SoilGrids2(grid_type = SoilGrids1000m)
     @test metadata_filename(kilo, :clay_fraction, nothing, nothing) ==
           "SoilGrids2_clay_fraction_Mean_1000m_global.nc"
     @test metadata_filename(kilo, :clay_fraction, nothing, nothing) !=
           metadata_filename(kilo, :sand_fraction, nothing, nothing)
     @test metadata_filename(kilo, :clay_fraction, nothing, nothing) !=
-          metadata_filename(SoilGrids2(resolution = SoilGrids1000m, statistic = Q5), :clay_fraction, nothing, nothing)
+          metadata_filename(SoilGrids2(grid_type = SoilGrids1000m, statistic = Q5), :clay_fraction, nothing, nothing)
 
     # SoilGrids250m filenames are additionally keyed by region.
-    fine = SoilGrids2(resolution = SoilGrids250m)
+    fine = SoilGrids2(grid_type = SoilGrids250m)
     @test metadata_filename(fine, :clay_fraction, nothing, region_a) !=
           metadata_filename(fine, :clay_fraction, nothing, region_b)
     @test metadata_filename(fine, :clay_fraction, nothing, region_a) !=
@@ -165,19 +167,19 @@ end
 @testset "SoilGrids2 requires a bounded region at 250 m only" begin
     grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 6),
                                  longitude = (-0.35, -0.25), latitude = (51.20, 51.27),
-                                 z = SoilGrids2_z_interfaces)
+                                 z = soilgrids_z_interfaces)
     region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.20, 51.27))
 
-    meta_global_fine = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = SoilGrids250m))
+    meta_global_fine = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = SoilGrids250m))
     @test_throws ErrorException validate_dataset_coverage(grid, meta_global_fine)
     @test_throws ErrorException download(meta_global_fine)
 
-    meta_region_fine = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = SoilGrids250m), region)
+    meta_region_fine = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = SoilGrids250m), region)
     @test validate_dataset_coverage(grid, meta_region_fine) === nothing
 
     # 1000 m and the legacy 10 km path stay global; no region is required.
-    for resolution in (SoilGrids1000m, Clenshaw10km)
-        meta_global = Metadatum(:clay_fraction; dataset = SoilGrids2(; resolution))
+    for grid_type in (SoilGrids1000m, Clenshaw10km)
+        meta_global = Metadatum(:clay_fraction; dataset = SoilGrids2(; grid_type))
         @test validate_dataset_coverage(grid, meta_global) === nothing
     end
 end
@@ -186,7 +188,7 @@ end
     region = BoundingBox(longitude = (-0.35, -0.25), latitude = (51.20, 51.27))
 
     # Bounded region (SoilGrids250m's required case).
-    md_region = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = SoilGrids250m), region)
+    md_region = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = SoilGrids250m), region)
     grid_region = native_grid(md_region)
     raster_region = soilgrids_raster_geometry(md_region)
     @test (raster_region.Nx, raster_region.Ny) == size(grid_region)[1:2]
@@ -196,7 +198,7 @@ end
     @test raster_region.latitude  == collect(φnodes(grid_region, Center()))
 
     # Global (SoilGrids1000m's default case) — same function, no region needed.
-    md_global = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = SoilGrids1000m))
+    md_global = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = SoilGrids1000m))
     grid_global = native_grid(md_global)
     raster_global = soilgrids_raster_geometry(md_global)
     @test (raster_global.Nx, raster_global.Ny) == size(grid_global)[1:2]
@@ -207,32 +209,8 @@ end
 end
 
 @testset "SoilGrids2 ISRIC read is extension-gated" begin
-    meta = Metadatum(:clay_fraction; dataset = SoilGrids2(resolution = SoilGrids1000m))
+    meta = Metadatum(:clay_fraction; dataset = SoilGrids2(grid_type = SoilGrids1000m))
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException soilgrids_variable_to_netcdf(meta, tempname() * ".nc")
-    end
-end
-
-#####
-##### Clenshaw10km: real network (small pre-baked global file, unchanged from before this
-##### rewrite). Excluded from CI via `remote_data_tests` in runtests.jl.
-#####
-
-@testset "SoilGrids2 (10 km legacy) metadata download" begin
-    legacy = SoilGrids2(resolution = Clenshaw10km)
-    sg_sand = Metadatum(:sand_fraction, dataset = legacy)
-    download(sg_sand)
-    @test isfile(metadata_path(sg_sand))
-    for var in keys(SoilGrids2_dataset_variable_names)
-        sgmd = Metadatum(var, dataset = legacy)
-        field = Field(sgmd)
-        @test any(isfinite.(field))
-    end
-    for var in (:sand_fraction, :silt_fraction, :clay_fraction)
-        sgmd = Metadatum(var, dataset = legacy)
-        field = Field(sgmd)
-        # Check that sand/silt/clay fractions are between 0 and 1
-        min, max = extrema(filter(isfinite, field.data))
-        @test 0 <= min <= 1
     end
 end
