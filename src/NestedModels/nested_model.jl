@@ -140,6 +140,11 @@ function time_step!(nm::NestedModel, Δt; callbacks=())
     return nothing
 end
 
+# A prescribed parent constrains nothing, so the child takes the Δt it was given. Dispatch, not a
+# comparison: the child's clock is a traced number inside a compiled step, and branching on it is what
+# issue #816 is about.
+aligned_child_time_step(Δt, time, ::Nothing) = Δt
+
 # The child may not land past the parent's state. With more than a step of room, or a step that lands
 # exactly on the parent, the child takes the Δt it was given; otherwise it takes the whole runway and
 # lands on the parent, which also absorbs a remainder too thin to be worth its own step.
@@ -149,18 +154,17 @@ function aligned_child_time_step(Δt, time, parent_time)
 end
 
 # A prescribed parent is a function of time: it refreshes its state at the end of the step the child is
-# about to take, and is defined arbitrarily far ahead of it. No branch on the gap between the clocks,
-# which is a traced number inside a compiled step.
+# about to take, and constrains that step not at all.
 function advance_parent!(parent::AbstractPrescribedComponent, clock, Δt, parent_Δt)
     copy_clock!(parent.clock, clock, Δt)
     update_state!(parent)
-    return Inf
+    return nothing
 end
 
 function advance_parent!(parent::BoundaryPrescribedComponent, clock, Δt, parent_Δt)
     copy_clock!(parent.clock, clock, Δt)
     foreach(strip -> advance_parent!(strip, clock, Δt, parent_Δt), boundary_strips(parent))
-    return Inf
+    return nothing
 end
 
 # A parent with its own dynamics steps whenever the child has caught up with it, and reports the time
