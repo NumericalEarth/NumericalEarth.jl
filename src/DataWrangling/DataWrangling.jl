@@ -15,7 +15,7 @@ export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring, ConservativeSurfaceFluxRestoring
 export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
-export ERA5HourlyLand, ERA5MonthlyLand
+export ERA5HourlyLand, ERA5MonthlyLand, CDSArchive, NCARArchive
 export native_grid
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fractions, valid_area_mean!

@@ -1,4 +1,41 @@
-struct ERA5HourlySingleLevel <: ERA5Dataset end
+"""
+    CDSArchive()
+
+Download ERA5 from the Copernicus Climate Data Store, through `CDSAPI` or `CopernicusClimateDataStore`.
+"""
+struct CDSArchive end
+
+"""
+    NCARArchive()
+
+Read ERA5 from NSF NCAR's mirror (RDA ds633.0) in the public `nsf-ncar-era5` AWS S3 bucket.
+No account or credentials are needed.
+"""
+struct NCARArchive end
+
+struct ERA5HourlySingleLevel{A} <: ERA5Dataset
+    archive :: A
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+ERA5 hourly data on single levels, downloaded from `archive`: `CDSArchive()` or `NCARArchive()`.
+
+```jldoctest
+using NumericalEarth
+
+ERA5HourlySingleLevel(archive=NCARArchive())
+
+# output
+ERA5HourlySingleLevel(archive=NCARArchive())
+```
+"""
+ERA5HourlySingleLevel(; archive=CDSArchive()) = ERA5HourlySingleLevel(archive)
+
+Base.show(io::IO, ::ERA5HourlySingleLevel{CDSArchive}) = print(io, "ERA5HourlySingleLevel()")
+Base.show(io::IO, ds::ERA5HourlySingleLevel) = print(io, "ERA5HourlySingleLevel(archive=", ds.archive, ")")
+
 struct ERA5MonthlySingleLevel <: ERA5Dataset end
 struct ERA5YearlySingleLevel <: ERA5Dataset end
 
