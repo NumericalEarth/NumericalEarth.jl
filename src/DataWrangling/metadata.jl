@@ -28,27 +28,32 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(grid; padding = 0)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees). For a distributed grid the box spans the *global* domain,
-identically on every rank.
+side by `padding` (degrees), a number or a `(longitude, latitude)` pair. For a
+distributed grid the box spans the *global* domain, identically on every rank.
 """
 function BoundingBox(grid::AbstractGrid; padding = 0)
     # Domain endpoints, not node extrema: distributed grids window their node arrays
     # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
     # identity on serial architectures).
+    δλ, δφ = axis_padding(padding)
     arch = architecture(grid)
     λ₁, λ₂ = x_domain(grid)
     φ₁, φ₂ = y_domain(grid)
-    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padding, all_reduce(max, λ₂, arch) + padding),
-                       latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - δλ, all_reduce(max, λ₂, arch) + δλ),
+                       latitude  = (all_reduce(min, φ₁, arch) - δφ, all_reduce(max, φ₂, arch) + δφ))
 end
 
 function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
+    δλ, δφ = axis_padding(padding)
     Nx, Ny, _ = size(grid)
     λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
     φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
-    return BoundingBox(longitude = (minimum(λ) - padding, maximum(λ) + padding),
-                       latitude  = (minimum(φ) - padding, maximum(φ) + padding))
+    return BoundingBox(longitude = (minimum(λ) - δλ, maximum(λ) + δλ),
+                       latitude  = (minimum(φ) - δφ, maximum(φ) + δφ))
 end
+
+axis_padding(padding::Number) = (padding, padding)
+axis_padding(padding::Tuple{Any, Any}) = padding
 
 """
     bounding_box_intersects(bounds, bbox::BoundingBox)
