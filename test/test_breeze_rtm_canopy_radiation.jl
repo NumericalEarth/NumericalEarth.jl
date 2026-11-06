@@ -19,7 +19,7 @@ const σ = default_stefan_boltzmann_constant
 const Δt = 0.25
 
 # `hour` is the solar epoch at longitude 0, so 12 is local noon and 0 local midnight.
-function rtm_canopy_components(arch; hour = 12, surface_storage = nothing)
+function rtm_canopy_components(arch; hour = 12, surface_storage = nothing, schedule = IterationInterval(1))
     grid = RectilinearGrid(arch; size = (8, 8), halo = (5, 5), x = (-1kilometer, 1kilometer), z = (0, 1kilometer),
                            topology = (Periodic, Flat, Bounded))
     constants = ThermodynamicConstants(Float64)
@@ -28,7 +28,7 @@ function rtm_canopy_components(arch; hour = 12, surface_storage = nothing)
 
     solar_position = ApparentSolarPosition(coordinate = (0, 30), epoch = DateTime(2024, 3, 20, hour))
     radiation = RadiativeTransferModel(grid, GrayOptics(), constants; solar_position, surface_albedo = rtm_albedo,
-                                       surface_emissivity = rtm_emissivity, schedule = IterationInterval(1))
+                                       surface_emissivity = rtm_emissivity, schedule)
 
     canopy = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
         canopy_humidity = CanopyConductanceHumidity(Float64; leaf_area_index = 4, moisture_stress = CriticalSaturation(0.5),
@@ -88,38 +88,39 @@ end
 end
 
 @testset "Breeze RadiativeTransferModel over a canopy partitioned with the ocean" begin
-    for arch in test_architectures
+    for arch in test_architectures, schedule in (IterationInterval(1), IterationInterval(3))
         A = typeof(arch)
 
-        @testset "Shared columns radiate the area mean of canopy and ocean on $A" begin
-            atmosphere, land, radiation, canopy = rtm_canopy_components(arch)
-            Tᵒ = 290
+        @testset "Shared columns radiate the area mean of canopy and ocean with $schedule on $A" begin
+            atmosphere, land, radiation, canopy = rtm_canopy_components(arch; schedule)
+            Tᵒᶜ = 290
             ocean = PrescribedOcean(land.grid)
-            set!(ocean, T = Tᵒ)
+            set!(ocean, T = Tᵒᶜ)
 
             ## Land to the west, ocean to the east, shared across the middle.
-            þ(x) = clamp(1/2 + x / 1kilometer, 0, 1)
-            model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction = þ,
+            ocean_fraction(x) = clamp(1/2 + x / 1kilometer, 0, 1)
+            model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction,
                                        atmosphere_land_interface_state = canopy)
+
+            ## The second step falls between the solves of `IterationInterval(3)`.
+            time_step!(model, Δt)
             time_step!(model, Δt)
 
-            fractions = Array(interior(model.interfaces.surface_partition.ocean_fraction, :, :, 1))
-            @test minimum(fractions) == 0 && maximum(fractions) == 1 && any(f -> 0 < f < 1, fractions)
-
+            ℵᵒᶜ = ocean_fraction.(xnodes(land.grid, Center()))
             canopy_state = model.interfaces.atmosphere_land_interface.temperature
-            Tʳᵃᵈ = Array(interior(canopy_state.effective, :, :, 1))
-            αʳᵃᵈ = Array(interior(canopy_state.effective_albedo, :, :, 1))
+            Tʳᵃᵈ = Array(interior(canopy_state.effective, :, 1, 1))
+            αʳᵃᵈ = Array(interior(canopy_state.effective_albedo, :, 1, 1))
 
-            ## Breeze's fluxes are positive upward, so the downwelling longwave is negative.
-            ℐꜜˡʷ = -Array(interior(model.radiation.downwelling_longwave_flux))[:, :, 1]
-            ℐꜛˡʷ = Array(interior(model.radiation.upwelling_longwave_flux))[:, :, 1]
+            ## Breeze's fluxes are positive upward, so the downwelling fluxes are negative.
+            surface_flux(ℐ) = Array(interior(ℐ, :, 1, 1))
+            ℐꜜˡʷ = -surface_flux(model.radiation.downwelling_longwave_flux)
+            ℐꜜˢʷ = -surface_flux(model.radiation.downwelling_shortwave_flux)
+            ℐꜛˡʷ = surface_flux(model.radiation.upwelling_longwave_flux)
+            ℐꜛˢʷ = surface_flux(model.radiation.upwelling_shortwave_flux)
 
-            ocean_longwave = @. rtm_emissivity * σ * Tᵒ^4 + (1 - rtm_emissivity) * ℐꜜˡʷ
-            @test ℐꜛˡʷ ≈ (@. (1 - fractions) * σ * Tʳᵃᵈ^4 + fractions * ocean_longwave) rtol = 1e-3
-
-            ## Gray optics carry no upwelling shortwave, so check the albedo the RTM reads.
-            α = Array(interior(compute!(Field(model.radiation.surface_radiation.direct_surface_albedo)), :, :, 1))
-            @test α ≈ @. (1 - fractions) * αʳᵃᵈ + fractions * rtm_albedo
+            ocean_longwave = @. rtm_emissivity * σ * Tᵒᶜ^4 + (1 - rtm_emissivity) * ℐꜜˡʷ
+            @test all(@. ℐꜛˡʷ ≈ (1 - ℵᵒᶜ) * σ * Tʳᵃᵈ^4 + ℵᵒᶜ * ocean_longwave)
+            @test all(@. ℐꜛˢʷ ≈ ((1 - ℵᵒᶜ) * αʳᵃᵈ + ℵᵒᶜ * rtm_albedo) * ℐꜜˢʷ)
         end
     end
 end
