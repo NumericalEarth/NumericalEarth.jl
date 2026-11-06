@@ -19,7 +19,8 @@ using Oceananigans.Grids: x_domain, y_domain, topology, λnode, φnode, Face, Ce
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
                           λnodes, φnodes
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
-using Oceananigans.Utils: launch!
+using Oceananigans.MultiRegion: MultiRegionGrids
+using Oceananigans.Utils: launch!, getregion, regions
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 

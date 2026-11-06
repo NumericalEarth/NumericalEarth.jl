@@ -58,7 +58,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     ocean_surface_temperature = EarthSystemModels.ocean_surface_temperature(ocean_model)
     ocean_properties = coupled_model.interfaces.ocean_properties
 
-    launch!(arch, grid, :xy,
+    @apply_regionally launch!(arch, grid, :xy,
             _assemble_net_ocean_fluxes!,
             net_ocean_fluxes,
             grid,

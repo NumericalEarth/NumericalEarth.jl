@@ -9,7 +9,8 @@ using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices
 using Oceananigans.Grids: Flat, Periodic, halo_size, topology, _node
 using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices, update_field_time_series!
 using Oceananigans.Simulations: Simulation
-using Oceananigans.Utils: KernelParameters, worksize
+using Oceananigans.Utils: @apply_regionally, KernelParameters, worksize
+using NumericalEarth.Grids: @regional
 
 export
     ComponentInterfaces,

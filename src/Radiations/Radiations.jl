@@ -16,6 +16,8 @@ const default_stefan_boltzmann_constant = 5.670374419e-8
 const default_water_emissivity = 0.97
 
 using Adapt: Adapt
+using NumericalEarth.Grids: @regional
+using Oceananigans.Utils: @apply_regionally
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, CPU

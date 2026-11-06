@@ -21,6 +21,8 @@ Adapt.adapt_structure(to, s::SurfaceRadiationProperties) =
     SurfaceRadiationProperties(Adapt.adapt(to, s.albedo),
                                Adapt.adapt(to, s.emissivity))
 
+@regional SurfaceRadiationProperties
+
 Base.summary(::SurfaceRadiationProperties) = "SurfaceRadiationProperties"
 
 function Base.show(io::IO, s::SurfaceRadiationProperties)
