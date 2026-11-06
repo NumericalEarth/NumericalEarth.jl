@@ -74,3 +74,73 @@ interior_value(field, i, j) = Array(interior(field))[i, j, 1]
         end
     end
 end
+
+using NumericalEarth.EarthSystemModels: interface_state_hooks, interface_flux_hooks
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
+using NumericalEarth.Grids: yin_yang_bilinear_weights, yin_yang_area_average_weights, panel_centers
+using Oceananigans.Operators: Azᶜᶜᶜ
+using Oceananigans.TimeSteppers: update_state!
+
+# The atmosphere state, bilinearly interpolated, sets the ocean's exchanged air state; the ocean-grid air-sea
+# heat flux, area-averaged, replaces the atmosphere's
+@testset "Yin-Yang atmosphere coupled to an ocean and sea ice" begin
+    surface_grid = YinYangGrid(CPU(); size = (48, 16, 1), z = (0, 1), halo = (3, 3, 3))
+    atmosphere_model = uniform_coupled_model(YinYangGrid(CPU(); size = (48, 16, 16), z = (0, 10kilometers), halo = (3, 3, 3)),
+                                             surface_grid)
+
+    ocean_grid = LatitudeLongitudeGrid(CPU(); size = (36, 15, 4), longitude = (0, 360), latitude = (-75, 75), z = (-100, 0), halo = (7, 7, 4))
+    ocean = ocean_simulation(ocean_grid; momentum_advection = nothing, tracer_advection = nothing, closure = nothing)
+    set!(ocean.model, T = 18, S = 35)
+    sea_ice = sea_ice_simulation(ocean_grid, ocean)
+    exchange_atmosphere_grid = LatitudeLongitudeGrid(CPU(); size = (4, 4), longitude = (0, 360), latitude = (-90, 90),
+                                                     topology = (Periodic, Bounded, Flat))
+    ocean_model = OceanSeaIceModel(ocean, sea_ice; atmosphere = PrescribedAtmosphere(exchange_atmosphere_grid))
+
+    Nx, Ny = size(ocean_grid, 1), size(ocean_grid, 2)
+    λ = vec([λnode(i, j, 1, ocean_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny])
+    φ = vec([φnode(i, j, 1, ocean_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny])
+    area = vec([Azᶜᶜᶜ(i, j, 1, ocean_grid) for i in 1:Nx, j in 1:Ny])
+    indices, weights = yin_yang_bilinear_weights(surface_grid, λ, φ)
+    averages = yin_yang_area_average_weights(surface_grid, λ, φ, area, trues(length(λ)))
+
+    panel_values(field) = vcat((vec(Array(interior(getregion(field, r), :, :, 1))) for r in 1:2)...)
+    atmosphere_state = atmosphere_model.interfaces.exchanger.atmosphere.state
+    ocean_air_state = ocean_model.interfaces.exchanger.atmosphere.state
+
+    interface_state_hooks[ocean_model] = model -> for name in (:T, :q, :p)
+        values = panel_values(getproperty(atmosphere_state, name))
+        interior(getproperty(ocean_air_state, name), :, :, 1) .= reshape(sum(weights .* values[indices]; dims = 1), Nx, Ny)
+    end
+
+    ocean_heat_flux() = vec(Array(interior(computed_fluxes(ocean_model.interfaces.atmosphere_ocean_interface).sensible_heat, :, :, 1)))
+    function averaged_heat_flux(r)
+        Q = ocean_heat_flux()
+        A = zeros(size(panel_centers(surface_grid, r)[1]))
+        foreach((n, m, w) -> A[n] += w * Q[m], averages[r].rows, averages[r].columns, averages[r].weights)
+        return A, unique(averages[r].rows)
+    end
+
+    interface_flux_hooks[atmosphere_model] = model -> for r in 1:2
+        A, covered = averaged_heat_flux(r)
+        Q = interior(getregion(computed_fluxes(model.interfaces.atmosphere_ocean_interface).sensible_heat, r), :, :, 1)
+        view(Q, covered) .= A[covered]
+    end
+
+    for n in 1:3
+        time_step!(atmosphere_model, 10)
+        time_step!(ocean_model, 10)
+    end
+    update_state!(atmosphere_model)
+
+    @test all(isfinite, ocean_heat_flux())
+    @test interior(ocean_air_state.T, 1, Ny ÷ 2, 1) ≈ interior(getregion(atmosphere_state.T, 1), 1, 1, 1) rtol = 0.01
+    for r in 1:2
+        A, covered = averaged_heat_flux(r)
+        Q = Array(interior(getregion(computed_fluxes(atmosphere_model.interfaces.atmosphere_ocean_interface).sensible_heat, r), :, :, 1))
+        @test Q[covered] ≈ A[covered]
+        @test all(isfinite, Array(interior(getregion(atmosphere_model.atmosphere.model.velocities.u, r))))
+    end
+
+    delete!(interface_state_hooks, ocean_model)
+    delete!(interface_flux_hooks, atmosphere_model)
+end
