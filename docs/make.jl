@@ -58,6 +58,8 @@ examples = [
     Example("ERA5-forced Terrarium land", "era5_forced_terrarium_land"; build_always=false, gpu=false),
     Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true,
             credentials=["CDSAPI_KEY"]),
+    Example("Moving nest: the 11 August 2026 derecho", "breeze_derecho_moving_nest"; build_always=false, gpu=true,
+            credentials=["CDSAPI_KEY"]),
     # The MODIS examples need NASA Earthdata credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD),
     # which the docs workflow does not have yet.
     # Example("MODIS leaf area index", "modis_leaf_area_index"; build_always=false, gpu=false),
