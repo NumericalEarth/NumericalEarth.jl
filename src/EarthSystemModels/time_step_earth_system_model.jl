@@ -49,6 +49,18 @@ function compute_land_fluxes!(coupled_model, Δt)
     return nothing
 end
 
+"""
+    interface_state_hooks, interface_flux_hooks
+
+Per-model hooks `hook(coupled_model)` for external couplers, called in `update_state!`: state hooks after
+the component states are interpolated onto the exchange grid, flux hooks after the interface turbulent
+fluxes are computed and before they are assembled into component fluxes.
+"""
+const interface_state_hooks = IdDict{Any, Any}()
+const interface_flux_hooks  = IdDict{Any, Any}()
+
+apply_hook!(hooks, coupled_model) = (hook = get(hooks, coupled_model, nothing); isnothing(hook) || hook(coupled_model); nothing)
+
 function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel, callbacks=[])
 
     radiation  = coupled_model.radiation
@@ -75,10 +87,14 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     InterfaceComputations.correct_state!(exchanger.sea_ice,    grid)
     InterfaceComputations.correct_state!(exchanger.ocean,      grid)
 
+    apply_hook!(interface_state_hooks, coupled_model)
+
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
     compute_atmosphere_sea_ice_fluxes!(coupled_model)
     compute_sea_ice_ocean_fluxes!(coupled_model)
+
+    apply_hook!(interface_flux_hooks, coupled_model)
 
     # Phase 2.5: blend the per-surface skin temperatures over the surface partition
     # (no-op unless the model has both land and ocean interfaces)
