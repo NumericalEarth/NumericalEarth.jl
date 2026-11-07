@@ -1,6 +1,5 @@
 const SpeedySimulation = SpeedyWeather.Simulation
-const SpeedyEarthSystemModel = NumericalEarth.EarthSystemModel{<:Any, <:SpeedySimulation}
-const SpeedyNoSeaIceEarthSystemModel = NumericalEarth.EarthSystemModel{<:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
+const SpeedyNoSeaIceEarthSystemModel = NumericalEarth.EarthSystemModel{<:Any, <:SpeedySimulation, <:Any, <:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}}
 
 Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
@@ -73,11 +72,13 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
     # Surface fluxes
     humidity_flux_ocean = SpeedyWeather.PrescribedOceanHumidityFlux(spectral_grid)
     humidity_flux_land = SpeedyWeather.SurfaceLandHumidityFlux(spectral_grid)
-    surface_humidity_flux = SpeedyWeather.SurfaceHumidityFlux(ocean=humidity_flux_ocean, land=humidity_flux_land)
+    humidity_flux_sea_ice = SpeedyWeather.SurfaceSeaIceHumidityFlux(spectral_grid)
+    surface_humidity_flux = SpeedyWeather.SurfaceHumidityFlux(ocean=humidity_flux_ocean, land=humidity_flux_land, sea_ice=humidity_flux_sea_ice)
 
     ocean_heat_flux = SpeedyWeather.PrescribedOceanHeatFlux(spectral_grid)
     land_heat_flux = SpeedyWeather.SurfaceLandHeatFlux(spectral_grid)
-    surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux)
+    sea_ice_heat_flux = SpeedyWeather.SurfaceSeaIceHeatFlux(spectral_grid)
+    surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux, sea_ice=sea_ice_heat_flux)
 
     # The atmospheric model
     atmosphere_model = SpeedyWeather.PrimitiveWetModel(
