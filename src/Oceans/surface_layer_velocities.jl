@@ -1,3 +1,4 @@
+using Oceananigans.Grids: peripheral_node
 using Oceananigans.Operators: Δz
 
 #####
