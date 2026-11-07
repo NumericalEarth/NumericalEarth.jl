@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using ClimaSeaIce.Rheologies
 using ClimaSeaIce.SeaIceDynamics
 using Oceananigans.TimeSteppers: update_state!
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Units: hours, days
 using SeawaterPolynomials.TEOS10: θ_from_Θ
 using NumericalEarth.DataWrangling: all_dates
@@ -260,7 +261,7 @@ end
                                     size = (2, 2, 10),
                                 latitude = (-0.5, 0.5),
                                longitude = (-0.5, 0.5),
-                                       z = (-1, 0),
+                                       z = (-1000, 0),
                                 topology = (Bounded, Bounded, Bounded))
 
         ocean = ocean_simulation(grid; momentum_advection = nothing,
@@ -272,6 +273,7 @@ end
         atmosphere = synthetic_prescribed_atmosphere(arch; dates = all_dates(SyntheticAtmosphere(), :temperature)[1:2])
 
         fill!(ocean.model.tracers.T, -2.0)
+        fill!(ocean.model.tracers.S, 35.0)
 
         @allowscalar begin
             ocean.model.tracers.T[1, 2, 10] = 1.0
@@ -285,8 +287,10 @@ end
 
             coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere)
 
-            # Test that the temperature has snapped up to freezing
-            @test minimum(ocean.model.tracers.T) == 0
+            # Test that the temperature has snapped up to the freezing point where it lies above -2 ᵒC
+            Tₘ = melting_temperature.(Ref(sea_ice.liquidus), 35, znodes(grid, Center()))
+            @test Tₘ[end] > -2 > Tₘ[1]
+            @test Array(interior(ocean.model.tracers.T, 1, 1, :)) ≈ max.(-2, Tₘ)
         end
 
         @info "Testing Surface Fluxes with sea ice..."
