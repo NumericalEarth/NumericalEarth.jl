@@ -16,7 +16,7 @@ end
 function Terrarium.InputSources(
         dataset::SoilGrids2,
         grid::Terrarium.ColumnRingGrid,
-        horizons = Tuple(Symbol(:horizon, i) for i in 1:6);
+        horizons = ntuple(i -> Symbol(:horizon, i), 6);
         name = nameof(typeof(dataset)),
         verbose = true
     )
@@ -30,7 +30,7 @@ function Terrarium.InputSources(
         # load each variable once with all of its horizons; every load reads the whole dataset variable
         var_field = Field(getproperty(metadataset, var))
         # (lon, lat, horizon) with latitudes north to south without the poles and horizons from the top down
-        data = Array(interior(var_field)[:, (end - 1):-1:2, end:-1:(end - nhorizons + 1)])
+        data = interior(var_field)[:, (end - 1):-1:2, end:-1:(end - nhorizons + 1)]
         fill_missing_first_longitude!(data)
         ring_field = RingGrids.on_architecture(arch, RingGrids.FullClenshawField(data, input_as = Matrix))
         # interpolate all horizons onto the model grid in a single batched call
