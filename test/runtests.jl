@@ -37,7 +37,6 @@ remote_data_tests = ["test_bathymetry",
                      "test_ecco_atmosphere",
                      "test_woa",
                      "test_orca_grid",
-                     "test_soilgrids",
                      "test_dataset_region",
                      "test_diagnostics_1",
                      "test_mangling"]

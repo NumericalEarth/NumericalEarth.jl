@@ -52,6 +52,12 @@ struct CoupledRadiation{F, R}
 end
 
 CoupledRadiation() = CoupledRadiation(nothing, nothing)
+
+# From Breeze 0.14, `AtmosphereModel` validates `radiation.schedule` at construction
+# (`validate_radiation(radiation, clock, arch)`); the proxy carries no schedule of its own, since the
+# wrapped radiative transfer model is validated where it is built. Breeze 0.13 calls a two-argument
+# method, so this one is unused there.
+Breeze.AtmosphereModels.validate_radiation(::CoupledRadiation, clock, arch) = nothing
 CoupledRadiation(radiative_transfer_model::Breeze.RadiativeTransferModel) =
     CoupledRadiation(radiative_transfer_model.flux_divergence, radiative_transfer_model)
 

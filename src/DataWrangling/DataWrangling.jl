@@ -30,7 +30,7 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.AbstractOperations: Average
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, all_reduce
+using Oceananigans.DistributedComputations: DistributedComputations, @root, all_reduce
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid, OrthogonalSphericalShellGrid, λnodes, φnodes,
                           topology, x_domain, y_domain, z_domain
@@ -459,6 +459,7 @@ using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
+using .SoilGrids
 using .OpenLandMap
 using .IBCSO
 using .GEBCO
