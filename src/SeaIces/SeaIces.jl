@@ -5,7 +5,8 @@ export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.BoundaryConditions: BoundaryCondition, FieldBoundaryConditions, ValueBoundaryCondition, Zipper
+using Oceananigans.BoundaryConditions: BoundaryCondition, FieldBoundaryConditions, ValueBoundaryCondition, Zipper,
+                                      fill_halo_regions!
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
@@ -13,7 +14,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceMo
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Simulations: Simulation
-using Oceananigans.TimeSteppers: Clock, update_state!
+using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: minutes
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
@@ -35,7 +36,13 @@ EarthSystemModels.is_ocean_component(::Simulation{<:SeaIceModel}) = false
 EarthSystemModels.interpolate_state!(exchanger, grid, ::Simulation{<:SeaIceModel},       coupled_model) = nothing
 EarthSystemModels.interpolate_state!(exchanger, grid, ::FreezingLimitedOceanTemperature, coupled_model) = nothing
 
-Oceananigans.initialize!(::ComponentExchanger, grid, sea_ice::Simulation{<:SeaIceModel}) = update_state!(sea_ice.model)
+# The first interface fluxes average the ice state to the velocity faces, so its halos are filled first
+function Oceananigans.initialize!(::ComponentExchanger, grid, sea_ice::Simulation{<:SeaIceModel})
+    model = sea_ice.model
+    ice_state = (model.ice_concentration, model.ice_thickness, model.velocities.u, model.velocities.v)
+    fill_halo_regions!(ice_state, model.clock, Oceananigans.fields(model))
+    return nothing
+end
 
 # ComponentExchangers
 InterfaceComputations.ComponentExchanger(sea_ice::FreezingLimitedOceanTemperature, grid) = nothing
