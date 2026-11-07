@@ -26,6 +26,7 @@ Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+RingGrids = "d1845624-ad4f-453b-8ff4-a8db365bf3a7"
 Scratch = "6c6a2e73-6563-6170-7368-637461726353"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
@@ -39,8 +40,6 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
 NumericalEarth = {path = ".."}
-OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "main"} # TODO: remove once OceanBioME 0.21 is registered
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Terrarium 0.1.10 is registered (NumericalEarth/Terrarium.jl#225)
 
 [compat]
 ArchGDAL = "0.10"
