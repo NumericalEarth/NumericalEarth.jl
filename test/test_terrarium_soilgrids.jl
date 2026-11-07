@@ -5,7 +5,7 @@ using RingGrids: OctahedralGaussianGrid
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans.Fields: interior
 
-using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2, Clenshaw10km
 import NumericalEarth.DataWrangling.SoilGrids as SoilGridsModule
 
 const NumericalEarthTerrariumExt = Base.get_extension(NumericalEarth, :NumericalEarthTerrariumExt)
@@ -19,8 +19,8 @@ synthetic_soilgrids_value(name, d) = name == "sand" ? 500 :
 
 # A stand-in for the pre-baked Clenshaw file with only the `Mean` statistic and a missing first
 # longitude column, as in the real data
-function write_synthetic_soilgrids(path)
-    Nλ, Nφ, Nz = size(SoilGrids2(), :sand_fraction)
+function write_synthetic_soilgrids(path, dataset)
+    Nλ, Nφ, Nz = size(dataset, :sand_fraction)
     NCDataset(path, "c") do ds
         defDim(ds, "lon", Nλ)
         defDim(ds, "lat", Nφ)
@@ -65,8 +65,9 @@ end
     mktempdir() do cache
         setglobal!(SoilGridsModule, :download_SoilGrids2_cache, cache)
         try
-            dataset = SoilGrids2()
-            write_synthetic_soilgrids(metadata_path(Metadatum(:sand_fraction; dataset)))
+            # The extension reads the pre-baked Clenshaw layout; the default ISRIC grid types are ~9 GiB per variable
+            dataset = SoilGrids2(grid_type = Clenshaw10km)
+            write_synthetic_soilgrids(metadata_path(Metadatum(:sand_fraction; dataset)), dataset)
 
             # Octahedral rings all start at longitude 0, the missing column of the data
             rings = OctahedralGaussianGrid(8)
