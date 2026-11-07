@@ -33,6 +33,7 @@ const NCAR_ERA5_single_level_variables = Dict(
     :downwelling_shortwave_radiation => (NCARForecast("e5.oper.fc.sfc.accumu"), "128_169_ssrd", 1),
     :downwelling_longwave_radiation  => (NCARForecast("e5.oper.fc.sfc.accumu"), "128_175_strd", 1),
     :evaporation                     => (NCARForecast("e5.oper.fc.sfc.accumu"), "128_182_e", 1),
+    :snowfall                        => (NCARForecast("e5.oper.fc.sfc.accumu"), "128_144_sf", 1),
     :total_precipitation             => (NCARForecast("e5.oper.fc.sfc.meanflux"), "235_055_mtpr", 3.6),
     :mean_surface_momentum_flux_x    => (NCARForecast("e5.oper.fc.sfc.meanflux"), "235_041_metss", 1),
     :mean_surface_momentum_flux_y    => (NCARForecast("e5.oper.fc.sfc.meanflux"), "235_042_mntss", 1),
