@@ -1,5 +1,5 @@
 using NumericalEarth.DataWrangling: MetadataSet
-using NumericalEarth.SoilGrids: SoilGrids2
+using NumericalEarth.SoilGrids: SoilGrids2, Clenshaw10km
 
 # The SoilGrids2 data file has no data in its first longitude column (lon = 0°), where every ring of the
 # octahedral model grid starts; fill it from its two neighbors (lon = 0.09° and lon = 359.91°) so that these
@@ -20,6 +20,10 @@ function Terrarium.InputSources(
         name = nameof(typeof(dataset)),
         verbose = true
     )
+    # the ring interpolation below assumes the pre-baked Clenshaw layout; the ISRIC grid types are regular
+    # lat-lon grids with a different orientation and are not yet supported
+    dataset.grid_type === Clenshaw10km ||
+        throw(ArgumentError("Terrarium.InputSources only supports SoilGrids2(grid_type = Clenshaw10km), got $(summary(dataset))"))
     soilgrids_vars = (:sand_fraction, :silt_fraction, :clay_fraction, :bulk_density)
     metadataset = MetadataSet(soilgrids_vars...; dataset)
     arch = RingGrids.architecture(grid.rings)

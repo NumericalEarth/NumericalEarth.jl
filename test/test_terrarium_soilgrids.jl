@@ -5,7 +5,7 @@ using RingGrids: OctahedralGaussianGrid
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans.Fields: interior
 
-using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2, Clenshaw10km
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2, Clenshaw10km, SoilGrids1000m, SoilGrids250m
 import NumericalEarth.DataWrangling.SoilGrids as SoilGridsModule
 
 const NumericalEarthTerrariumExt = Base.get_extension(NumericalEarth, :NumericalEarthTerrariumExt)
@@ -55,6 +55,16 @@ source_values(sources, path) =
     data = reshape(Float32[NaN NaN; 2 NaN; NaN 7], 3, 2, 1)
     NumericalEarthTerrariumExt.fill_missing_first_longitude!(data)
     @test data[1, :, 1] == Float32[2, 7]
+end
+
+@testset "Terrarium InputSources rejects non-Clenshaw SoilGrids2" begin
+    gpu_test && return
+
+    # Thrown before any data is loaded, so no download is attempted
+    grid = ColumnRingGrid(CPU(), Float32, ExponentialSpacing(N = 6), OctahedralGaussianGrid(8))
+    for grid_type in (SoilGrids1000m, SoilGrids250m)
+        @test_throws ArgumentError Terrarium.InputSources(SoilGrids2(; grid_type), grid; verbose = false)
+    end
 end
 
 @testset "Terrarium InputSources from SoilGrids2" begin
