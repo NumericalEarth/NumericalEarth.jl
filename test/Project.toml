@@ -16,7 +16,6 @@ GPUCompiler = "61eb1bfa-7361-4325-ad38-22787b887f55"
 Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
-LowerTriangularArrays = "ed20b33f-a660-45d0-a353-9c8c20bb5814"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
@@ -30,7 +29,6 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 RingGrids = "d1845624-ad4f-453b-8ff4-a8db365bf3a7"
 Scratch = "6c6a2e73-6563-6170-7368-637461726353"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
-SpeedyTransforms = "ed023a3f-7a3c-42dd-bab6-68c21c8c3105"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
@@ -42,12 +40,6 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
 NumericalEarth = {path = ".."}
-OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "main"} # TODO: remove once OceanBioME 0.21 is registered
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Terrarium 0.1.10 is registered (NumericalEarth/Terrarium.jl#225)
-SpeedyWeather = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", subdir = "SpeedyWeather", rev = "main"} # TODO: remove once SpeedyWeather 0.24 is registered
-LowerTriangularArrays = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", subdir = "LowerTriangularArrays", rev = "main"} # TODO: remove once SpeedyWeather 0.24 is registered
-RingGrids = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", subdir = "RingGrids", rev = "main"} # TODO: remove once SpeedyWeather 0.24 is registered
-SpeedyTransforms = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", subdir = "SpeedyTransforms", rev = "main"} # TODO: remove once SpeedyWeather 0.24 is registered
 
 [compat]
 ArchGDAL = "0.10"
