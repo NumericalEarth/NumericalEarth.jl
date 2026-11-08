@@ -144,3 +144,42 @@ using Oceananigans.TimeSteppers: update_state!
     delete!(interface_state_hooks, ocean_model)
     delete!(interface_flux_hooks, atmosphere_model)
 end
+
+# The exchanged radiation state is positive upward: a state hook that interpolates downwelling shortwave
+# from Yin-Yang panels must write it negative to warm the ocean (the sign a positive write got wrong).
+@testset "Yin-Yang radiation written by a state hook warms the ocean" begin
+    surface_grid = YinYangGrid(CPU(); size = (48, 16, 1), z = (0, 1), halo = (3, 3, 3))
+    downwelling_shortwave = Field{Center, Center, Nothing}(surface_grid)
+    set!(downwelling_shortwave, 400)
+
+    ocean_grid = LatitudeLongitudeGrid(CPU(); size = (36, 15, 4), longitude = (0, 360), latitude = (-75, 75), z = (-100, 0), halo = (7, 7, 4))
+    exchange_atmosphere_grid = LatitudeLongitudeGrid(CPU(); size = (4, 4), longitude = (0, 360), latitude = (-90, 90),
+                                                     topology = (Periodic, Bounded, Flat))
+    Nx, Ny = size(ocean_grid, 1), size(ocean_grid, 2)
+    λ = vec([λnode(i, j, 1, ocean_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny])
+    φ = vec([φnode(i, j, 1, ocean_grid, Center(), Center(), Center()) for i in 1:Nx, j in 1:Ny])
+    indices, weights = yin_yang_bilinear_weights(surface_grid, λ, φ)
+    panel_values = vcat((vec(Array(interior(getregion(downwelling_shortwave, r), :, :, 1))) for r in 1:2)...)
+    on_ocean = reshape(sum(weights .* panel_values[indices]; dims = 1), Nx, Ny)
+
+    function surface_temperature_after_steps(sign)
+        ocean = ocean_simulation(ocean_grid; momentum_advection = nothing, tracer_advection = nothing, closure = nothing)
+        set!(ocean.model, T = 18, S = 35)
+        sea_ice = sea_ice_simulation(ocean_grid, ocean)
+        ocean_model = OceanSeaIceModel(ocean, sea_ice; atmosphere = PrescribedAtmosphere(exchange_atmosphere_grid),
+                                       radiation = PrescribedRadiation(ocean_grid))
+        radiation_state = ocean_model.interfaces.exchanger.radiation.state
+        interface_state_hooks[ocean_model] = model -> (interior(radiation_state.ℐꜜˢʷ, :, :, 1) .= sign .* on_ocean)
+        for n in 1:3
+            time_step!(ocean_model, 600)
+        end
+        delete!(interface_state_hooks, ocean_model)
+        return Array(interior(ocean.model.tracers.T, :, :, size(ocean_grid, 3)))
+    end
+
+    @test on_ocean ≈ fill(400, Nx, Ny)
+    sunlit = surface_temperature_after_steps(-1)
+    dark   = surface_temperature_after_steps(0)
+    @test all(isfinite, sunlit)
+    @test all(sunlit .> dark)
+end
