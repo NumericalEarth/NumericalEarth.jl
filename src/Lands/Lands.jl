@@ -57,10 +57,10 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!, compute!,
                            dimension_faces
 using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounded, Flat,
-                          znodes, λnode, φnode, hack_cosd, hack_sind
+                          znodes, λnode, φnode, λnodes, φnodes, hack_cosd, hack_sind
 using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
-using Oceananigans.TimeSteppers: Clock, tick!, update_state!
+using Oceananigans.TimeSteppers: Clock, tick!, update_state!, clock_convert, kernel_time_type
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using Base: ForwardOrdering

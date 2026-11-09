@@ -72,7 +72,8 @@ end
                                                             density=sea_ice_density),
                        conductivity = 2, # W m⁻¹ K⁻¹
                        internal_heat_flux = ConductiveFlux(; conductivity),
-                       snow_thermodynamics = default_snow_thermodynamics(grid))
+                       snow_thermodynamics = default_snow_thermodynamics(grid),
+                       boundary_conditions = NamedTuple())
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
 The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,
@@ -118,6 +119,9 @@ Keyword Arguments
                         `ConductiveFlux` with specified conductivity)
 - `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with
                          specified conductivity and prescribed temperature)
+- `boundary_conditions`: `NamedTuple` of boundary conditions for the sea ice prognostic fields,
+                         e.g. `(; h = h_bcs, ℵ = ℵ_bcs)` for open boundaries on regional grids.
+                         Conditions for `u` or `v` replace those set by `lateral_boundary_condition`.
 """
 function sea_ice_simulation(grid, ocean=nothing;
                             clock = Clock(grid),
@@ -140,7 +144,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                                                                  density=sea_ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
-                            snow_thermodynamics = default_snow_thermodynamics(grid))
+                            snow_thermodynamics = default_snow_thermodynamics(grid),
+                            boundary_conditions = NamedTuple())
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -170,6 +175,7 @@ function sea_ice_simulation(grid, ocean=nothing;
     snowfall         = Field{Center, Center, Nothing}(grid)
 
     velocity_bcs = sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
+    boundary_conditions = merge(velocity_bcs, boundary_conditions)
 
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
@@ -187,7 +193,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
-                                boundary_conditions = velocity_bcs,
+                                boundary_conditions,
                                 top_heat_flux)
 
     verbose = false
