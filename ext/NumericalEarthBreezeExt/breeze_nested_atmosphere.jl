@@ -65,11 +65,7 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.AtmosphereModels: prognostic_field_names
-
-# Breeze 0.15 renamed `dynamics_density` to `continuity_density`
-const continuity_density = isdefined(Breeze.AtmosphereModels, :continuity_density) ?
-    Breeze.AtmosphereModels.continuity_density : Breeze.AtmosphereModels.dynamics_density
+using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
