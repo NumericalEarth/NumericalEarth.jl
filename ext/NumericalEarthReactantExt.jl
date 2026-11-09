@@ -5,7 +5,7 @@ using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
 using Oceananigans.TimeSteppers: Clock, update_state!, time_step!
 
-using NumericalEarth: EarthSystemModel
+using NumericalEarth: NumericalEarth, EarthSystemModel
 using NumericalEarth.EarthSystemModels: EarthSystemModels, compute_land_fluxes!, initialize_land_surface!
 using NumericalEarth.NestedModels: NestedModels
 
@@ -70,5 +70,15 @@ function NestedModels.copy_clock!(clock::TracedClock, source)
 end
 
 assign!(number::Reactant.TracedRNumber, value) = (number.mlir_data = Reactant.promote_to(typeof(number), value).mlir_data)
+
+# The zonal loading operator's batched matrix product as one dot_general
+NumericalEarth.Oceans.batched_contract(K::Reactant.TracedRArray, X::Reactant.TracedRArray) =
+    Reactant.Ops.dot_general(K, X; contracting_dimensions = ([2], [1]), batching_dimensions = ([3], [3]))
+
+# Constants of the loading operators: no derivative, even when the operator is inside `Duplicated` arguments
+NumericalEarth.Oceans.no_derivative(x::Reactant.TracedRArray) = Reactant.Ops.ignore_derivatives(x)
+NumericalEarth.Oceans.kernel_eltype(K::Reactant.AnyTracedRArray) = Reactant.unwrapped_eltype(K)
+NumericalEarth.Oceans.convert_eltype(FT, X::Reactant.TracedRArray) =
+    Reactant.unwrapped_eltype(X) == FT ? X : Reactant.Ops.convert(Reactant.TracedRArray{FT, ndims(X)}, X)
 
 end # module NumericalEarthReactantExt
