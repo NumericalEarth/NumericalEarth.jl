@@ -14,12 +14,15 @@ end
 # the exchanger, and the surface-specific albedo/emissivity from `s`.
 # A surface with no entry in `rk.surface_properties` (`s::Nothing`) gets the zero radiation
 # state: no interface radiative forcing.
+# Everything is converted to the grid's float type (as for the land surface below): the default surface properties are
+# Float64 numbers, which in a Float32 model would turn the interface temperature iteration type-unstable.
 @inline function _surface_radiation_state(s, rk, exchanger_state, i, j, k, grid, time)
-    σ = rk.σ
-    @inbounds ℐꜜˢʷ = exchanger_state.ℐꜜˢʷ[i, j, 1]
-    @inbounds ℐꜜˡʷ = exchanger_state.ℐꜜˡʷ[i, j, 1]
-    α = stateindex(s.albedo,     i, j, k, grid, time, (Center, Center, Center), ℐꜜˢʷ)
-    ϵ = stateindex(s.emissivity, i, j, k, grid, time, (Center, Center, Center))
+    FT = eltype(grid)
+    σ = convert(FT, rk.σ)
+    @inbounds ℐꜜˢʷ = convert(FT, exchanger_state.ℐꜜˢʷ[i, j, 1])
+    @inbounds ℐꜜˡʷ = convert(FT, exchanger_state.ℐꜜˡʷ[i, j, 1])
+    α = convert(FT, stateindex(s.albedo,     i, j, k, grid, time, (Center, Center, Center), ℐꜜˢʷ))
+    ϵ = convert(FT, stateindex(s.emissivity, i, j, k, grid, time, (Center, Center, Center)))
     return (; σ, α, ϵ, ℐꜜˢʷ, ℐꜜˡʷ)
 end
 

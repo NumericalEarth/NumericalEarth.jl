@@ -71,7 +71,7 @@ end
                                                             heat_capacity=ice_heat_capacity,
                                                             density=sea_ice_density),
                        conductivity = 2, # W m⁻¹ K⁻¹
-                       internal_heat_flux = ConductiveFlux(; conductivity),
+                       internal_heat_flux = ConductiveFlux(eltype(grid); conductivity),
                        snow_thermodynamics = default_snow_thermodynamics(grid),
                        boundary_conditions = NamedTuple())
 
@@ -143,7 +143,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                                                  heat_capacity=ice_heat_capacity,
                                                                  density=sea_ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
-                            internal_heat_flux = ConductiveFlux(; conductivity),
+                            internal_heat_flux = ConductiveFlux(eltype(grid); conductivity),
                             snow_thermodynamics = default_snow_thermodynamics(grid),
                             boundary_conditions = NamedTuple())
 
