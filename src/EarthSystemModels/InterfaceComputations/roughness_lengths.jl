@@ -64,6 +64,10 @@ function ScalarRoughnessLength(FT=Oceananigans.defaults.FloatType;
                                reynolds_number_scaling_function = ReynoldsScalingFunction(FT),
                                maximum_roughness_length = 1.6e-4) # Values from COARE3.6
 
+    if air_kinematic_viscosity isa Number
+        air_kinematic_viscosity = convert(FT, air_kinematic_viscosity)
+    end
+
     return ScalarRoughnessLength(air_kinematic_viscosity,
                                  reynolds_number_scaling_function,
                                  convert(FT, maximum_roughness_length))
@@ -98,6 +102,10 @@ function MomentumRoughnessLength(FT=Oceananigans.defaults.FloatType;
 
     if wave_formulation isa Number
         wave_formulation = convert(FT, wave_formulation)
+    end
+
+    if air_kinematic_viscosity isa Number
+        air_kinematic_viscosity = convert(FT, air_kinematic_viscosity)
     end
 
     return MomentumRoughnessLength(convert(FT, gravitational_acceleration),
