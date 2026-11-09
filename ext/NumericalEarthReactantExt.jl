@@ -77,6 +77,7 @@ NumericalEarth.Oceans.batched_contract(K::Reactant.TracedRArray, X::Reactant.Tra
 
 # Constants of the loading operators: no derivative, even when the operator is inside `Duplicated` arguments
 NumericalEarth.Oceans.no_derivative(x::Reactant.TracedRArray) = Reactant.Ops.ignore_derivatives(x)
+NumericalEarth.Oceans.kernel_eltype(K::Reactant.AnyTracedRArray) = Reactant.unwrapped_eltype(K)
 NumericalEarth.Oceans.convert_eltype(FT, X::Reactant.TracedRArray) =
     Reactant.unwrapped_eltype(X) == FT ? X : Reactant.Ops.convert(Reactant.TracedRArray{FT, ndims(X)}, X)
 

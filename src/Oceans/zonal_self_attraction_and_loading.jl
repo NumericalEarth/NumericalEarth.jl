@@ -273,6 +273,7 @@ end
 no_derivative(x) = x
 
 convert_eltype(FT, X) = eltype(X) == FT ? X : FT.(X)
+kernel_eltype(K) = eltype(K)
 
 """
     RemappedZonalLoadingOperator(λᶠᶠ, φᶠᶠ, λᶜᶜ, φᶜᶜ, area, mask; degrees, kernel, subsamples = 2, FT = Float64)
@@ -378,7 +379,7 @@ function zonal_self_attraction_and_loading(op::RemappedZonalLoadingOperator, η)
     Nm = size(z.Kr, 3)
     Ny′ = size(η′, 2)
     q̂ = FFTW.rfft(η′, 1)[1:Nm, :]
-    FT = eltype(z.Kr)
+    FT = kernel_eltype(z.Kr)
     X = convert_eltype(FT, permutedims(cat(reshape(real.(q̂), Nm, Ny′, 1), reshape(imag.(q̂), Nm, Ny′, 1); dims = 3), (2, 3, 1)))
     Y = batched_contract(no_derivative(z.Kr), X)
     ψ̂ = complex.(convert_eltype(Float64, Y[:, :, 1]), convert_eltype(Float64, Y[:, :, 2]))
