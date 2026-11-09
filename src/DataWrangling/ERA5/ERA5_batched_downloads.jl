@@ -121,6 +121,15 @@ end
 ##### NetCDF splitting utilities
 #####
 
+# A file takes its final name only once it is complete, so an interrupted split leaves a `.partial`
+# file that `skip_existing` does not mistake for a finished download.
+function create_nc(f, dst_path)
+    partial_path = dst_path * ".partial"
+    NCDatasets.Dataset(f, partial_path, "c")
+    mv(partial_path, dst_path; force=true)
+    return nothing
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -131,7 +140,7 @@ function split_era5_nc(src_path, nc_name_path_pairs, coordinate_vars)
         src_varnames = Set(keys(src))
         for (nc_varname, dst_path) in nc_name_path_pairs
             nc_varname in src_varnames || continue
-            NCDatasets.Dataset(dst_path, "c") do dst
+            create_nc(dst_path) do dst
                 unlimited = NCDatasets.unlimited(src)
                 for (dname, dlen) in src.dim
                     NCDatasets.defDim(dst, dname, dname in unlimited ? Inf : dlen)
@@ -176,7 +185,7 @@ function split_era5_nc_multistep(src::NCDatasets.NCDataset, nc_varname_tidx_path
             var = src[nc_varname].var
             loaded_varname, loaded_data = nc_varname, var[ntuple(_ -> Colon(), ndims(var))...]
         end
-        NCDatasets.Dataset(dst_path, "c") do dst
+        create_nc(dst_path) do dst
             for (dname, dlen) in src.dim
                 out_len = dname in time_dimnames ? 1 :
                           dname in unlimited     ? Inf : dlen

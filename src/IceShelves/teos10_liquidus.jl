@@ -125,7 +125,7 @@ end
     Sᴬ⁺ = max(Sᴬ, zero(Sᴬ))
     m = - melting_temperature_salinity_derivative(liquidus, Sᴬ⁺, z)
     T₀ = melting_temperature(liquidus, Sᴬ⁺, z) + m * Sᴬ⁺
-    return LinearLiquidus(T₀, m)
+    return LinearLiquidus(T₀, m, zero(T₀))
 end
 
 # Relinearize about each new interface salinity, `liquidus.iterations` times.
@@ -135,13 +135,14 @@ end
     𝒬  = zero(FT)
     Tᵦ = zero(FT)
     Sᵦ = ocean_state.S
+    q  = zero(FT)
 
     for _ in 1:liquidus.iterations
-        𝒬, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation, ocean_state, ice_state,
-                                                linearize(liquidus, Sᵦ, zᵈ), properties, ℰ, u★)
+        𝒬, Tᵦ, Sᵦ, q = compute_interface_heat_flux(flux_formulation, ocean_state, ice_state,
+                                                   linearize(liquidus, Sᵦ, zᵈ), properties, ℰ, u★)
     end
 
-    return 𝒬, Tᵦ, Sᵦ
+    return 𝒬, Tᵦ, Sᵦ, q
 end
 
 """

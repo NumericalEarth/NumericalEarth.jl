@@ -68,6 +68,7 @@ function default_sea_ice end
 #####
 
 function thermodynamics_parameters end
+function molmass_dryair end
 function surface_layer_height end
 function boundary_layer_height end
 
@@ -146,6 +147,15 @@ function adopt_clock(simulation::Simulation, clock)
 end
 
 same_time_type(::TT, ::ST) where {TT, ST} = ST === TT
+
+"""
+$(TYPEDSIGNATURES)
+
+A clock for a component on `architecture` whose kernels see time as `FT`, for constructors that need one
+before the grid exists (`Clock(grid)` otherwise): `Float64` time, and a device clock on `ReactantState`
+(NumericalEarthReactantExt), which a compiled time step can advance.
+"""
+default_clock(architecture, FT) = Clock{Float64}(; time = 0, kernel_time_type = FT)
 
 # Return a clock matching `clock`'s time type (or nothing if clocks are the same)
 function matching_clock(old::Clock, clock)
