@@ -472,8 +472,8 @@ end
     end
 end
 
-# Needs an Oceananigans release with CliMA/Oceananigans.jl#6153
-if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
+# Needs an Oceananigans release with CliMA/Oceananigans.jl#6175
+if isdefined(Oceananigans, :TopLoad)
 
 @testset "No frazil under an ice shelf" begin
     for arch in test_architectures
@@ -488,7 +488,7 @@ if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
 
         # An ice shelf with its draft at -200 m covers the western half (i = 1, 2).
         ice_draft(λ, φ) = λ < 5 ? -200 : 0
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(-400; top_height = ice_draft))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedVerticalBoundaries(; bottom_height = -400, top_height = ice_draft))
 
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
@@ -500,7 +500,9 @@ if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
         set!(sea_ice.model, h=1, ℵ=0.5)
         compute_sea_ice_ocean_fluxes!(coupled_model)
 
-        Tₘ = melting_temperature(sea_ice.model.phase_transitions.liquidus, 35)
+        liquidus = sea_ice.model.phase_transitions.liquidus
+        z = reshape(Array(znodes(grid, Center())), 1, 1, :)
+        Tₘ = melting_temperature.(Ref(liquidus), 35, z)
         T = Array(interior(ocean.model.tracers.T))
         𝒬ᶠʳᶻ = Array(interior(coupled_model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat, :, :, 1))
 
@@ -512,7 +514,7 @@ if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
 end
 
 else
-    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no GridFittedVerticalBoundaries"
+    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no immersed tops"
 end
 
 @testset "Coupled model with different heat flux formulations" begin
