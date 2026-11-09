@@ -13,7 +13,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Fields: Field, set!
-using Oceananigans.Grids: Center, Face, znode
+using Oceananigans.Grids: Center, Face, rnode
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryCondition, immersed_cell
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Δzᶜᶜᶜ
 using Oceananigans.Simulations: Simulation
@@ -24,7 +24,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
 
 import ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
-using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_interface_heat_flux, ice_ocean_interface_fluxes
+using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_interface_heat_flux, ice_ocean_interface_fluxes,
+                                                   ice_base_height
 import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_heat_flux
 using ..Oceans: bottom_drag_bc,
                 u_immersed_drag_coefficient, v_immersed_drag_coefficient,

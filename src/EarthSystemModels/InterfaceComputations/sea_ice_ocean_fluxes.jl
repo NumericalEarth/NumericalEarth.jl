@@ -1,5 +1,6 @@
-using Oceananigans.Grids: inactive_node, znode
-using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.Grids: inactive_node, znode, rnode
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, immersed_cell
+using Oceananigans.Operators: Δzᶜᶜᶜ, Δrᶜᶜᶜ
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
@@ -159,8 +160,9 @@ end
 
     δ𝒬ᶠʳᶻ = zero(grid)
 
-    # No frazil under an ice shelf: the surface liquidus is wrong there and ΣQb is masked.
-    covered = inactive_node(i, j, Nz, grid, Center(), Center(), Center())
+    # No frazil under an ice shelf, where the surface liquidus is wrong
+    covered = inactive_node(i, j, Nz, grid, Center(), Center(), Center()) |
+              (ice_base_height(i, j, Nz, grid) < rnode(i, j, Nz+1, grid, Center(), Center(), Face()))
 
     for k = Nz:-1:1
         @inbounds begin
@@ -238,3 +240,21 @@ end
         Jᴴ[i, j, 1] = - Tb * Eᵢᵒ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
     end
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the height of the top of wet cell `k` in column `(i, j)`, which lies below the top face
+of `k` when an immersed top cuts the cell partially.
+"""
+@inline function ice_base_height(i, j, k, grid)
+    rᵏ  = rnode(i, j, k,   grid, Center(), Center(), Face())
+    rᵏ⁺ = rnode(i, j, k+1, grid, Center(), Center(), Face())
+    Δr  = Δrᶜᶜᶜ(i, j, k, grid)
+    # A partial cell over a wet cell is cut from above; over an immersed cell it is cut from below
+    top_cut = (Δr < full_Δrᶜᶜᶜ(i, j, k, grid)) & !immersed_cell(i, j, k-1, grid)
+    return ifelse(top_cut, rᵏ + Δr, rᵏ⁺)
+end
+
+@inline full_Δrᶜᶜᶜ(i, j, k, grid) = Δrᶜᶜᶜ(i, j, k, grid)
+@inline full_Δrᶜᶜᶜ(i, j, k, ibg::ImmersedBoundaryGrid) = Δrᶜᶜᶜ(i, j, k, ibg.underlying_grid)

@@ -61,8 +61,7 @@ end
     u★ = zero(FT)
 
     if kd > 0
-        # The ice base sits at the top face of the topmost wet cell
-        zᵈ = znode(i, j, kd + 1, grid, Center(), Center(), Face())
+        zᵈ = ice_base_height(i, j, kd, grid)
 
         H_TBL = properties.boundary_layer_thickness
         Tᵈ = surface_layer_average(i, j, kd, grid, Center(), Center(), Tᵒᶜ, H_TBL)

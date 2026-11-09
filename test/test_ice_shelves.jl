@@ -225,6 +225,35 @@ for arch in test_architectures
         @test Array(interior(interface.fluxes.melt_rate))[2, 2, 1] > 0
     end
 
+    @testset "Partial-cell drafts [$(typeof(arch))]" begin
+        # Open; thin draft cutting k = Nz; draft cutting k = 2; shallow partial bottom without ice
+        underlying_grid = RectilinearGrid(arch, size = (4, 3, 4),
+                                          x = (0, 4), y = (0, 3), z = (-1, 0),
+                                          topology = (Bounded, Periodic, Bounded))
+
+        bottom(x, y)  = x < 3 ? -1.0 : -0.15
+        top_height(x, y) = x < 1 ? 0.0 : (x < 2 ? -0.1 : (x < 3 ? -0.6 : 0.0))
+
+        grid = ImmersedBoundaryGrid(underlying_grid, PartialCellVerticalBoundaries(; bottom_height = bottom, top_height))
+        interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux())
+
+        @test Array(interior(interface.k_draft))[:, 2, 1] == [0, 4, 2, 0]
+
+        model = HydrostaticFreeSurfaceModel(grid; tracers = (:T, :S))
+        set!(model, T = 1.0, S = 34.5)
+        compute_ice_shelf_fluxes!(interface, model)
+
+        melt_rate = Array(interior(interface.fluxes.melt_rate))[:, 2, 1]
+        T★ = Array(interior(interface.temperature))[:, 2, 1]
+        S★ = Array(interior(interface.salinity))[:, 2, 1]
+        liquidus = ice_shelf_liquidus(interface, model)
+
+        @test all(melt_rate[2:3] .> 0)
+        @test melt_rate[1] == melt_rate[4] == 0
+        @test T★[2] ≈ melting_temperature(liquidus, S★[2], -0.1) atol = 1e-10
+        @test T★[3] ≈ melting_temperature(liquidus, S★[3], -0.6) atol = 1e-10
+    end
+
     @testset "Melting cavity simulation [$(typeof(arch))]" begin
         Nx, Nz = 16, 20
         underlying_grid = RectilinearGrid(arch, size = (Nx, Nz),

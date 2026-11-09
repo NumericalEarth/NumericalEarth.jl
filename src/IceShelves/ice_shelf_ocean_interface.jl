@@ -105,10 +105,9 @@ $(TYPEDSIGNATURES)
 
 Build an `IceShelfOceanInterface` on `grid`, which is expected to be an
 `ImmersedBoundaryGrid` with an immersed top (e.g. `GridFittedVerticalBoundaries`).
-The draft index map `k_draft` is computed from
-the grid's `immersed_cell` at construction; columns whose topmost cell
-`k = Nz` is wet (no ice above) get `k_draft = 0` and are excluded from the
-melt computation.
+The draft index map `k_draft` holds the topmost wet cell of each column whose
+ice base lies below the top of the domain, including drafts that only cut cell `k = Nz`
+partially. Open-ocean columns get `k_draft = 0` and are excluded from the melt computation.
 
 `ice_concentration` is the fraction of the immersed top of each column that is ice,
 between 0 and 1: a number (default 1), a function of `(x, y)`, an array or a field.
@@ -173,15 +172,13 @@ end
     i, j = @index(Global, NTuple)
 
     kd = 0
-    for k in grid.Nz : -1 : 1
-        if !immersed_cell(i, j, k, grid)
-            kd = k
-            break
-        end
+    for k in 1:grid.Nz
+        kd = ifelse(immersed_cell(i, j, k, grid), kd, k)
     end
 
-    kd = ifelse(kd == grid.Nz, 0, kd)
-    @inbounds k_draft[i, j, 1] = kd
+    zᵈ = ice_base_height(i, j, max(kd, 1), grid)
+    covered = (kd > 0) & (zᵈ < rnode(i, j, grid.Nz+1, grid, Center(), Center(), Face()))
+    @inbounds k_draft[i, j, 1] = ifelse(covered, kd, 0)
 end
 
 Base.summary(::IceShelfOceanInterface) = "IceShelfOceanInterface"
