@@ -94,16 +94,21 @@ end
     kᴺ   = size(grid, 3) # index of the top ocean cell
     time = Time(clock.time)
 
-    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
+    # Inactive halo columns read the inputs of the nearest interior column
+    not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
+    iᵢ = ifelse(not_water, clamp(i, 1, size(grid, 1)), i)
+    jᵢ = ifelse(not_water, clamp(j, 1, size(grid, 2)), j)
 
-    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, temperature_formulation(interface_formulation.state))
+    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
+    Ψₐ  = local_atmosphere_state(iᵢ, jᵢ, atmosphere_state, atmosphere_properties)
+
+    local_interior_state = assemble_interior_state(iᵢ, jᵢ, kᴺ, grid, interior_state, ocean_properties, temperature_formulation(interface_formulation.state))
     Tᵒᶜ = local_interior_state.T
     Sᵒᶜ = local_interior_state.S
 
     radiation_state = air_sea_interface_radiation_state(radiation_kernel_props,
                                                         radiation_exchanger_state,
-                                                        i, j, kᴺ, grid, time)
+                                                        iᵢ, jᵢ, kᴺ, grid, time)
 
     FT = typeof(Tᵒᶜ)
     u★ = convert(FT, 1e-4)
@@ -116,7 +121,6 @@ end
     # Don't use convergence criteria in an inactive cell
     stop_criteria = interface_formulation.turbulent_fluxes.solver_stop_criteria
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
-    not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     if needs_to_converge && not_water
         interface_state = zero_interface_state(FT)
