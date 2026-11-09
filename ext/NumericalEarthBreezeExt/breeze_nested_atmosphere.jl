@@ -65,7 +65,11 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
+using Breeze.AtmosphereModels: prognostic_field_names
+
+# Breeze 0.15 renamed `dynamics_density` to `continuity_density`
+const continuity_density = isdefined(Breeze.AtmosphereModels, :continuity_density) ?
+    Breeze.AtmosphereModels.continuity_density : Breeze.AtmosphereModels.dynamics_density
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -150,7 +154,7 @@ end
 function boundary_relaxation(child, prognostic, rate, mask, width)
     child_fields = Oceananigans.prognostic_fields(child)
     moisture_name = moisture_prognostic_name(child.microphysics)
-    ρᵈ = dynamics_density(child.dynamics)
+    ρᵈ = continuity_density(child.dynamics)
     θ = Oceananigans.fields(child.formulation).θ
 
     fts_target(target) = FieldTimeSeriesTarget(target, target.grid)

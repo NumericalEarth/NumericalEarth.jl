@@ -4,10 +4,11 @@
 
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interior, interpolate!
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
-using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
+using Oceananigans.Grids: LatitudeLongitudeGrid, Open, TwoSided, constructor_arguments, λnodes, φnodes
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: days, hours, kilometers
-using Oceananigans.DistributedComputations: all_reduce
+using Oceananigans.DistributedComputations: all_reduce, reconstruct_global_grid
+using Oceananigans.ImmersedBoundaries: has_active_cells_map, has_active_z_columns
 
 using ..Bathymetry: regrid_bathymetry
 using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions, estimate_maximum_Δt
@@ -17,7 +18,7 @@ using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, defau
 # The open-boundary defaults:
 # oblique radiation on the velocities and tracer reservoirs on the tracers, a 6-hour sponge 8 cells wide and a
 # bathymetry blend 4 cells wide at 1/12°, the widths held fixed in degrees across resolutions.
-default_velocity_scheme() = ObliqueRadiation(inflow_timescale = 3days, outflow_timescale = 360days)
+default_velocity_scheme() = ObliqueRadiation(inflow_timescale = 9hours, outflow_timescale = 360days)
 default_tracer_scheme() = TracerReservoir(inflow_length_scale = 20kilometers, outflow_length_scale = 0)
 
 const default_relaxation_degrees = 8 / 12
@@ -59,6 +60,33 @@ function validate_band_width(grid, sides, width, name)
     return nothing
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Return a copy of `grid` whose `sides` are `Open`, as the open boundary conditions on them require, with the same
+coordinates, halos and immersed bottom. On a distributed grid, `sides` are the local rank's, and a side any rank
+holds is opened for the whole domain.
+"""
+function with_open_sides(grid::LatitudeLongitudeGrid, sides)
+    sides = global_sides(grid, sides)
+    args, kwargs = constructor_arguments(reconstruct_global_grid(grid))
+    TX, TY, TZ = kwargs[:topology]
+    kwargs[:topology] = (open_topology(TX, :west ∈ sides, :east ∈ sides),
+                         open_topology(TY, :south ∈ sides, :north ∈ sides), TZ)
+    return LatitudeLongitudeGrid(architecture(grid), args[:number_type]; kwargs...)
+end
+
+function with_open_sides(grid::GridFittedBottomGrid, sides)
+    open_grid = with_open_sides(grid.underlying_grid, sides)
+    immersed_boundary = with_bottom_height(grid.immersed_boundary, grid.immersed_boundary.bottom_height)
+    return ImmersedBoundaryGrid(open_grid, immersed_boundary;
+                                active_cells_map = has_active_cells_map(grid),
+                                active_z_columns = has_active_z_columns(grid))
+end
+
+open_topology(::Type{TwoSided{L, R}}, left, right) where {L, R} = TwoSided{ifelse(left, Open, L), ifelse(right, Open, R)}
+open_topology(T, left, right) = T
+
 # Sides the user left unspecified keep the open-boundary conditions; fields only one of the two
 # specifies pass through.
 function merge_field_boundary_conditions(user, nested)
@@ -92,10 +120,11 @@ The parent is a volumetric [`PrescribedOcean`](@ref), or a
 that knows the parent only on strips along the boundaries. Time stepping the `NestedModel` steps the parent
 first, samples it onto the boundary bands of `grid` (an [`OceanBoundaryExchanger`](@ref)), then steps the child.
 
-Each side in `open_sides` (default: the `Bounded` sides of the child grid that touch water; see
-[`open_boundary_sides`](@ref)) that is a wall of the domain gets the open boundary conditions of [`ocean_open_boundary_conditions`](@ref): oblique
+Each side in `open_sides` (default: the walls of the child grid that touch water; see
+[`open_boundary_sides`](@ref)) that is a wall of the domain is made `Open` (see [`with_open_sides`](@ref)) and gets
+the open boundary conditions of [`ocean_open_boundary_conditions`](@ref): oblique
 radiation on the boundary-normal and tangential velocities (`normal_velocity_scheme`, `tangential_velocity_scheme`;
-nudged toward the parent over 3 days on inflow and 360 days on outflow), tracer reservoirs on the tracers
+nudged toward the parent over 9 hours on inflow and 360 days on outflow), tracer reservoirs on the tracers
 (`tracer_scheme`; relaxing toward the parent over 20 km on inflow), Flather on the barotropic transport, and Chapman
 on the free surface. Over the outermost `relaxation_width` cells of each open side (default: 2/3°), `T` and `S` and
 the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default 1/6 hours), leaving
@@ -141,6 +170,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     clock.time == time ||
         throw(ArgumentError("the child clock (time $(clock.time)) must start at the parent's time, $time."))
 
+    grid = with_open_sides(grid, open_sides)
     grid = blend_parent_bathymetry(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     validate_band_width(grid, open_sides, width, "relaxation_width")
