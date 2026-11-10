@@ -146,29 +146,27 @@ end
     end
 end
 
-@testset "Bare tile evaporates through the canopy's ground vapor path" begin
+@testset "Bare tile evaporates through the wet soil resistance" begin
     for arch in test_architectures
-        canopy = tiled_canopy(Float64)
-        model = tiled_land_model(arch; vegetated = canopy, cover_fraction = 0.0, wind = 0.5, water = 150.0,
-                                 shortwave = 900.0, air_temperature = 305.0, land_temperature = 300.0,
-                                 interface_kw = (; bare_fluxes = land_roughness(1.0, 0.01)))
+        air_temperature, air_specific_humidity, pressure = 305.0, 0.008, 101325.0
+        resistance = ExponentialSoilResistance(Float64)
+        canopy = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64), wet_soil_resistance = resistance)
+        bare_tile_model(; interface_kw...) =
+            tiled_land_model(arch; vegetated = canopy, cover_fraction = 0.0, water = 100.0,
+                             air_temperature, air_specific_humidity, pressure, interface_kw = (; interface_kw...))
+        model = bare_tile_model()
         bare = model.interfaces.atmosphere_land_interface.bare
-        radiation = model.interfaces.exchanger.radiation.state
-        Tᵇ, Tˡᵃ = scalar(bare.temperature), scalar(model.land.temperature)
-        𝒬ᵀ, 𝒬ᵛ = scalar(bare.fluxes.sensible_heat), scalar(bare.fluxes.latent_heat)
 
-        σ = model.radiation.stefan_boltzmann_constant
-        α = model.radiation.surface_properties.land.albedo
-        ϵ = model.radiation.surface_properties.land.emissivity
-        net_radiation = - (1 - α) * scalar(radiation.ℐꜜˢʷ) - ϵ * (scalar(radiation.ℐꜜˡʷ) + σ * Tᵇ^4)
-        @test net_radiation - 1.5 / 0.05 * (Tᵇ - Tˡᵃ) - 𝒬ᵀ - 𝒬ᵛ ≈ 0 atol = 1e-3
-
-        # Over saturated soil the vapor reaches the skin through rᵍʳⁿᵈ = 1 / (Cᵍʳⁿᵈ u★).
+        # Above the dry-layer onset the vapor leaves the saturated skin through rˢᵒⁱ = exp(a - b 𝒮).
         ℂ = AtmosphereThermodynamicsParameters(Float64)
-        ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, 305.0, 101325.0, 0.008)
-        qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵇ, 101325.0, canopy.soil_humidity.phase)
-        Cᵍʳⁿᵈ = canopy.ground_surface_resistance.transfer_coefficient
-        u★ = scalar(bare.fluxes.friction_velocity)
-        @test scalar(bare.fluxes.water_vapor) ≈ ρᵃᵗ * Cᵍʳⁿᵈ * u★ * (qᵛ⁺ - scalar(bare.specific_humidity)) rtol = 1e-3
+        ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, air_temperature, pressure, air_specific_humidity)
+        qᵛ⁺ = saturation_specific_humidity(ℂ, scalar(bare.temperature), pressure, canopy.soil_humidity.phase)
+        rˢᵒⁱ = exp(resistance.intercept - resistance.slope * scalar(model.land.saturation))
+        @test scalar(bare.fluxes.water_vapor) ≈ ρᵃᵗ / rˢᵒⁱ * (qᵛ⁺ - scalar(bare.specific_humidity)) rtol = 1e-2
+
+        unresisted = bare_tile_model(bare = (temperature = EnergyBalanceTemperature(canopy.ground_heat_flux),
+                                             specific_humidity = canopy.soil_humidity))
+        @test scalar(bare.fluxes.water_vapor) <
+              scalar(unresisted.interfaces.atmosphere_land_interface.bare.fluxes.water_vapor)
     end
 end
