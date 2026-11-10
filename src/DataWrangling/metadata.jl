@@ -50,16 +50,14 @@ end
     BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0, i = 1:Nx+1, j = 1:Ny+1)
 
 Create a `BoundingBox` spanning the cell corners `i × j` of `grid`. A patch whose edge circles a pole spans every
-longitude and reaches that pole, and a patch cut by the seam of its longitude labels spans every longitude.
+longitude and reaches that pole; a patch across the antimeridian is labeled in [0, 360).
 """
 function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0,
                      i = 1:size(grid, 1)+1, j = 1:size(grid, 2)+1)
     δλ, δφ = axis_padding(padding)
     λ = on_architecture(CPU(), grid.λᶠᶠᵃ)[i, j]
     φ = on_architecture(CPU(), grid.φᶠᶠᵃ)[i, j]
-    λ₁, λ₂ = extrema(λ)
     φ₁, φ₂ = extrema(φ)
-    every_longitude = λ₁ < 0 ? (-180, 180) : (0, 360)
 
     edge(a) = vcat(a[:, 1], a[end, 2:end], a[end-1:-1:1, end], a[1, end-1:-1:1])
     winding = sum(δ -> mod(δ + 180, 360) - 180, diff(edge(λ)))
@@ -68,12 +66,13 @@ function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0,
         φᵉ = edge(φ)
         holds_north_pole = φ[(end+1)÷2, (end+1)÷2] > sum(φᵉ) / length(φᵉ)
         latitude = holds_north_pole ? (φ₁ - δφ, 90) : (-90, φ₂ + δφ)
-        return BoundingBox(; longitude = every_longitude, latitude)
+        return BoundingBox(; longitude = (-180, 180), latitude)
     end
 
-    # Relabeled across the seam: [0, 360) for labels in [-180, 180], and the reverse
-    λʳ₁, λʳ₂ = extrema(λ₁ < 0 ? mod.(λ, 360) : mod.(λ .+ 180, 360) .- 180)
-    longitude = λʳ₂ - λʳ₁ < λ₂ - λ₁ ? every_longitude : (λ₁ - δλ, λ₂ + δλ)
+    # The narrower of the spans with the longitudes labeled in [-180, 180) and in [0, 360)
+    λ₁, λ₂ = extrema(mod.(λ .+ 180, 360) .- 180)
+    λ₃, λ₄ = extrema(mod.(λ, 360))
+    longitude = λ₂ - λ₁ ≤ λ₄ - λ₃ ? (λ₁ - δλ, λ₂ + δλ) : (λ₃ - δλ, λ₄ + δλ)
 
     return BoundingBox(; longitude, latitude = (φ₁ - δφ, φ₂ + δφ))
 end
