@@ -43,10 +43,10 @@ ocean = nested_ocean_simulation(grid, parent_dataset; dates, dir = joinpath(data
                                 relaxation_width = 4, bathymetry_blend_width = 3)
 sea_ice = nested_sea_ice_simulation(ocean, parent_dataset; dates, dir = joinpath(datadir, "GLORYS"))
 
-atmosphere = JRA55PrescribedAtmosphere(arch; dataset = MultiYearJRA55(), start_date,
-                                       end_date = min(end_date, DateTime(2019, 12, 31, 21)),
-                                       time_indices_in_memory = 40, dir = joinpath(datadir, "JRA55"))
-radiation = Radiation(arch)
+jra55_kw = (dataset = MultiYearJRA55(), start_date, end_date = min(end_date, DateTime(2019, 12, 31, 21)),
+            time_indices_in_memory = 40, dir = joinpath(datadir, "JRA55"))
+atmosphere = JRA55PrescribedAtmosphere(arch; jra55_kw...)
+radiation = JRA55PrescribedRadiation(arch; jra55_kw...)
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt = 10minutes, stop_time = 365days * years)
