@@ -207,6 +207,12 @@ boundary_conditions = ice_shelf_boundary_conditions(interface;
 # ice. There the surface is the pressure at the ice base, and the free surface
 # is masked against the top of each water column rather than the top of the
 # grid. Time stepping is third-order Runge-Kutta.
+#
+# Next to the ice base, the seafloor and the walls, the tracer advection
+# scheme drops to first-order upwind rather than its default second-order
+# centered stencil. The centered stencil can push temperature and salinity
+# beyond the range of the neighbouring cells, and so make water colder than
+# the freezing point next to the ice.
 
 closure = (VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(), ν = 1e-3, κ = 5e-5),
            HorizontalScalarDiffusivity(ν = 600, κ = 100))
@@ -219,7 +225,7 @@ model = HydrostaticFreeSurfaceModel(grid;
                                     boundary_conditions,
                                     forcing,
                                     momentum_advection = WENO(order = 5),
-                                    tracer_advection = WENO(order = 5),
+                                    tracer_advection = WENO(order = 5, minimum_buffer_upwind_order = 1),
                                     free_surface = SplitExplicitFreeSurface(grid; cfl = 0.7, fixed_Δt = 30minutes),
                                     timestepper = :SplitRungeKutta3)
 
