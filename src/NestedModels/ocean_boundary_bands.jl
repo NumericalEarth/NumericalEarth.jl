@@ -10,7 +10,7 @@
 # boundary, not with the length of the run.
 
 using Oceananigans.Fields: Field, interpolate
-using Oceananigans.Grids: Bounded, Center, Closed, Connected, Face, Sides, inactive_cell, new_data, topology,
+using Oceananigans.Grids: Center, Closed, Connected, Face, Open, TwoSided, inactive_cell, new_data, topology,
                           validate_indices, λnode, φnode, rnode, ξnode, ηnode
 using Oceananigans.Operators: Δz
 using Oceananigans.OutputReaders: FlavorOfFTS, update_field_time_series!
@@ -79,10 +79,11 @@ last_index(::Center, N) = N
 boundary_index(ℓ, side, N) = side ∈ (:west, :south) ? 1 : last_index(ℓ, N)
 
 # Whether the left and right ends of a direction with topology `T` are seams with a neighboring rank.
-rank_seams(::Type{Sides{Connected, Connected}}) = (true, true)
-rank_seams(::Type{Sides{Connected, Closed}}) = (true, false)
-rank_seams(::Type{Sides{Closed, Connected}}) = (false, true)
+rank_seams(::Type{TwoSided{L, R}}) where {L, R} = (rank_seam(L), rank_seam(R))
 rank_seams(T) = (false, false)
+
+rank_seam(::Type{Connected}) = true
+rank_seam(S) = false
 
 # The indices at which a field at location `ℓ` holds the parent along a direction with topology `T`, `N` interior
 # cells and data `axis`: the interior points, extended into the halo across a rank seam, where the halo holds
@@ -212,18 +213,19 @@ end
     @inbounds field[i, j, 1] = ifelse(H > 0, U / max(H, eps(H)), zero(U))
 end
 
-# Whether `side` of a grid with topology `T` in its direction is a wall of the whole domain: on a distributed grid,
-# a `Bounded` direction is `Sides{Closed, Connected}` on its first rank, `Sides{Connected, Closed}` on its last.
-on_domain_boundary(::Type{Bounded}, side) = true
-on_domain_boundary(::Type{Sides{Closed, Connected}}, side) = side ∈ (:west, :south)
-on_domain_boundary(::Type{Sides{Connected, Closed}}, side) = side ∈ (:east, :north)
+# Whether `side` of a grid with topology `T` in its direction is a wall of the whole domain: a `Closed` or `Open`
+# side, not one `Connected` to another rank of a distributed grid.
+on_domain_boundary(::Type{TwoSided{L, R}}, side) where {L, R} = wall_side(ifelse(side ∈ (:west, :south), L, R))
 on_domain_boundary(T, side) = false
+
+wall_side(::Type{<:Union{Closed, Open}}) = true
+wall_side(S) = false
 
 """
     domain_boundary_sides(grid, sides)
 
-Return the `sides` of `grid` that are walls of the whole domain: all `Bounded` sides of a serial grid, and on a
-distributed grid only the sides of the local rank that lie on the edge of the global domain.
+Return the `sides` of `grid` that are walls of the whole domain, `Closed` or `Open`: on a distributed grid only the
+sides of the local rank that lie on the edge of the global domain.
 """
 function domain_boundary_sides(grid, sides)
     TX, TY, _ = topology(grid)
@@ -248,18 +250,28 @@ end
 """
     open_boundary_sides(grid)
 
-Return the lateral sides of `grid` that are open to the ocean: the sides on a `Bounded` wall of the domain
-(see [`domain_boundary_sides`](@ref)) with at least one wet surface cell in their boundary-adjacent row or
-column. Sides that are entirely land stay closed. On a distributed grid, these are the local rank's sides.
+Return the lateral sides of `grid` that are open to the ocean: the walls of the domain (see
+[`domain_boundary_sides`](@ref)) with at least one wet surface cell in their boundary-adjacent row or column
+anywhere along the domain. Sides that are entirely land stay closed. On a distributed grid, these are the local
+rank's sides, the same on every rank along a side, since an `Open` side is one for the whole domain.
 """
 function open_boundary_sides(grid)
     Nx, Ny, _ = size(grid)
     wet = compute_wet_surface_cells(grid)
+    sides = domain_boundary_sides(grid, lateral_sides)
 
     touches_water = (west  = any(wet[1,  :]),
                      east  = any(wet[Nx, :]),
                      south = any(wet[:,  1]),
                      north = any(wet[:, Ny]))
 
-    return Tuple(side for side in domain_boundary_sides(grid, lateral_sides) if touches_water[side])
+    local_sides = Tuple(side for side in sides if touches_water[side])
+
+    return domain_boundary_sides(grid, global_sides(grid, local_sides))
+end
+
+# The sides any rank of a distributed grid holds in `sides`; every rank takes part.
+function global_sides(grid, sides)
+    arch = architecture(grid)
+    return Tuple(side for side in lateral_sides if all_reduce(+, Int(side ∈ sides), arch) > 0)
 end

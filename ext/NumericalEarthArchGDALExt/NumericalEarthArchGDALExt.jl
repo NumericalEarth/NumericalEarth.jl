@@ -18,7 +18,8 @@ using Oceananigans.Utils: launch!
 using NumericalEarth.DataWrangling: BoundingBox, native_grid, native_region_grid,
                                     available_variables, bounding_box_intersects,
                                     cmr_granules, earthdata_download_cached,
-                                    figshare_article_url, tile_indices, default_tile_bytes
+                                    figshare_article_url, tile_indices, default_tile_bytes,
+                                    dataset_variable_name
 using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
                                              asterged_decode_emissivity, asterged_decode_uncertainty,
                                              broadband_map, place_tile!,
@@ -42,6 +43,10 @@ using NumericalEarth.DataWrangling.WorldCover: ESAWorldCoverMetadatum, version_y
                                                ESA_WORLDCOVER_CLASS_NAMES,
                                                ESA_WORLDCOVER_NATIVE_STEP,
                                                ESA_WORLDCOVER_PIXELS_PER_DEGREE
+using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2Metadatum,
+                                              soilgrids_raster_geometry,
+                                              soilgrids_statistic_url_name,
+                                              soilgrids_vsicurl_source
 
 using KernelAbstractions: @kernel, @index
 
@@ -53,5 +58,6 @@ include("ghsl.jl")
 include("modis_land.jl")
 include("openlandmap.jl")
 include("worldcover.jl")
+include("soilgrids.jl")
 
 end # module NumericalEarthArchGDALExt

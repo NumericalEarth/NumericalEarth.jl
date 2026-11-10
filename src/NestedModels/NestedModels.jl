@@ -35,7 +35,8 @@ using DocStringExtensions: TYPEDEF, TYPEDFIELDS, TYPEDSIGNATURES
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.Fields: location
 
-using ..EarthSystemModels: EarthSystemModels, component_model
+using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
+                           BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
 
 include("nested_model.jl")

@@ -6,6 +6,7 @@ using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, re
                                    BoundaryTimeSeries, BarotropicBoundaryTransport, ConsistentBoundaryVelocity,
                                    OceanBoundaryExchanger, ScaledParentSeries
 using NumericalEarth.Oceans: fill_prescribed_halo_regions!
+using Oceananigans.Grids: TwoSided, topology
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
 using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
@@ -140,6 +141,10 @@ end
     nested = nested_ocean_model(prescribed, child_grid; relaxation_width = 3)
     @test nested.parent === prescribed
     check_nested_ocean(nested, child_grid)
+
+    # The open sides are `Open` on the child's grid; the grid passed in keeps its walls
+    @test topology(nested.child.grid)[1:2] == (TwoSided{Closed, Open}, TwoSided{Open, Open})
+    @test topology(child_grid)[1:2] == (Bounded, Bounded)
     @test wet_maximum(nested.child.velocities.u) ≈ 0.1 rtol = 1e-6
 
     time_step!(nested, 60)

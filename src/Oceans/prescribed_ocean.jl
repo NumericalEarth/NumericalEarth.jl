@@ -1,7 +1,7 @@
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries, cpu_interpolating_time_indices
-using Oceananigans.TimeSteppers: Clock, tick!
+using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using KernelAbstractions: @kernel, @index
@@ -256,16 +256,33 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = no
 
 function Oceananigans.TimeSteppers.time_step!(ocean::PrescribedOcean, Δt)
     tick!(ocean.clock, Δt)
-    time = Time(ocean.clock.time)
+    update_state!(ocean)
+    return nothing
+end
 
+function Oceananigans.TimeSteppers.update_state!(ocean::PrescribedOcean)
+    time = Time(ocean.clock.time)
     update_field_time_series!(ocean.temperature, time)
     update_field_time_series!(ocean.salinity, time)
     update_field_time_series!(ocean.velocities.u, time)
     update_field_time_series!(ocean.velocities.v, time)
     update_prescribed_free_surface!(ocean.free_surface, time)
-
     return nothing
 end
 
 update_prescribed_free_surface!(η, time) = update_field_time_series!(η, time)
 update_prescribed_free_surface!(::Nothing, time) = nothing
+
+#####
+##### Checkpointing
+#####
+
+Oceananigans.prognostic_state(ocean::PrescribedOcean) = (; clock = Oceananigans.prognostic_state(ocean.clock))
+
+function Oceananigans.restore_prognostic_state!(ocean::PrescribedOcean, state)
+    Oceananigans.restore_prognostic_state!(ocean.clock, state.clock)
+    update_state!(ocean)
+    return ocean
+end
+
+Oceananigans.restore_prognostic_state!(ocean::PrescribedOcean, ::Nothing) = ocean
