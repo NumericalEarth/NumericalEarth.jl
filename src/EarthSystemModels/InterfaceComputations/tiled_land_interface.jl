@@ -5,6 +5,44 @@
 #####
 
 """
+$(TYPEDSIGNATURES)
+
+Specific humidity of a bare-soil skin that evaporates through the ground vapor path of a
+[`CanopyInterface`](@ref), with the aerodynamic conductance `gᵃᵛ` in place of the undercanopy
+path: the `ground_surface_resistance` `rᵍʳⁿᵈ` lies in series on both branches of `soil_humidity`,
+and the `wet_soil_resistance` `rˢᵒⁱ` on its moist-soil branch. The skin humidity carries the flux
+of the whole path through `gᵃᵛ` alone.
+"""
+struct BareSoilHumidity{S, W, L}
+    soil_humidity             :: S
+    wet_soil_resistance       :: W
+    ground_surface_resistance :: L
+end
+
+Adapt.@adapt_structure BareSoilHumidity
+
+land_state_accessors(q::BareSoilHumidity) = land_state_accessors(q.soil_humidity)
+@inline interface_phase(q::BareSoilHumidity) = interface_phase(q.soil_humidity)
+
+@inline local_interface_formulation(q::BareSoilHumidity, i, j) =
+    BareSoilHumidity(q.soil_humidity, q.wet_soil_resistance, local_interface_formulation(q.ground_surface_resistance, i, j))
+
+@inline function compute_interface_humidity(q::BareSoilHumidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    ℂᵃᵗ   = ℙₐ.thermodynamics_parameters
+    ρᵃᵗ   = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    gᵃᵛ   = aerodynamic_vapor_conductance(Ψⁱⁿ, Ψₐ, ℂᵃᵗ)
+    rᵍʳⁿᵈ = ground_surface_resistance(q.ground_surface_resistance, Ψⁱⁿ.fluxes.u★)
+    rˢᵒⁱ  = soil_surface_resistance(q.wet_soil_resistance, Ψˡᵃ.𝒮)
+
+    gᵈᵇʳ    = gᵃᵛ / (1 + gᵃᵛ * rᵍʳⁿᵈ / ρᵃᵗ)
+    gᵍʳⁿᵈᵛ⁺ = gᵃᵛ / (1 + gᵃᵛ * (rᵍʳⁿᵈ + rˢᵒⁱ) / ρᵃᵗ)
+    gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, _ = soil_vapor_terms(q.soil_humidity, Tⁱⁿ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+
+    # gᵍʳⁿᵈᵛ / gᵃᵛ → 1 as gᵃᵛ → 0
+    return Ψₐ.q + ifelse(gᵃᵛ > 0, gᵍʳⁿᵈᵛ / gᵃᵛ, one(gᵃᵛ)) * (qᵍʳⁿᵈ - Ψₐ.q)
+end
+
+"""
     struct TiledLandInterface
 
 A forested tile and a bare-soil tile over a shared soil column, each a full
@@ -36,14 +74,17 @@ $(TYPEDSIGNATURES)
 
 Build a tiled atmosphere–land interface from the `vegetated` canopy formulation and the
 vegetated `cover_fraction`. `bare` defaults to a soil skin that shares the canopy's ground heat
-flux and soil humidity. The land's surface storage belongs to the vegetated tile.
-`vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for each tile.
+flux and its ground vapor path, a [`BareSoilHumidity`](@ref). The land's surface storage belongs
+to the vegetated tile. `vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for
+each tile.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
                             cover_fraction,
                             bare                = (temperature       = EnergyBalanceTemperature(vegetated.ground_heat_flux),
-                                                   specific_humidity = vegetated.soil_humidity),
+                                                   specific_humidity = BareSoilHumidity(vegetated.soil_humidity,
+                                                                                        vegetated.wet_soil_resistance,
+                                                                                        vegetated.ground_surface_resistance)),
                             vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
                             velocity_difference = RelativeVelocity())

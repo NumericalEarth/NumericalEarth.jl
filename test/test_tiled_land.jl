@@ -6,7 +6,9 @@ using Oceananigans.TimeSteppers: update_state!, time_step!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyInterface, CanopyConductanceHumidity, CriticalSaturation, AbsorbedPhotosyntheticallyActiveRadiation,
     SoilConductiveFlux,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions
+    SimilarityTheoryFluxes, atmosphere_land_stability_functions,
+    saturation_specific_humidity, AtmosphericThermodynamics
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 
 tiled_canopy(FT) = CanopyInterface(FT;
     soil_humidity = bare_soil_humidity(FT),
@@ -141,5 +143,32 @@ end
         model = tiled_canopy_model(CPU(), FT; cover_fraction = FT(0.5))
         𝒬ᵀ = scalar(model.interfaces.atmosphere_land_interface.fluxes.sensible_heat)
         @test 𝒬ᵀ isa FT && isfinite(𝒬ᵀ)
+    end
+end
+
+@testset "Bare tile evaporates through the canopy's ground vapor path" begin
+    for arch in test_architectures
+        canopy = tiled_canopy(Float64)
+        model = tiled_land_model(arch; vegetated = canopy, cover_fraction = 0.0, wind = 0.5, water = 150.0,
+                                 shortwave = 900.0, air_temperature = 305.0, land_temperature = 300.0,
+                                 interface_kw = (; bare_fluxes = land_roughness(1.0, 0.01)))
+        bare = model.interfaces.atmosphere_land_interface.bare
+        radiation = model.interfaces.exchanger.radiation.state
+        Tᵇ, Tˡᵃ = scalar(bare.temperature), scalar(model.land.temperature)
+        𝒬ᵀ, 𝒬ᵛ = scalar(bare.fluxes.sensible_heat), scalar(bare.fluxes.latent_heat)
+
+        σ = model.radiation.stefan_boltzmann_constant
+        α = model.radiation.surface_properties.land.albedo
+        ϵ = model.radiation.surface_properties.land.emissivity
+        net_radiation = - (1 - α) * scalar(radiation.ℐꜜˢʷ) - ϵ * (scalar(radiation.ℐꜜˡʷ) + σ * Tᵇ^4)
+        @test net_radiation - 1.5 / 0.05 * (Tᵇ - Tˡᵃ) - 𝒬ᵀ - 𝒬ᵛ ≈ 0 atol = 1e-3
+
+        # Over saturated soil the vapor reaches the skin through rᵍʳⁿᵈ = 1 / (Cᵍʳⁿᵈ u★).
+        ℂ = AtmosphereThermodynamicsParameters(Float64)
+        ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, 305.0, 101325.0, 0.008)
+        qᵛ⁺ = saturation_specific_humidity(ℂ, Tᵇ, 101325.0, canopy.soil_humidity.phase)
+        Cᵍʳⁿᵈ = canopy.ground_surface_resistance.transfer_coefficient
+        u★ = scalar(bare.fluxes.friction_velocity)
+        @test scalar(bare.fluxes.water_vapor) ≈ ρᵃᵗ * Cᵍʳⁿᵈ * u★ * (qᵛ⁺ - scalar(bare.specific_humidity)) rtol = 1e-3
     end
 end
