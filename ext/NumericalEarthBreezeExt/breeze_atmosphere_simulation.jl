@@ -67,6 +67,11 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `Breeze.RadiativeTransferModel` directly as `radiation` here is rejected — use
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
+`formulation` selects the thermodynamic formulation (for example a
+`Breeze.LiquidIcePotentialTemperatureFormulation` with non-default options); `nothing` (the default) keeps Breeze's
+default. [`nested_atmosphere_model`](@ref) forwards it here; its parent-to-child exchange supplies `ρθ`, so a nested child
+must use a potential-temperature formulation.
+
 To nest this child in a coarser parent atmosphere, use [`nested_atmosphere_model`](@ref) (Breeze
 extension), which derives the lateral BCs and lateral boundary relaxation from the parent and wraps the result
 in a `NestedModel`.
@@ -84,7 +89,8 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                      coriolis = nothing,
                                                      forcing = NamedTuple(),
                                                      closure = nothing,
-                                                     clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                     formulation = nothing,
+                                                     clock = Oceananigans.TimeSteppers.Clock(grid),
                                                      initialize = true,
                                                      radiation = CoupledRadiation())
 
@@ -116,12 +122,15 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # the whole `FieldBoundaryConditions`.
     boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
 
+    # `nothing` keeps Breeze's default formulation.
+    formulation_kw = isnothing(formulation) ? (;) : (; formulation)
+
     model = AtmosphereModel(grid;
                             dynamics, microphysics, thermodynamic_constants,
                             momentum_advection, scalar_advection,
                             boundary_conditions,
                             coriolis, forcing, closure, clock,
-                            radiation)
+                            radiation, formulation_kw...)
 
     # Breeze ≥0.7 no longer derives the prognostic density from the reference state inside a bare
     # `set!(θ, …)` — an uninitialized model carries ρ ≡ 0, which NaNs anything that divides by density

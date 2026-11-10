@@ -334,7 +334,8 @@ end
 # `native_grid` rebuild + column-mean equality check (once per variable).
 function era5_native_pressure_fts(metadata, grid;
                                   time_indexing = nothing,
-                                  time_indices_in_memory = nothing)
+                                  time_indices_in_memory = nothing,
+                                  prefetch = false)
     Downloads.download(metadata)
     times = convert.(eltype(grid), native_times(metadata))
     time_indexing = something(time_indexing, length(times) > 1 ? Cyclical() : Clamp())
@@ -354,6 +355,7 @@ function era5_native_pressure_fts(metadata, grid;
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
     backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid = true,
                              inpainting = nothing, cache_inpainted_data = false)
+    prefetch && (backend = PrefetchingBackend(FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)))
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)
     return fts

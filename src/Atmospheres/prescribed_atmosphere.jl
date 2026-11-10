@@ -210,7 +210,7 @@ Pass any field explicitly to override; pass `precipitation_flux = nothing` to om
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               source = nothing,
-                              clock = Clock{Float64}(time = 0),
+                              clock = Clock(grid),
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),

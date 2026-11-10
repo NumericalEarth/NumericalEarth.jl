@@ -126,6 +126,40 @@ end
     @test peak(spread) < peak(capped) < peak(concentrated)
 end
 
+# GloFAS discharge accumulates downstream, so a channel running along the coast puts the river's
+# whole discharge in every coastal cell it passes. On a GloFAS-like 0.05ᵒ grid (ocean west of
+# λ = 0), a channel hugs the coast over j = 10:20, leaving it inland at j = 15:16, and reaches Q₀
+# at its downstream end. A second river Q₁ reaches the coast 0.75ᵒ away, and a small stream q
+# right beside the channel's end.
+@testset "One river mouth per channel [$arch]" for arch in test_architectures
+    Q₀, Q₁, q = 23706.0, 4258.0, 50.0
+
+    grid = LatitudeLongitudeGrid(arch; size = (40, 40), longitude = (-1, 1), latitude = (-1, 1),
+                                 topology = (Bounded, Bounded, Flat), halo = (3, 3))
+    λc = Array(λnodes(grid, Center(), Center(), Center()))
+    coast_i = findfirst(>(0), λc)
+
+    data = [λc[i] < 0 ? NaN : 0.0 for i in 1:40, j in 1:40, k in 1:1]
+    for j in 10:20
+        i = j ∈ 15:16 ? coast_i + 1 : coast_i        # the channel leaves the coast for two cells
+        data[i, j, 1] = Q₀ - (20 - j)                  # discharge grows downstream
+    end
+    data[coast_i, 21, 1] = q
+    data[coast_i, 35, 1] = Q₁
+
+    discharge = Field{Center, Center, Nothing}(grid)
+    set!(discharge, data)
+
+    outlet_i, outlet_j, _, _ = coastal_outlet_indices(discharge)
+    Q = [data[i, j, 1] for (i, j) in zip(outlet_i, outlet_j)]
+
+    # Every coastal channel cell used to be a mouth: 9 cells carrying ~Q₀ each.
+    @test count(i -> data[coast_i, i, 1] > Q₀ / 2, 1:40) == 9
+    @test sum(Q) ≈ Q₀ + Q₁ + q
+    @test count(>(0), Q) == 3
+    @test (coast_i, 20) ∈ collect(zip(outlet_i, outlet_j))  # the channel's largest coastal cell
+end
+
 @testset "Routed PrescribedLand interpolate_state! [$arch]" for arch in test_architectures
     Q₀ = 555.0
     Q₁ = 111.0
@@ -169,7 +203,7 @@ end
                                        longitude = (-10, 10),
                                        latitude = (-10, 10),
                                        z = (-100, 0),
-                                       halo = (7, 7, 4))
+                                       halo = (7, 7, 5))
 
     bottom_height(λ, φ) = ifelse(λ < 0, -100, 10)
     target_grid = ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom_height))

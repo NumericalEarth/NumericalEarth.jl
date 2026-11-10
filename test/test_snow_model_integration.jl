@@ -10,7 +10,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentExchanger,
     ComponentInterfaces,
     SkinTemperature,
-    InterfaceProperties,
     conductive_flux_balance_temperature
 using NumericalEarth.SeaIces: default_snow_thermodynamics
 
@@ -201,8 +200,8 @@ end
 
             ai_temp = default_ai_temperature(sea_ice)
             @test ai_temp.internal_flux isa IceSnowConductiveFlux
-            @test ai_temp.internal_flux.ice_conductivity == 2.0
-            @test ai_temp.internal_flux.snow_conductivity == 0.31
+            @test ai_temp.internal_flux.ice.conductivity == 2.0
+            @test ai_temp.internal_flux.snow.conductivity == 0.31
         end
     end
 end
