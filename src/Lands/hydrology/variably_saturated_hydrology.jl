@@ -193,7 +193,7 @@ end
 
 function update_diagnostics!(h::VariablySaturatedHydrology, land)
     arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _variably_saturated_saturation!,
+    @apply_regionally launch!(arch, land.grid, :xy, _variably_saturated_saturation!,
             land.saturation, land.water_storage, h, land.grid)
     return nothing
 end
@@ -254,7 +254,7 @@ end
 function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
                     liquid_input = land.fluxes.liquid_water_precipitation_flux)
     arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _variably_saturated_step!,
+    @apply_regionally launch!(arch, land.grid, :xy, _variably_saturated_step!,
             land.water_storage, land.saturation,
             land.diagnostics.deep_liquid_water_flux,
             land.diagnostics.surface_liquid_water_flux,

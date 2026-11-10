@@ -4,8 +4,9 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded, AbstractMutableGrid, interior_indices, ξnode, ηnode, znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: interpolate, interpolate!
-using Oceananigans.Utils: launch!, KernelParameters
+using Oceananigans.Fields: instantiated_location, interpolate, interpolate!
+using Oceananigans.Utils: getregion, launch!, regions, KernelParameters
+using Oceananigans.MultiRegion: MultiRegionField
 
 #####
 ##### Location with automatic restriction based on region
@@ -349,7 +350,8 @@ below the surface of a `PressureLevelGrid` source.
     from the physical `znode` for mutable grids.
 """
 function interpolate_physical!(to_field, from_field)
-    to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
+    # A surface (Nothing-z) target has no deformed vertical node to sample
+    (to_field.grid isa AbstractMutableGrid && location(to_field, 3) !== Nothing) || return interpolate!(to_field, from_field)
 
     to_grid       = to_field.grid
     from_grid     = from_field.grid
@@ -416,6 +418,19 @@ end
 
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum, args...; kw...)
     regrid_from_metadata!(target_field, metadata; kw...)
+    return target_field
+end
+
+# Each region is regridded on its own, through a field without the boundary conditions that connect
+# it to the other regions, and the halos of the whole multi-region field are filled once at the end.
+function Oceananigans.Fields.set!(target_field::MultiRegionField, metadata::Metadatum, args...; kw...)
+    for r in regions(target_field.grid)
+        region_field = getregion(target_field, r)
+        unconnected_field = Field(instantiated_location(region_field), region_field.grid; boundary_conditions = nothing)
+        set!(unconnected_field, metadata, args...; kw...)
+        interior(region_field) .= interior(unconnected_field)
+    end
+    fill_halo_regions!(target_field)
     return target_field
 end
 

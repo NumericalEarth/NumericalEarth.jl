@@ -243,13 +243,84 @@ function regrid_ocean_fraction(target_grid, metadata)
     z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
     close(dataset)
 
-    cpu_grid = on_architecture(CPU(), target_grid)
+    ocean_fraction = Field{Center, Center, Nothing}(target_grid)
+    set_ocean_fraction!(ocean_fraction, target_grid, native, z_data)
+    fill_halo_regions!(ocean_fraction)
+
+    return ocean_fraction
+end
+
+# A multi-region grid (a Yin-Yang grid, say) is filled region by region, each from the geographic
+# coordinates of its own cells.
+function set_ocean_fraction!(ocean_fraction, target_grid::MultiRegionGrids, native, z_data)
+    for r in regions(target_grid)
+        set_ocean_fraction!(getregion(ocean_fraction, r), getregion(target_grid, r), native, z_data)
+    end
+    return nothing
+end
+
+function set_ocean_fraction!(ocean_fraction, target_grid, native, z_data)
+    Nx, Ny, _ = size(target_grid)
+    fraction = ocean_fraction_data(on_architecture(CPU(), target_grid), native, z_data)
+    set!(ocean_fraction, reshape(fraction, Nx, Ny, 1))
+    return nothing
+end
+
+# A curvilinear target (an `OrthogonalSphericalShellGrid`, such as a rotated latitude-longitude panel)
+# has no separable cell bounds in geographic coordinates. Each cell is sampled instead on a regular
+# n × n lattice spanned by its four corners, at least as fine as the native spacing, and each sample
+# reads the below-sea-level indicator of the native cell that contains it.
+function ocean_fraction_data(cpu_grid::OrthogonalSphericalShellGrid, native, z_data)
+    λnative = λnodes(native, Center())
+    φnative = φnodes(native, Center())
+    Δλ = (last(λnative) - first(λnative)) / (length(λnative) - 1)
+    Δφ = (last(φnative) - first(φnative)) / (length(φnative) - 1)
+    Nλ, Nφ = length(λnative), length(φnative)
+
+    # The native index of the geographic point (λ, φ) (degrees) on the regular native grid
+    native_i(λ) = mod(round(Int, (λ - first(λnative)) / Δλ), Nλ) + 1
+    native_j(φ) = clamp(round(Int, (φ - first(φnative)) / Δφ) + 1, 1, Nφ)
+
+    unit_vector(λ, φ) = (cosd(φ) * cosd(λ), cosd(φ) * sind(λ), sind(φ))
+    ℓf = Face()
+    ℓc = Center()
+
+    Nx, Ny, _ = size(cpu_grid)
+    fraction = zeros(Float64, Nx, Ny)
+
+    for j in 1:Ny, i in 1:Nx
+        X = map((i, i+1, i, i+1), (j, j, j+1, j+1)) do iᶠ, jᶠ
+            unit_vector(λnode(iᶠ, jᶠ, 1, cpu_grid, ℓf, ℓf, ℓc), φnode(iᶠ, jᶠ, 1, cpu_grid, ℓf, ℓf, ℓc))
+        end
+
+        # The largest corner-to-corner angle, in degrees, sets the sampling density
+        angle(a, b) = rad2deg(acos(clamp(sum(a .* b), -1, 1)))
+        extent = max(angle(X[1], X[2]), angle(X[1], X[3]), angle(X[3], X[4]), angle(X[2], X[4]))
+        n = clamp(ceil(Int, extent / min(Δλ, Δφ)), 1, 256)
+
+        wet = 0
+        for b in 1:n, a in 1:n
+            ξ = (a - 1/2) / n
+            η = (b - 1/2) / n
+            x, y, z = (1-ξ) .* (1-η) .* X[1] .+ ξ .* (1-η) .* X[2] .+ (1-ξ) .* η .* X[3] .+ ξ .* η .* X[4]
+            λ = atand(y, x)
+            φ = atand(z, hypot(x, y))
+            wet += z_data[native_i(λ), native_j(φ)] < 0
+        end
+
+        fraction[i, j] = wet / n^2
+    end
+
+    return fraction
+end
+
+function ocean_fraction_data(cpu_grid, native, z_data)
     λface = λnodes(cpu_grid, Face())
     φface = φnodes(cpu_grid, Face())
     λnative = λnodes(native, Center())
     φnative = φnodes(native, Center())
 
-    Nx, Ny, _ = size(target_grid)
+    Nx, Ny, _ = size(cpu_grid)
     wet_count = zeros(Int, Nx, Ny)
     cell_count = zeros(Int, Nx, Ny)
 
@@ -280,11 +351,7 @@ function regrid_ocean_fraction(target_grid, metadata)
         end
     end
 
-    ocean_fraction = Field{Center, Center, Nothing}(target_grid)
-    set!(ocean_fraction, reshape(fraction, Nx, Ny, 1))
-    fill_halo_regions!(ocean_fraction)
-
-    return ocean_fraction
+    return fraction
 end
 
 # Regridding bathymetry for distributed grids, we handle the whole process

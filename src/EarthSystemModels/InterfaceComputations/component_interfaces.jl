@@ -86,6 +86,8 @@ end
 
 AtmosphereSurfaceFluxes(::Nothing) = AtmosphereSurfaceFluxes(ntuple(_ -> ZeroField(), 8)...)
 
+@regional AtmosphereSurfaceFluxes
+
 Adapt.adapt_structure(to, fluxes::AtmosphereSurfaceFluxes) =
     AtmosphereSurfaceFluxes(Adapt.adapt(to, fluxes.latent_heat),
                             Adapt.adapt(to, fluxes.sensible_heat),

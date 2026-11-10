@@ -516,7 +516,7 @@ function above_freezing_ocean_temperature!(ocean, grid, sea_ice)
     liquidus = sea_ice.model.phase_transitions.liquidus
 
     arch = architecture(grid)
-    launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
+    @apply_regionally launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
 
     return nothing
 end

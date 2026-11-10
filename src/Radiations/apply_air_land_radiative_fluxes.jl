@@ -51,7 +51,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     land_shortwave_upwelling_flux = land_surface_shortwave_up(land)
     land_longwave_upwelling_flux = land_surface_longwave_up(land)
 
-    launch!(arch, grid, :xy,
+    @apply_regionally launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
             land_energy_flux,
             land_interface_radiation_flux(radiation),
