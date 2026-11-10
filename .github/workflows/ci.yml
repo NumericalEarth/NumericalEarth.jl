@@ -71,6 +71,7 @@ jobs:
         run: |
           julia --project=test --color=yes --check-bounds=yes -e '
               using Pkg;
+              Pkg.Registry.update();
               Pkg.instantiate()
           '
       # ParallelTestRunner schedules longest-first from a duration history it keeps in a

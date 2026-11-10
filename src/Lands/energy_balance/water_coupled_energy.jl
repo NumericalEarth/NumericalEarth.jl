@@ -21,7 +21,7 @@
 #####    unchanged. `dMˡᵃ/dt` is consumed from `land.diagnostics.water_storage_tendency`
 #####    written by the hydrology step.
 #####
-##### The internal energies carried by the boundary liquid fluxes are upwinded:
+##### The internal energies carried by the boundary liquid water fluxes are upwinded:
 ##### with `advect_deep_liquid_energy = true`, capillary rise brings in
 ##### `eᵇ = cˡ(Tᵈᵉᵉᵖ − Tᵣ)` and drainage exports `eᵇ = eˡ`; with
 ##### `advect_surface_liquid_energy = true`, infiltrating precipitation carries
@@ -133,7 +133,7 @@ Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
     if Λ === nothing
         return cˡᵃ / convert(FT, τ)
     else
-        return property_value(Λ, i, j, 1)
+        return stateindex(Λ, i, j, 1)
     end
 end
 
@@ -153,8 +153,8 @@ end
         Tᵢⱼ  = prognostic.T[i, j, 1]
         Mᵢⱼ  = prognostic.M[i, j, 1]
         dMdt = diagnostics.water_storage_tendency[i, j, 1]
-        Jˡᵇ  = diagnostics.deep_liquid_flux[i, j, 1]
-        Jˡˢ  = diagnostics.surface_liquid_flux[i, j, 1]
+        Jˡᵇ  = diagnostics.deep_liquid_water_flux[i, j, 1]
+        Jˡˢ  = diagnostics.surface_liquid_water_flux[i, j, 1]
         Rˡᵃᵗ = diagnostics.subsurface_runoff[i, j, 1]
         Jᴱs  = fluxes.surface_energy_flux[i, j, 1]
         Jᵛ   = fluxes.vapor_flux[i, j, 1]
@@ -163,7 +163,7 @@ end
 
     cˡ   = energy.liquid_heat_capacity
     Tᵣ   = energy.reference_temperature
-    cᵈʳʸ = property_value(energy.dry_heat_capacity, i, j, 1)
+    cᵈʳʸ = stateindex(energy.dry_heat_capacity, i, j, 1)
     cˡᵃ  = cᵈʳʸ + cˡ * max(Mᵢⱼ, 0)
 
     Tᵈ = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))

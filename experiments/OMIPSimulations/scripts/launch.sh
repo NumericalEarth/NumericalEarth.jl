@@ -97,31 +97,8 @@ Environment variables (physics):
                 simply zero the flux). Default: 3, which is still non-monotone. Set BUFFER_ORDER=1 to
                 let the recursion reach FIRST-ORDER UPWIND, which is monotone, in exactly those
                 boundary-touching cells while the interior keeps the full order -- targeted at
-                topography-induced extrema without paying accuracy everywhere. Adds "_buford<val>".
-                Only 1 and 3 are accepted: with boundary_scheme replacing minimum_buffer_upwind_order
-                in Oceananigans, BUFFER_ORDER=1 is now the old spelling of BOUNDARY_SCHEME=upwind and
-                keeps the same run name, while a chain truncated above third order is no longer
-                expressible.
-  BOUNDARY_SCHEME
-                The reconstruction the WENO buffer chain terminates in, i.e. what is used in the one
-                boundary-touching cell described under BUFFER_ORDER.
-                  default  Centered(order=2) for tracers, UpwindBiased(order=1) for momentum.
-                  upwind   first-order upwind everywhere the stencil does not fit; = BUFFER_ORDER=1.
-                  ghost_cells
-                           the full-order reconstruction on a stencil whose inactive cells are
-                           completed with ghost values, blending the mirror image of the active run
-                           with its quadratic extrapolation -- unlike "upwind", which pays first
-                           order in every boundary cell. Adds "_ghostcells".
-                  ghost_cells_full
-                           the non-monotone version of ghost_cells 
-                Sets both tracers and momentum. TRACER_BOUNDARY_SCHEME and MOMENTUM_BOUNDARY_SCHEME
-                take the same three values and override it one component at a time, which is how to
-                tell whether the boundary treatment acts through the tracers or through the momentum.
-                A scheme shared by both keeps the plain tag; split, they add "_tr<scheme>" and
-                "_mom<scheme>", so the two halves never collide in one run directory.
-  TRACER_BOUNDARY_SCHEME, MOMENTUM_BOUNDARY_SCHEME
-                BOUNDARY_SCHEME for the tracer and for the momentum reconstructions separately.
-                Default: whatever BOUNDARY_SCHEME is.
+                topography-induced extrema without paying accuracy everywhere. Applies to the
+                tracers; momentum always bottoms out at first-order upwind. Adds "_buford<val>".
   ICE_TILT      Ocean surface tilt term -g grad(eta) in the sea ice momentum equation. The term is
                 f x u_geostrophic, so without it the ice cannot ride the ocean's dynamic topography
                 and the uncompensated Coriolis force is absorbed by the ice-ocean drag.
@@ -187,20 +164,6 @@ Environment variables (physics):
   CB            CATKE bottom-distance coefficient for the shear length scale Cᵇ (default: 0.28).
                 It enters as min(Cˢ*depth, Cᵇ*height_above_bottom, ℓᴺ), so it caps the stable
                 mixing length through the whole column, not only near the bottom.
-  CUNB          CATKE weight on |N²| where the stratification is unstable, Cᵘⁿᵇ (default: 0.0).
-                Continues the stratification length w★/√N² onto the unstable branch instead of
-                letting it go unbounded and fall back to the geometric min(Cˢ*depth, Cᵇ*hab).
-  CF            CATKE weight on the geometric floor where the column is actively convecting and
-                weakly sheared, Cᶠ (default: 1.0 = unmodified). The floor max(ℓ★, ℓʰ) becomes
-                max(ℓʰ, Cᶠ*ℓ★) only where ℓʰ > 0, so CF acts on convecting cells while CUNB acts
-                on parked ones (ℓʰ = 0) — the two populations are disjoint.
-  CF0           S²/|N²| below which the CF weight applies in full, Cᶠ⁰ (default: 1e9, i.e. at every
-                shear). Lower it to restore the floor in sheared cells; the measured separation between
-                convecting and shear-entraining cells is only ~1.4x, so there is no supported setting.
-  CFD           Width in S²/|N²| over which the floor ramps back to full strength, Cᶠᵟ (default: 0.75).
-                Inert while CF0 is large. Must stay finite.
-                THRESHOLD, NOT A KNOB: below Cᵘⁿc/CᵘⁿD = 0.6197 it is exactly a no-op; above it the
-                parked TKE equilibrium disappears and e decays to minimum_tke. Use 1.0, not 0.5.
   CP            CATKE convective penetration length coefficient for tracers Cᵉc (default: 0.112).
                 Sets how far a convective plume entrains below the unstable layer.
   ICE_MELT_MIX  Set to "true" for extra vertical tracer diffusivity where the sea ice is melting into
@@ -261,14 +224,8 @@ Environment variables (physics):
                  all ignore CB)
   BOTTOM_CELLS  Representation of the bathymetry: full (GridFittedBottom, default) or partial
                 (PartialCellBottom). Adds "_pcells" to the run name.
-  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, triad,
-                active_weighted,
-                consistent_area or consistent_area_energy. The consistent_area schemes divide the
-                area-weighted interpolation of the transport by the interpolation of the wet face
-                areas, reconstructing a uniform velocity exactly where face areas differ: next to
-                land, and between cells of unequal thickness. Use them with BOTTOM_CELLS=partial,
-                whose cells vary in thickness from column to column. Adds "_encor",
-                "_awcor", "_cacor" or "_caecor" to the run name.
+  CORIOLIS      Discretization of the Coriolis term: enstrophy (default), energy, triad or
+                active_weighted. Adds "_encor", "_triadcor" or "_awcor" to the run name.
   BBL_KAPPA     Diffusive bottom boundary layer coefficient in m² s⁻¹ (NEMO rn_ahtbbl;
                 its ORCA reference value is 1000). Dense water upslope of a deeper
                 neighbour is diffused along the bottom, mimicking the gravity current a
@@ -328,18 +285,6 @@ Environment variables (physics):
                 the lateral compensation within a year. Salinity only - the year-1
                 resistance change is 100% haline (haline 0.785 against a full 0.783,
                 thermal 0.998). Adds "_labrest<days>" to the run name.
-  ML_TAPER      Set to "true" to ramp the isopycnal-closure slopes linearly to zero
-                from the mixed-layer base to the surface (Danabasoglu et al. 2008;
-                NEMO ldfslp). Off by default; adds "_mltaper" to the run name.
-  BTAPER        Depth in metres of a bottom boundary layer over which the isopycnal
-                closure's slopes are ramped linearly to zero, the mirror of ML_TAPER at
-                the sea floor (Ferrari et al. 2010; NEMO ldfslp tapers at both
-                boundaries). The GM streamfunction is kappa_skew * S, capped by the slope
-                limiter at 800 * 1e-2 = 8 m^2/s, so on a continental slope the
-                parameterized eddy overturning is several Sverdrups pointed up the slope
-                — which is what campaign 32 measures destroying the Denmark Strait
-                overflow product in the Irminger Sea. Off by default (0); adds
-                "_btaper<depth>" to the run name.
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
@@ -375,12 +320,6 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                             which is comparable in size ("true" also accepted)
                   annual    remove a running mean relaxed over a year; keeps the
                             seasonal cycle, spins up over the first ~2 years
-  ISOPYCNAL     Which closure carries GM/Redi. "standard" (default) is
-                IsopycnalSkewSymmetricDiffusivity; "triad" is
-                TriadIsopycnalSkewSymmetricDiffusivity, which evaluates the tensor on the
-                Griffies triad stencil. The triad closure carries no skew flux formulation,
-                so ISOPYCNAL=triad requires SKEW_FORMULATION=diffusive (the default).
-                Adds "_triad" to the run name.
   SKEW_FORMULATION How the GM skew transport is applied. Ignored when KSKEW=0.
                   diffusive  add it to the tracer flux (default)
                   advective  build the eddy-induced velocity and advect with it,
@@ -632,24 +571,9 @@ export KSKEW_JULIA KSYMM_JULIA
 export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
 # ── Boundary reconstruction ───────────────────────────────────────────
-# BUFFER_ORDER=1 is the legacy spelling of BOUNDARY_SCHEME=upwind; both name the same run.
 TRACER_ORDER="${TRACER_ORDER:-7}"
 BUFFER_ORDER="${BUFFER_ORDER:-3}"
-BOUNDARY_SCHEME="${BOUNDARY_SCHEME:-default}"
-
-case "$BUFFER_ORDER" in
-  3) ;;
-  1) if [[ "$BOUNDARY_SCHEME" != "default" && "$BOUNDARY_SCHEME" != "upwind" ]]; then
-         echo "BUFFER_ORDER=1 and BOUNDARY_SCHEME=$BOUNDARY_SCHEME ask for two different boundary reconstructions" >&2
-         exit 1
-     fi
-     BOUNDARY_SCHEME="upwind" ;;
-  *) echo "BUFFER_ORDER must be 1 or 3; a chain truncated above third order is not expressible as a boundary_scheme" >&2
-     exit 1 ;;
-esac
-
-TRACER_BOUNDARY_SCHEME="${TRACER_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
-MOMENTUM_BOUNDARY_SCHEME="${MOMENTUM_BOUNDARY_SCHEME:-$BOUNDARY_SCHEME}"
+[[ -n "${BOUNDARY_SCHEME:-}${TRACER_BOUNDARY_SCHEME:-}${MOMENTUM_BOUNDARY_SCHEME:-}" ]] && { echo "BOUNDARY_SCHEME is replaced by BUFFER_ORDER=1|3" >&2; exit 1; }
 
 # The conserving momentum scheme carries no implicit dissipation, so a run that selects it without
 # VISCOUS_VELOCITY or LAPVISC has nothing damping the grid scale. Refuse rather than run it.
@@ -678,13 +602,7 @@ if [[ "$CONFIG" == "orca" && -n "${VISCOUS_VELOCITY:-}${LAPVISC:-}" && -z "${STR
 fi
 export MOMENTUM_ADVECTION VISCOUS_VELOCITY LAPVISC STRAIT_TAU
 
-for scheme_name in BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME; do
-  case "${!scheme_name}" in
-    default|upwind|ghost_cells|ghost_cells_full) ;;
-    *) echo "$scheme_name must be default, upwind or ghost_cells, ghost_cells_full, got '${!scheme_name}'" >&2; exit 1 ;;
-  esac
-done
-export TRACER_ORDER BUFFER_ORDER BOUNDARY_SCHEME TRACER_BOUNDARY_SCHEME MOMENTUM_BOUNDARY_SCHEME
+export TRACER_ORDER BUFFER_ORDER
 
 # ── Initial-condition preset ──────────────────────────────────────────
 IC_CONDITIONS="${IC_CONDITIONS:-default}"
@@ -716,15 +634,7 @@ RUN_NAME="$CONFIG"
 [[ -n "${SNOW_CATEGORIES:-}" && "${SNOW_CATEGORIES}" != "${ICE_CATEGORIES:-4}" ]] \
                                                  && RUN_NAME="${RUN_NAME}_snowcat${SNOW_CATEGORIES}"
 [[ "${TRACER_ORDER:-7}" != "7" ]]                && RUN_NAME="${RUN_NAME}_tracer${TRACER_ORDER}"
-# A scheme shared by tracers and momentum keeps the undecorated tag, so BUFFER_ORDER=1 still names "_buford1".
-if [[ "$TRACER_BOUNDARY_SCHEME" == "$MOMENTUM_BOUNDARY_SCHEME" ]]; then
-  [[ "$TRACER_BOUNDARY_SCHEME" == "upwind" ]]    && RUN_NAME="${RUN_NAME}_buford1"
-  [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells" ]] && RUN_NAME="${RUN_NAME}_ghostcells"
-  [[ "$TRACER_BOUNDARY_SCHEME" == "ghost_cells_full" ]] && RUN_NAME="${RUN_NAME}_ghostcellsfull"
-else
-  [[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && RUN_NAME="${RUN_NAME}_tr${TRACER_BOUNDARY_SCHEME}"
-  [[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && RUN_NAME="${RUN_NAME}_mom${MOMENTUM_BOUNDARY_SCHEME}"
-fi
+[[ "$BUFFER_ORDER" != "3" ]]                     && RUN_NAME="${RUN_NAME}_buford${BUFFER_ORDER}"
 [[ "${ICE_TILT:-true}" != "true" ]]              && RUN_NAME="${RUN_NAME}_noicetilt"
 [[ -n "${IC_BLEND:-}" ]]                         && RUN_NAME="${RUN_NAME}_icblend${IC_BLEND}"
 [[ "$IC_CONDITIONS" != "default" ]]              && RUN_NAME="${RUN_NAME}_summerice"
@@ -735,16 +645,11 @@ fi
 [[ "${CLOSURE:-catke}" == "kpp"      ]]        && RUN_NAME="${RUN_NAME}_kpp"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
-[[ "${ML_TAPER:-false}" == "true" ]]           && RUN_NAME="${RUN_NAME}_mltaper"
-[[ -n "${BTAPER:-}" ]]                         && RUN_NAME="${RUN_NAME}_btaper${BTAPER}"
-[[ "${ISOPYCNAL:-standard}" == "triad" ]]      && RUN_NAME="${RUN_NAME}_triad"
 [[ -n "${PARTIAL_CELLS:-}" ]] && { echo "PARTIAL_CELLS is replaced by BOTTOM_CELLS=full|partial" >&2; exit 1; }
 [[ "${BOTTOM_CELLS:-full}" == "partial" ]]     && RUN_NAME="${RUN_NAME}_pcells"
 [[ "${CORIOLIS:-enstrophy}" == "energy" ]]                 && RUN_NAME="${RUN_NAME}_encor"
 [[ "${CORIOLIS:-enstrophy}" == "triad" ]]                  && RUN_NAME="${RUN_NAME}_triadcor"
 [[ "${CORIOLIS:-enstrophy}" == "active_weighted" ]]        && RUN_NAME="${RUN_NAME}_awcor"
-[[ "${CORIOLIS:-enstrophy}" == "consistent_area" ]]        && RUN_NAME="${RUN_NAME}_cacor"
-[[ "${CORIOLIS:-enstrophy}" == "consistent_area_energy" ]] && RUN_NAME="${RUN_NAME}_caecor"
 [[ -n "${BBL_KAPPA:-}" ]]                      && RUN_NAME="${RUN_NAME}_bbl${BBL_KAPPA}"
 [[ -n "${BBL_GAMMA:-}" ]]                      && RUN_NAME="${RUN_NAME}_cg${BBL_GAMMA}"
 [[ -n "${OVERFLOW_RESTORE:-}" ]]               && RUN_NAME="${RUN_NAME}_dsow${OVERFLOW_RESTORE}"
@@ -759,10 +664,6 @@ esac
 [[ -n "${BVP_MODE:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpm${BVP_MODE}"
 [[ -n "${BVP_CMIN:-}" ]]                       && RUN_NAME="${RUN_NAME}_bvpc${BVP_CMIN}"
 [[ "${CB:-0.01}" != "0.01" ]]                  && RUN_NAME="${RUN_NAME}_cb${CB}"
-[[ -n "${CUNB:-}" ]] && [[ "${CUNB}" != "0.0" ]] && RUN_NAME="${RUN_NAME}_cunb${CUNB}"
-[[ -n "${CF:-}" ]]   && [[ "${CF}" != "1.0" ]]   && RUN_NAME="${RUN_NAME}_cf${CF}"
-[[ -n "${CF0:-}" ]]  && [[ "${CF0}" != "1e9" ]]  && RUN_NAME="${RUN_NAME}_cf0${CF0}"
-[[ -n "${CFD:-}" ]]  && [[ "${CFD}" != "0.75" ]] && RUN_NAME="${RUN_NAME}_cfd${CFD}"
 [[ -n "${CP:-}" ]]                             && RUN_NAME="${RUN_NAME}_cp${CP}"
 [[ "${ICE_MELTWATER_TB:-true}" != "true" ]]          && RUN_NAME="${RUN_NAME}_nomeltTb"
 [[ "${ICE_MELT_MIX:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_icemix"
@@ -898,10 +799,6 @@ JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 FORCING_DIR="${FORCING_DIR:-${DATA%/}/forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-0.01}"
-CUNB="${CUNB:-}"
-CF="${CF:-}"
-CF0="${CF0:-}"
-CFD="${CFD:-}"
 CP="${CP:-}"
 ICE_MELTWATER_TB="${ICE_MELTWATER_TB:-true}"
 ICE_MELT_MIX="${ICE_MELT_MIX:-false}"
@@ -953,14 +850,6 @@ fi
 
 CB_KWARG=""
 [[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
-
-CUNB_KWARG=""
-[[ -n "$CUNB" ]] && CUNB_KWARG="Cᵘⁿᵇ = ${CUNB},"
-
-CF_KWARG=""
-[[ -n "$CF" ]]  && CF_KWARG="Cᶠ = ${CF},"
-[[ -n "$CF0" ]] && CF_KWARG="${CF_KWARG} Cᶠ⁰ = ${CF0},"
-[[ -n "$CFD" ]] && CF_KWARG="${CF_KWARG} Cᶠᵟ = ${CFD},"
 
 CP_KWARG=""
 [[ -n "$CP" ]] && CP_KWARG="Cᵉc = ${CP},"
@@ -1107,13 +996,6 @@ CLOSURE_KWARG=""
 VELOCITY_KWARG=""
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && VELOCITY_KWARG="velocity_formulation = :wind,"
 
-ML_TAPER_KWARG=""
-[[ "${ML_TAPER:-false}" == "true" ]] && ML_TAPER_KWARG="mixed_layer_tapering = true,"
-
-BTAPER="${BTAPER:-}"
-BTAPER_KWARG=""
-[[ -n "$BTAPER" ]] && BTAPER_KWARG="bottom_layer_tapering_depth = ${BTAPER},"
-
 MAXDZ_KWARG=""
 [[ -n "${MAXDZ:-}" ]] && MAXDZ_KWARG="Δzmax = ${MAXDZ},"
 
@@ -1131,9 +1013,9 @@ case "${BOTTOM_CELLS:-full}" in
 esac
 
 case "${CORIOLIS:-enstrophy}" in
-    enstrophy|energy|triad|active_weighted|consistent_area|consistent_area_energy)
+    enstrophy|energy|triad|active_weighted)
         CORIOLIS_KWARG="coriolis_scheme = :${CORIOLIS:-enstrophy}," ;;
-    *) echo "CORIOLIS must be enstrophy|energy|triad|active_weighted|consistent_area|consistent_area_energy, got '${CORIOLIS}'" >&2; exit 1 ;;
+    *) echo "CORIOLIS must be enstrophy|energy|triad|active_weighted, got '${CORIOLIS}'" >&2; exit 1 ;;
 esac
 
 BBL_KWARG=""
@@ -1171,18 +1053,9 @@ SEA_ICE_KWARG="${SEA_ICE_KWARG}thickness_categories = ${ICE_CATEGORIES},"
 [[ -n "$ICE_PSTAR" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_compressive_strength = ${ICE_PSTAR},"
 ICE_SALINITY="${ICE_SALINITY:-}"
 [[ -n "$ICE_SALINITY" ]] && SEA_ICE_KWARG="${SEA_ICE_KWARG}ice_salinity = ${ICE_SALINITY},"
-ISOPYCNAL="${ISOPYCNAL:-standard}"
-case "$ISOPYCNAL" in
-    standard|triad) ;;
-    *) echo "ISOPYCNAL must be 'standard' or 'triad', got '$ISOPYCNAL'" >&2; exit 1 ;;
-esac
-ISOPYCNAL_KWARG=""
-[[ "$ISOPYCNAL" == "triad" ]] && ISOPYCNAL_KWARG="isopycnal_formulation = :triad,"
-
 ADVECTION_KWARG=""
 [[ "$TRACER_ORDER" != "7" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_advection_order = ${TRACER_ORDER},"
-[[ "$TRACER_BOUNDARY_SCHEME" != "default" ]]   && ADVECTION_KWARG="${ADVECTION_KWARG}tracer_boundary_scheme = :${TRACER_BOUNDARY_SCHEME},"
-[[ "$MOMENTUM_BOUNDARY_SCHEME" != "default" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}momentum_boundary_scheme = :${MOMENTUM_BOUNDARY_SCHEME},"
+[[ "$BUFFER_ORDER" != "3" ]] && ADVECTION_KWARG="${ADVECTION_KWARG}minimum_buffer_upwind_order = ${BUFFER_ORDER},"
 ICE_DRAGREF="${ICE_DRAGREF:-6}"
 if [[ "$ICE_DRAGREF" == "none" ]]; then
   SEA_ICE_KWARG="${SEA_ICE_KWARG}sea_ice_ocean_drag_reference_depth = nothing,"
@@ -1221,8 +1094,6 @@ sim = omip_simulation(:${CONFIG};
                       ${BIHVISC_KWARG}
                       ${BIHDIV_KWARG}
                       ${CB_KWARG}
-                      ${CUNB_KWARG}
-                      ${CF_KWARG}
                       ${CP_KWARG}
                       ${ICE_MELTWATER_KWARG}
                       ${ICE_MELT_KWARG}
@@ -1231,8 +1102,6 @@ sim = omip_simulation(:${CONFIG};
                       ${FLUX_KWARG}
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
-                      ${ML_TAPER_KWARG}
-                      ${BTAPER_KWARG}
                       ${MAXDZ_KWARG}
                       ${NUMERICS_KWARG}
                       ${VISCOUS_VELOCITY_KWARG}
@@ -1260,7 +1129,6 @@ sim = omip_simulation(:${CONFIG};
                       ${RIVER_KWARG}
                       ${ADVECTION_KWARG}
                       ${SKEW_FORMULATION_KWARG}
-                      ${ISOPYCNAL_KWARG}
                       ${BVP_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",

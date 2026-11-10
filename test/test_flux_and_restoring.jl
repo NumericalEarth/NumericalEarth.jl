@@ -1,7 +1,6 @@
 include("runtests_setup.jl")
 
 using CUDA
-using Oceananigans.Units: minute
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, net_flux
 using NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes
@@ -92,7 +91,7 @@ end
     end
 end
 
-struct ZonalSurfaceSalinityRestoring{FT} <: Function
+struct ZonalSurfaceSalinityRestoring{FT}
     rate :: FT
     target :: FT
     variation :: FT
@@ -119,7 +118,7 @@ end
         restoring = ConservativeSurfaceFluxRestoring(raw_restoring, grid)
 
         ocean = ocean_simulation(grid;
-                                 Δt = 1minute,
+                                 Δt = Oceananigans.Units.minute,
                                  closure = nothing,
                                  momentum_advection = nothing,
                                  tracer_advection = nothing,

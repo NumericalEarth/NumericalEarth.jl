@@ -1,52 +1,16 @@
 using ClimaSeaIce: SeaIceThermodynamics
-using ClimaSeaIce.SeaIceDynamics: SemiImplicitStress
-using Oceananigans.Fields: Field, compute!
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
                               compute_atmosphere_land_fluxes!,
-                              compute_sea_ice_ocean_fluxes!
+                              compute_sea_ice_ocean_fluxes!,
+                              update_surface_temperature!
 
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
 # `coupled_model.radiation === nothing`).
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
-
-# The drag reference velocities live in the sea-ice momentum equation's bottom stress, which
-# `_compute_sea_ice_ocean_stress!` already reaches by the same path. `compute!` is a no-op on a plain
-# field, so a run that references the topmost cell pays nothing.
-function refresh_drag_reference_velocities!(coupled_model::EarthSystemModel)
-    sea_ice = coupled_model.sea_ice
-    sea_ice isa Simulation || return nothing
-    dynamics = sea_ice.model.dynamics
-    isnothing(dynamics) && return nothing
-    refresh_drag_reference!(dynamics.external_momentum_stresses.bottom)
-    return nothing
-end
-
-refresh_drag_reference!(stress) = nothing
-
-function refresh_drag_reference!(stress::SemiImplicitStress)
-    recompute_operand!(stress.uₑ₀)
-    recompute_operand!(stress.vₑ₀)
-    return nothing
-end
-
-recompute_operand!(field) = nothing
-recompute_operand!(field::Field) = isnothing(field.operand) ? nothing : (compute!(field); nothing)
-
-# The sea surface height the tilt term reads mirrors the ocean's own displacement, which ClimaSeaIce
-# copies onto the ice grid but never refills from the ocean. Runs on a ClimaSeaIce without the
-# free-surface term carry no such field and pay nothing.
-function refresh_ocean_surface_height!(coupled_model::EarthSystemModel)
-    sea_ice = coupled_model.sea_ice
-    sea_ice isa Simulation || return nothing
-    dynamics = sea_ice.model.dynamics
-    (isnothing(dynamics) || !hasproperty(dynamics, :free_surface)) && return nothing
-    ocean_surface_height!(dynamics.free_surface.η₀, coupled_model.ocean)
-    return nothing
-end
 
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
@@ -56,6 +20,8 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     land       = coupled_model.land
     sea_ice    = coupled_model.sea_ice
     ocean      = coupled_model.ocean
+
+    compute_land_fluxes!(coupled_model, Δt)
 
     !isnothing(radiation)  && time_step!(radiation, Δt)
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
@@ -70,6 +36,16 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     tick!(coupled_model.clock, Δt)
     update_state!(coupled_model)
 
+    return nothing
+end
+
+initialize_land_surface!(land) = nothing
+
+function compute_land_fluxes!(coupled_model, Δt)
+    compute_atmosphere_land_fluxes!(coupled_model, Δt)
+    update_net_fluxes!(coupled_model, coupled_model.land)
+    update_net_fluxes!(coupled_model, coupled_model.atmosphere)
+    apply_air_land_radiative_fluxes!(coupled_model)
     return nothing
 end
 
@@ -99,32 +75,34 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     InterfaceComputations.correct_state!(exchanger.sea_ice,    grid)
     InterfaceComputations.correct_state!(exchanger.ocean,      grid)
 
-    # Phase 1.6: refresh the sea ice-ocean drag reference velocities from the new ocean state. The
-    # quadratic drag brakes the ice against a boundary-layer average rather than the topmost cell when
-    # `sea_ice_ocean_drag_reference_depth` is set; a no-op otherwise.
-    refresh_drag_reference_velocities!(coupled_model)
-
-    # Phase 1.7: refresh the sea surface height the sea-ice surface-tilt term reads; a no-op when the
-    # ice carries no tilt term.
-    refresh_ocean_surface_height!(coupled_model)
-
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
     compute_atmosphere_sea_ice_fluxes!(coupled_model)
-    compute_atmosphere_land_fluxes!(coupled_model)
     compute_sea_ice_ocean_fluxes!(coupled_model)
+
+    # Phase 2.5: blend the per-surface skin temperatures over the surface partition
+    # (no-op unless the model has both land and ocean interfaces)
+    update_surface_temperature!(coupled_model)
 
     # Phase 3: assemble net component fluxes (turbulent only)
     update_net_fluxes!(coupled_model, radiation)
     update_net_fluxes!(coupled_model, atmosphere)
-    update_net_fluxes!(coupled_model, land)
     update_net_fluxes!(coupled_model, sea_ice)
     update_net_fluxes!(coupled_model, ocean)
 
     # Phase 4: add radiative contributions on top
     apply_air_sea_radiative_fluxes!(coupled_model)
-    apply_air_land_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
 
+    maybe_initialize_land_surface!(coupled_model)
+
+    return nothing
+end
+
+function maybe_initialize_land_surface!(coupled_model)
+    if coupled_model.clock.iteration == 0
+        compute_land_fluxes!(coupled_model, 0)
+        initialize_land_surface!(coupled_model.land)
+    end
     return nothing
 end

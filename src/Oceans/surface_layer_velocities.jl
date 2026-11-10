@@ -1,66 +1,43 @@
+using Oceananigans.Grids: peripheral_node
+using Oceananigans.Operators: Δz
+
 #####
 ##### Reference velocities for the sea ice-ocean drag
 #####
 
-"""
-$(TYPEDSIGNATURES)
-
-Thickness-weighted mean `u` over the top `H` metres at `(i, j)`, falling back to the topmost cell where
-the column carries no wet water above `H`. Dry cells contribute nothing, so a shelf column shallower
-than `H` averages only the water it has.
-"""
-@inline function surface_layer_uᶠᶜᵃ(i, j, k, grid, u, H)
+# Thickness-weighted mean over the top `H` meters of the wet column, or the topmost cell where the column holds no water
+@inline function surface_layer_average(i, j, k, grid, ℓx, ℓy, c, H)
     kᴺ = size(grid, 3)
-    ∫u = zero(grid)
+    ∫c = zero(grid)
     ∫z = zero(grid)
     z  = zero(grid)
     for k′ = kᴺ:-1:1
-        Δz = Δzᶠᶜᶜ(i, j, k′, grid) * !inactive_node(i, j, k′, grid, Face(), Center(), Center())
-        δ  = min(Δz, max(0, H - z))
-        ∫u += δ * @inbounds u[i, j, k′]
+        Δzₖ = Δz(i, j, k′, grid, ℓx, ℓy, Center()) * !peripheral_node(i, j, k′, grid, ℓx, ℓy, Center())
+        δ   = min(Δzₖ, max(zero(grid), H - z))
+        ∫c += δ * @inbounds c[i, j, k′]
         ∫z += δ
-        z  += Δz
+        z  += Δzₖ
     end
-    return ifelse(∫z > 0, ∫u / ∫z, @inbounds u[i, j, kᴺ])
+    return ifelse(∫z > 0, ∫c / ∫z, @inbounds c[i, j, kᴺ])
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-Thickness-weighted mean `v` over the top `H` metres at `(i, j)`. See [`surface_layer_uᶠᶜᵃ`](@ref).
-"""
-@inline function surface_layer_vᶜᶠᵃ(i, j, k, grid, v, H)
-    kᴺ = size(grid, 3)
-    ∫v = zero(grid)
-    ∫z = zero(grid)
-    z  = zero(grid)
-    for k′ = kᴺ:-1:1
-        Δz = Δzᶜᶠᶜ(i, j, k′, grid) * !inactive_node(i, j, k′, grid, Center(), Face(), Center())
-        δ  = min(Δz, max(0, H - z))
-        ∫v += δ * @inbounds v[i, j, k′]
-        ∫z += δ
-        z  += Δz
-    end
-    return ifelse(∫z > 0, ∫v / ∫z, @inbounds v[i, j, kᴺ])
-end
-
-# Resolves the ambiguity between the generic `(ocean, ::Nothing)` fallback and this module's
-# `(::OceananigansModelSimulations, reference_depth)`: neither is more specific than the other.
-EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimulations, ::Nothing) =
-    ocean_surface_velocities(ocean)
+@inline surface_layer_uᶠᶜᵃ(i, j, k, grid, u, H) = surface_layer_average(i, j, k, grid, Face(), Center(), u, H)
+@inline surface_layer_vᶜᶠᵃ(i, j, k, grid, v, H) = surface_layer_average(i, j, k, grid, Center(), Face(), v, H)
 
 function EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimulations, reference_depth)
+    isnothing(reference_depth) && return ocean_surface_velocities(ocean)
+
     grid = ocean.model.grid
     u, v = ocean.model.velocities.u, ocean.model.velocities.v
     H = convert(eltype(grid), reference_depth)
 
-    x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
-    y_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+    u_boundary_conditions = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    v_boundary_conditions = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
 
     uˢˡ = Field(KernelFunctionOperation{Face, Center, Nothing}(surface_layer_uᶠᶜᵃ, grid, u, H);
-                boundary_conditions = x_velocity_bcs)
+                boundary_conditions = u_boundary_conditions)
     vˢˡ = Field(KernelFunctionOperation{Center, Face, Nothing}(surface_layer_vᶜᶠᵃ, grid, v, H);
-                boundary_conditions = y_velocity_bcs)
+                boundary_conditions = v_boundary_conditions)
 
     compute!(uˢˡ)
     compute!(vˢˡ)

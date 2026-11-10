@@ -117,7 +117,7 @@ end
 @testset "Prescribed atmosphere tracers at any horizontal location" begin
     for arch in test_architectures
         atmosphere_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 1), longitude = (0, 90), latitude = (-40, 40), z = (0, 1))
-        grid = LatitudeLongitudeGrid(arch; size = (10, 12, 1), longitude = (10, 80), latitude = (-30, 30), z = (-100, 0), halo = (6, 6, 3))
+        grid = LatitudeLongitudeGrid(arch; size = (10, 12, 1), longitude = (10, 80), latitude = (-30, 30), z = (-100, 0), halo = (6, 6, 4))
 
         # Tracers have their own time axis, twice as long as the atmosphere's
         function linear_tracer(LX, LY, f)
@@ -154,5 +154,27 @@ end
         @test Array(interior(state.cˣ,  :, :, 1)) ≈ factor .* (3λ .+ 0φ')
         @test Array(interior(state.cʸ,  :, :, 1)) ≈ factor .* (0λ .+ φ' .+ 50)
         @test Array(interior(state.cʸᶠ, :, :, 1)) ≈ factor .* (0λ .+ 2φ')
+    end
+end
+
+@testset "Prescribed atmosphere fields on their own time axes" begin
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch; size = (10, 10, 1), longitude = (10, 20), latitude = (30, 40), z = (-100, 0), halo = (6, 6, 4))
+
+        # Rain is sampled half an interval before the other fields, as ERA5 accumulations are
+        rain_times = [-1800, 1800.0]
+        rain = FieldTimeSeries{Center, Center, Nothing}(grid, rain_times)
+        for n in 1:2
+            set!(rain[n], 1e-9 * rain_times[n])
+        end
+
+        precipitation_flux = NumericalEarth.Atmospheres.PrescribedPrecipitationFlux(; rain)
+        atmosphere = PrescribedAtmosphere(grid, [0, 3600.0]; precipitation_flux)
+        ocean = ocean_simulation(grid, closure = nothing)
+        model = OceanOnlyModel(ocean; atmosphere, radiation = nothing)
+        time_step!(model, 60)
+
+        Jʳ = Array(interior(model.interfaces.exchanger.atmosphere.state.Jʳⁿ))
+        @test all(Jʳ .≈ 1e-9 * 60)
     end
 end

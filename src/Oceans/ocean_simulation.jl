@@ -353,10 +353,10 @@ override the defaults on a per-field basis.
 
 ## Keyword Arguments
 
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`.
   Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
-  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since
   Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to the maximum stable timestep estimated from the `grid`.
 - `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`.
@@ -388,7 +388,8 @@ override the defaults on a per-field basis.
 - `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
-- `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `radiative_forcing`: Additional temperature forcing; merged into `forcing`. A `CATKEVerticalDiffusivity` accounts for
+  it in its convective scales.
 - `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
@@ -531,8 +532,8 @@ function hydrostatic_ocean_simulation(grid;
 
     # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
-    assumed_freshwater_tracer_content = 
-        NamedTuple(name => name === :T ? 
+    assumed_freshwater_tracer_content =
+        NamedTuple(name => name === :T ?
                            freshwater_heat_content : default_freshwater_tracer_content(Val(name), biogeochemistry)
                    for name in tracers)
     freshwater_tracer_content = merge(assumed_freshwater_tracer_content, freshwater_tracer_content)

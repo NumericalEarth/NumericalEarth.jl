@@ -333,7 +333,6 @@ for arch in test_architectures
         @test !(interior(ℓᵐ) ≈ interior(ℓᵐreg))
         @test !(interior(d) ≈ interior(dreg))
 
-        # Scalar properties sample through property_value like Fields do.
         compute_aerodynamic_roughness!(ℓᵐ, d, MorphometricRoughness(),
                                     (; plan_area_index = λᵖ, mean_building_height = 30.0,
                                         building_height_deviation = 25.0, maximum_building_height = 250.0,
@@ -350,7 +349,6 @@ for arch in test_architectures
         cell = (; plan_area_index = 0.3, mean_building_height = 15.0, latitude = 51.5)
         @test aerodynamic_parameters(closure, cell) == aerodynamic_parameters(closure, 0.3, 15.0)
 
-        # The shared grid builder samples a Field and a uniform scalar property via property_value.
         grid = LatitudeLongitudeGrid(arch, Float64; size = (4, 4),
                                     longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
                                     topology = (Bounded, Bounded, Flat))
@@ -363,4 +361,370 @@ for arch in test_architectures
         @test all(≈(ℓᵐref), interior(ℓᵐ))
         @test all(≈(dref), interior(d))
     end
+end
+
+#####
+##### Dataset-level evaluation: a dataset supplying measured morphometry selects the measured closure.
+#####
+
+struct PrescribedBuildings{P}
+    properties :: P
+    reads :: Base.RefValue{Int}
+end
+
+PrescribedBuildings(properties) = PrescribedBuildings(properties, Ref(0))
+
+function NumericalEarth.Lands.building_morphometry(grid, buildings::PrescribedBuildings)
+    buildings.reads[] += 1
+    return map(value -> set!(Field{Center, Center, Nothing}(grid), value), buildings.properties)
+end
+
+@testset "Dataset-level urban roughness from measured morphometry on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (2, 2),
+                                 longitude = (0, 0.2), latitude = (0, 0.2),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = MorphometricRoughness()
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 25.0,
+                                       building_height_deviation = 8.0, maximum_building_height = 60.0,
+                                       frontal_area_index = 0.3, gross_building_height = 10.0))
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood = 5000)
+    @test keys(fields) == (:momentum_roughness_length, :zero_plane_displacement,
+                           :urban_momentum_roughness_length, :urban_zero_plane_displacement,
+                           :urban_fraction, :building_height)
+
+    ℓᵐ, d = aerodynamic_parameters(closure, 0.4, 25.0, 8.0, 60.0, 0.3)
+    @test all(interior(fields.momentum_roughness_length, :, :, 1) .≈ ℓᵐ)
+    @test all(interior(fields.zero_plane_displacement, :, :, 1) .≈ d)
+    @test all(interior(fields.urban_fraction, :, :, 1) .≈ 1)
+    @test all(interior(fields.building_height, :, :, 1) .≈ 25)
+
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    @test all(Array(fields.momentum_roughness_length[0:Nx+1, 1:Ny, 1]) .≈ ℓᵐ)
+    @test all(Array(fields.momentum_roughness_length[1:Nx, 0:Ny+1, 1]) .≈ ℓᵐ)
+end
+
+@testset "Multiple closures share morphometry on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (2, 2), longitude = (0, 0.2), latitude = (0, 0.2),
+                                 topology = (Bounded, Bounded, Flat))
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 25.0))
+    closures = (; variable = MorphometricRoughness(), uniform = uniform_height_closure())
+    results = urban_roughness(grid, buildings; closure = closures, surface_layer_height = 100, neighborhood = 5000)
+    @test buildings.reads[] == 1
+    @test keys(results) == keys(closures)
+    for name in keys(closures)
+        roughness, displacement = aerodynamic_parameters(closures[name], 0.4, 25.0)
+        @test all(interior(results[name].momentum_roughness_length) .≈ roughness)
+        @test all(interior(results[name].zero_plane_displacement) .≈ displacement)
+    end
+end
+
+@testset "Dataset-level urban roughness preserves the area-mean neutral drag on $arch" for arch in test_architectures
+    # One grid cell holding two equal-area neighborhoods of different density and height.
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (1, 1),
+                                 longitude = (0, 0.02), latitude = (-0.005, 0.005),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = uniform_height_closure()
+    z = 100
+    western(western_value, eastern_value) = (λ, φ) -> λ < 0.01 ? western_value : eastern_value
+    buildings = PrescribedBuildings((; plan_area_index = western(0.2, 0.8), mean_building_height = western(10.0, 50.0)))
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = z, neighborhood = grid.radius * deg2rad(0.01))
+
+    drag(ℓᵐ, d) = (closure.von_karman_constant / log((z - d) / ℓᵐ))^2
+    ℓ₁, d₁ = aerodynamic_parameters(closure, 0.2, 10.0)
+    ℓ₂, d₂ = aerodynamic_parameters(closure, 0.8, 50.0)
+    C₁, C₂ = drag(ℓ₁, d₁), drag(ℓ₂, d₂)
+    ℓᵐ = only(Array(interior(fields.momentum_roughness_length)))
+    d  = only(Array(interior(fields.zero_plane_displacement)))
+
+    @test drag(ℓᵐ, d) ≈ (C₁ + C₂) / 2
+    @test d ≈ (C₁ * d₁ + C₂ * d₂) / (C₁ + C₂)
+    @test only(Array(interior(fields.building_height))) ≈ (0.2 * 10 + 0.8 * 50) / (0.2 + 0.8)
+    @test only(Array(interior(fields.urban_fraction))) == 1
+end
+
+@testset "On a grid finer than the neighborhood the closure sees the pooled neighborhood on $arch" for arch in test_architectures
+    # 100 m cells alternating dense-tall and sparse-low; a 3.5-cell neighborhood pools three cells
+    # and a quarter of each next one.
+    Nx = 8
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (Nx, 1),
+                                 longitude = (0, Nx * 0.0009), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    neighborhood = 3.5 * grid.radius * deg2rad(0.0009)
+    closure = MorphometricRoughness()
+    alternating(odd_value, even_value) = (λ, φ) -> ifelse(isodd(floor(Int, λ / 0.0009) + 1), odd_value, even_value)
+    properties = (; plan_area_index = alternating(0.6, 0.2), mean_building_height = alternating(30.0, 10.0))
+    measured_properties = (; properties..., building_height_deviation = alternating(0.0, 0.0),
+                             maximum_building_height = alternating(30.0, 10.0), frontal_area_index = alternating(0.5, 0.1))
+
+    for measured in (false, true)
+        buildings = PrescribedBuildings(measured ? measured_properties : properties)
+        fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood)
+        roughness    = Array(interior(fields.momentum_roughness_length, :, 1, 1))
+        displacement = Array(interior(fields.zero_plane_displacement, :, 1, 1))
+        height       = Array(interior(fields.building_height, :, 1, 1))
+
+        for i in 1:Nx
+            dense = isodd(i) ? 1.5 : 2
+            sparse = 3.5 - dense
+            built  = 0.6dense + 0.2sparse
+            λᵖ = built / 3.5
+            h  = (0.6 * 30 * dense + 0.2 * 10 * sparse) / built
+            σʰ = sqrt((0.6 * 30^2 * dense + 0.2 * 10^2 * sparse) / built - h^2)
+            λᶠ = (0.5dense + 0.1sparse) / 3.5
+            ℓᵐ, d = measured ? aerodynamic_parameters(closure, λᵖ, h, σʰ, 30.0, λᶠ) : aerodynamic_parameters(closure, λᵖ, h)
+            @test roughness[i] ≈ ℓᵐ
+            @test displacement[i] ≈ d
+            @test height[i] ≈ h
+        end
+    end
+end
+
+@testset "Neighborhood maximum height comes from cells centered in the neighborhood on $arch" for arch in test_architectures
+    # The middle neighborhood, 1.2 cells wide, overlaps a tenth of the eastern cell and its 60 m tower.
+    grid = LatitudeLongitudeGrid(arch, Float64; size = (3, 1),
+                                 longitude = (0, 0.0027), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    closure = MorphometricRoughness()
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 20.0,
+                                       building_height_deviation = 0.0, frontal_area_index = 0.3,
+                                       maximum_building_height = (λ, φ) -> λ > 0.0018 ? 60.0 : 20.0))
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100,
+                             neighborhood = 1.2 * grid.radius * deg2rad(0.0009))
+    _, d = aerodynamic_parameters(closure, 0.4, 20.0, 0.0, 20.0, 0.3)
+    @test Array(interior(fields.zero_plane_displacement))[2, 1, 1] ≈ d
+end
+
+@testset "Urban neighborhoods are independent of domain edges on $arch" for arch in test_architectures
+    buildings = PrescribedBuildings((; plan_area_index = 0.4,
+                                       mean_building_height = (λ, φ) -> 20 + 1000λ + 500φ))
+    for FT in (Float32, Float64)
+        grid = LatitudeLongitudeGrid(arch, FT; size = (3, 3),
+                                     longitude = (0, 0.003), latitude = (0, 0.003),
+                                     topology = (Bounded, Bounded, Flat))
+        larger_grid = LatitudeLongitudeGrid(arch, FT; size = (7, 7),
+                                            longitude = (-0.002, 0.005), latitude = (-0.002, 0.005),
+                                            topology = (Bounded, Bounded, Flat))
+        fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = 500)
+        larger_fields = urban_roughness(larger_grid, buildings; surface_layer_height = 100, neighborhood = 500)
+        for name in keys(fields)
+            @test Array(interior(fields[name])) ≈ Array(interior(larger_fields[name]))[3:5, 3:5, :]
+        end
+    end
+end
+
+patch_buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> 0.018 < λ < 0.027 ? 0.6 : 0.0,
+                                         mean_building_height = (λ, φ) -> 0.018 < λ < 0.027 ? 20.0 : NaN))
+
+for arch in test_architectures
+    @testset "Stretched grids resolve the urban patch on $arch" begin
+        grid = LatitudeLongitudeGrid(arch; size = (3, 1, 1),
+                                     longitude = [0, 0.009, 0.018, 0.918], latitude = (0, 0.009),
+                                     z = (0, 10), topology = (Bounded, Bounded, Bounded))
+        fields = urban_roughness(grid, patch_buildings; surface_layer_height = 100, neighborhood = grid.radius * deg2rad(0.009))
+        @test Array(interior(fields.urban_fraction))[:, 1, 1] ≈ [0, 0, 0.01]
+        height = Array(interior(fields.building_height))[:, 1, 1]
+        @test all(isnan, height[1:2])
+        @test height[3] ≈ 20
+        closure = MorphometricRoughness()
+        urban_roughness_length, urban_displacement = aerodynamic_parameters(closure, 0.6, 20)
+        @test Array(interior(fields.urban_momentum_roughness_length))[end] ≈ urban_roughness_length
+        @test Array(interior(fields.urban_zero_plane_displacement))[end] ≈ urban_displacement
+
+        # The whole cell has the area-mean neutral drag of its urban part and its bare-soil remainder.
+        drag(ℓᵐ, d) = inv(log((100 - d) / ℓᵐ))^2
+        urban_drag = drag(urban_roughness_length, urban_displacement)
+        bare_drag = drag(aerodynamic_parameters(closure, 0, 0)...)
+        f = Array(interior(fields.urban_fraction))[:, 1, 1]
+        C = f .* urban_drag .+ (1 .- f) .* bare_drag
+        ℓᵐ = Array(interior(fields.momentum_roughness_length))[:, 1, 1]
+        d = Array(interior(fields.zero_plane_displacement))[:, 1, 1]
+        @test drag.(ℓᵐ, d) ≈ C
+        @test d ≈ f .* urban_drag .* urban_displacement ./ C
+
+        water = urban_roughness(grid, patch_buildings; surface_layer_height = 100, unbuilt = (1e-4, 0),
+                                neighborhood = grid.radius * deg2rad(0.009))
+        @test Array(interior(water.momentum_roughness_length))[1:2, 1, 1] ≈ [1e-4, 1e-4]
+    end
+end
+
+@testset "Empty cells with missing height do not dilute urban height" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (8, 1),
+                                 longitude = (0.0171, 0.0243), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    fields = urban_roughness(grid, patch_buildings; surface_layer_height = 100, neighborhood = 500)
+    @test all(isfinite, interior(fields.momentum_roughness_length))
+    @test all(≈(20), interior(fields.building_height))
+end
+
+@testset "Missing building heights use measured built area on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (3, 1), longitude = (0, 0.0027), latitude = (0, 0.0009),
+                                 topology = (Bounded, Bounded, Flat))
+    neighborhood = 6 * grid.radius * deg2rad(0.0009)
+    height(λ, φ) = ifelse(mod(floor(Int, λ / 0.0009), 3) == 0, NaN, 20.0)
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = height))
+    fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood)
+    roughness, displacement = aerodynamic_parameters(MorphometricRoughness(), 0.4, 20.0)
+    @test all(interior(fields.building_height) .≈ 20)
+    @test all(interior(fields.momentum_roughness_length) .≈ roughness)
+    @test all(interior(fields.zero_plane_displacement) .≈ displacement)
+end
+
+@testset "Urban neighborhoods wrap across periodic longitude on $arch" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (4, 1), longitude = (0, 360), latitude = (-30, 30),
+                                 topology = (Periodic, Bounded, Flat))
+    height(λ, φ) = 10 + 10floor(Int, mod(λ, 360) / 90)
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = height))
+    closure = uniform_height_closure()
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100,
+                             neighborhood = grid.radius * deg2rad(120))
+    # Each 120° neighborhood covers its 90° cell and 15° of each neighboring cell.
+    expected_height = [15, 20, 30, 35]
+    @test vec(Array(interior(fields.building_height))) ≈ expected_height
+    @test vec(Array(interior(fields.momentum_roughness_length))) ≈
+          [roughness_at_point(0.4, h; closure) for h in expected_height]
+
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 20.0))
+    fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100,
+                             neighborhood = grid.radius * deg2rad(45))
+    @test all(interior(fields.momentum_roughness_length) .≈ roughness_at_point(0.4, 20; closure))
+    @test all(interior(fields.building_height) .≈ 20)
+end
+
+@testset "Urban neighborhoods clip at the poles on $arch with $FT" for arch in test_architectures, FT in (Float32, Float64)
+    buildings = PrescribedBuildings((; plan_area_index = 0.4, mean_building_height = 20.0))
+    roughness, displacement = aerodynamic_parameters(MorphometricRoughness(), 0.4, 20.0)
+    for hemisphere in (-1, 1), latitude in ((89.99, 90), (89.999, 89.9995))
+        latitude = extrema(hemisphere .* latitude)
+        grid = LatitudeLongitudeGrid(arch, FT; size = (2, 2), longitude = (0, 10), latitude,
+                                     topology = (Bounded, Bounded, Flat))
+        fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = 1000)
+        @test all(interior(fields.momentum_roughness_length) .≈ FT(roughness))
+        @test all(interior(fields.zero_plane_displacement) .≈ FT(displacement))
+        @test all(interior(fields.building_height) .≈ 20)
+        @test all(interior(fields.urban_fraction) .≈ 1)
+    end
+end
+
+@testset "Urban area uses spherical cell areas" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (1, 1), longitude = (0, 1), latitude = (0, 80),
+                                 topology = (Bounded, Bounded, Flat))
+    buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> φ < 60 ? 0.5 : 0.0, mean_building_height = 20.0))
+    fields = urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = grid.radius * deg2rad(20))
+    @test only(interior(fields.urban_fraction)) ≈ sind(60) / sind(80)
+    @test only(interior(fields.building_height)) ≈ 20
+end
+
+for arch in test_architectures
+    @testset "Invalid urban neighborhoods on $arch" begin
+        grid = LatitudeLongitudeGrid(arch; size = (1, 1), longitude = (0, 0.02), latitude = (0, 0.01),
+                                     topology = (Bounded, Bounded, Flat))
+        properties = (; plan_area_index = 0.4,
+                        mean_building_height = (λ, φ) -> ifelse(λ < 0.01, 20.0, NaN))
+        for measured in (false, true)
+            inputs = measured ? (; properties..., building_height_deviation = 0.0,
+                                    maximum_building_height = 20.0, frontal_area_index = 0.3) : properties
+            @test_throws ArgumentError urban_roughness(grid, PrescribedBuildings(inputs);
+                                                       surface_layer_height = 100, neighborhood = 1100)
+        end
+        buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> ifelse(λ < 0.01, 0.4, NaN),
+                                           mean_building_height = 20.0))
+        @test_throws ArgumentError urban_roughness(grid, buildings; surface_layer_height = 100, neighborhood = 1100)
+    end
+
+    @testset "Missing morphometry in unbuilt cells on $arch" begin
+        grid = LatitudeLongitudeGrid(arch; size = (3, 1), longitude = (0, 0.0027), latitude = (0, 0.0009),
+                                     topology = (Bounded, Bounded, Flat))
+        neighborhood = 5 * grid.radius * deg2rad(0.0009)
+        built(value) = (λ, φ) -> λ < 0.0009 ? NaN : value
+        buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> λ < 0.0009 ? 0.0 : 0.4,
+                                           mean_building_height = built(20.0), building_height_deviation = built(0.0),
+                                           maximum_building_height = built(20.0), frontal_area_index = built(0.3)))
+        closure = uniform_height_closure()
+        fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood)
+        expected = [aerodynamic_parameters(closure, 0.4 * built / 5, 20.0, 0.0, 20.0, 0.3 * built / 5) for built in 2:4]
+        @test Array(interior(fields.momentum_roughness_length))[:, 1, 1] ≈ first.(expected)
+        @test Array(interior(fields.zero_plane_displacement))[:, 1, 1] ≈ last.(expected)
+        @test all(≈(20), Array(interior(fields.building_height)))
+
+        # Raster height steps can assign a neighboring wall's frontal area to an unbuilt cell.
+        buildings = PrescribedBuildings((; buildings.properties...,
+                                           frontal_area_index = (λ, φ) -> λ < 0.0009 ? 0.15 : 0.3))
+        fields = urban_roughness(grid, buildings; closure, surface_layer_height = 100, neighborhood)
+        expected = [aerodynamic_parameters(closure, 0.4 * built / 5, 20.0, 0.0, 20.0,
+                                           (0.3built + 0.15 * (5 - built)) / 5) for built in 2:4]
+        @test Array(interior(fields.momentum_roughness_length))[:, 1, 1] ≈ first.(expected)
+
+        # Without a built-fraction floor an unbuilt neighborhood is urban, with no building height.
+        built_east(value) = (λ, φ) -> λ < 0.0018 ? NaN : value
+        buildings = PrescribedBuildings((; plan_area_index = (λ, φ) -> λ < 0.0018 ? 0.0 : 0.4,
+                                           mean_building_height = built_east(20.0), building_height_deviation = built_east(0.0),
+                                           maximum_building_height = built_east(20.0), frontal_area_index = built_east(0.3)))
+        fields = urban_roughness(grid, buildings; closure = MorphometricRoughness(minimum_built_fraction = 0),
+                                 surface_layer_height = 100, neighborhood = 100)
+        height = Array(interior(fields.building_height))[:, 1, 1]
+        @test isnan(height[1])
+        @test height[2:3] ≈ [20, 20]
+    end
+
+    @testset "Float32 thin cells pool by spherical area on $arch" begin
+        # 14 m rows at 51.5°N, with faces exact in Float32, alternating dense-tall and sparse-low;
+        # a five-row neighborhood.
+        Ny = 9
+        Δφ = 2.0^-13
+        grid = LatitudeLongitudeGrid(arch, Float32; size = (1, Ny), longitude = (0, 0.0001),
+                                     latitude = (51.5, 51.5 + Ny * Δφ), topology = (Bounded, Bounded, Flat))
+        alternating(odd_value, even_value) = (λ, φ) -> ifelse(isodd(floor(Int, (φ - 51.5) / Δφ) + 1), odd_value, even_value)
+        buildings = PrescribedBuildings((; plan_area_index = alternating(0.6, 0.2), mean_building_height = alternating(30.0, 10.0)))
+        fields = urban_roughness(grid, buildings;
+                                 surface_layer_height = 100, neighborhood = 5 * grid.radius * deg2rad(Δφ))
+
+        φᶠ = 51.5 .+ (-2:Ny+2) .* Δφ
+        area = sind.(φᶠ[2:end]) .- sind.(φᶠ[1:end-1])
+        odd = isodd.(-1:Ny+2)
+        λᵖ = ifelse.(odd, 0.6, 0.2)
+        h  = ifelse.(odd, 30.0, 10.0)
+        rows(j) = j:j+4
+        expected = [sum(λᵖ[b] * h[b] * area[b] for b in rows(j)) / sum(λᵖ[b] * area[b] for b in rows(j)) for j in 1:Ny]
+        @test Array(interior(fields.building_height))[1, :, 1] ≈ expected rtol = 1e-5
+    end
+end
+
+@testset "Gap filling to an unbuilt surface" begin
+    closure = MorphometricRoughness()
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                 longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
+                                 topology = (Bounded, Bounded, Flat))
+    Nx = size(grid, 1)
+    built_roughness, built_displacement = aerodynamic_parameters(closure, 0.3, 15.0)
+    ℓˢᵒⁱˡ, dˢᵒⁱˡ = aerodynamic_parameters(closure, 0, 0)
+
+    # A building dataset with a missing tile: the closure marks it NaN by design.
+    λᵖ = Field{Center, Center, Nothing}(grid)
+    h  = Field{Center, Center, Nothing}(grid)
+    set!(λᵖ, (λ, φ) -> ifelse(λ < 0, 0.3, NaN))
+    set!(h,  (λ, φ) -> ifelse(λ < 0, 15.0, NaN))
+    roughness_and_displacement() = urban_roughness(h, λᵖ; closure)
+
+    ℓᵐ, d = roughness_and_displacement()
+    @test any(isnan, interior(ℓᵐ))
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
+    @test all(isfinite, interior(ℓᵐ)) && all(isfinite, interior(d))
+    @test ℓᵐ[1, 1, 1] ≈ built_roughness && d[1, 1, 1] ≈ built_displacement   # built cells are untouched
+    @test ℓᵐ[Nx, 1, 1] ≈ ℓˢᵒⁱˡ && d[Nx, 1, 1] ≈ dˢᵒⁱˡ                          # the gap becomes unbuilt surface
+
+    # The unbuilt surface can be prescribed, e.g. open water.
+    ℓᵐ, d = roughness_and_displacement()
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure; unbuilt = (1e-4, 0))
+    @test ℓᵐ[Nx, 1, 1] ≈ 1e-4 && d[Nx, 1, 1] == 0
+    @test ℓᵐ[1, 1, 1] ≈ built_roughness
+
+    # A non-positive roughness is a gap too.
+    ℓᵐ, d = roughness_and_displacement()
+    ℓᵐ[1, 1, 1] = 0
+    fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure)
+    @test ℓᵐ[1, 1, 1] ≈ ℓˢᵒⁱˡ && d[1, 1, 1] == 0
+
+    # The unbuilt surface itself must be evaluable.
+    @test_throws ArgumentError fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure; unbuilt = (0, 0))
+    @test_throws ArgumentError fill_aerodynamic_roughness_gaps!(ℓᵐ, d, closure; unbuilt = (0.03, -1))
 end

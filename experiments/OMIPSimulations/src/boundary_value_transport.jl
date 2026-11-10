@@ -182,10 +182,6 @@ end
 # `Sxᶠᶜᶠ`, `Syᶜᶠᶠ` and the position-free `tapering_factor(Sx, Sy, limiter)` are identical in both
 # versions, so computing the tapered slope here makes the callers independent of that signature. The
 # bodies reproduce the pre-17:32 behaviour exactly.
-#
-# ⚠ A limiter carrying a position-dependent ramp (`MixedLayerTapering`, `BoundaryLayerTapering`)
-# contributes its magnitude clip through `tapering_factor` but NOT its ramp, which needs `(i, j, k)`.
-# That is also what the newer Oceananigans does, and no run combines those limiters with this scheme.
 
 @inline function tapered_ϵSxᶠᶜᶠ(i, j, k, grid, slope_limiter, b, C)
     Sx = Sxᶠᶜᶠ(i, j, k, grid, b, C)

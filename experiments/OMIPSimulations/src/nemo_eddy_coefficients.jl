@@ -143,16 +143,11 @@ end
 # one over the fold band; equal pairs and non-tripolar grids pass through untouched.
 fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric) = (κ_skew, κ_symmetric)
 
-fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric, isopycnal_formulation) =
-    fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric)
-
 # ⚠ The triad formulation leaks tracer across the fold with unequal coefficients: on eORCA1 with
 # (κ_skew, κ_symmetric) = (500, 800) the net tendency Σ G·V differs by −4.0e5 (g/kg) m³ s⁻¹ from the
 # equal-coefficient case, which by telescoping *is* the net flux through the fold face. Matching the
 # coefficients over the fold band removes only 79% of it and costs Redi structure there, so the defect
 # belongs in the fold discretization, not in the coefficients.
-fold_safe_constant_coefficients(grid, κ_skew, κ_symmetric, ::Val{:triad}) = (κ_skew, κ_symmetric)
-
 function fold_safe_constant_coefficients(grid::TripolarGridOfSomeKind, κ_skew::Number, κ_symmetric::Number)
     κ_skew == κ_symmetric && return (κ_skew, κ_symmetric)
     skew_field      = Field{Center, Center, Face}(grid)

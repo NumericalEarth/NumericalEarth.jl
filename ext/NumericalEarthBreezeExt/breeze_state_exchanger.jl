@@ -24,13 +24,16 @@
 # `qᵛᵉ` is the scheme-dependent moisture the child binds under `moisture_prognostic_name`: true vapor
 # for `:ρqᵛ`, vapor + cloud condensate for `:ρqᵉ` (saturation adjustment).
 
+using Oceananigans.Architectures: CPU, on_architecture
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
+using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -75,7 +78,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
-        qᵛᵢ = qᵛ[i, j, k]
+        qᵛᵢ = max(0, qᵛ[i, j, k])   # reanalysis humidity carries small negative values aloft
         qˡᵢ = qᶜˡ[i, j, k] + qʳ[i, j, k]
         qⁱᵢ = qᶜⁱ[i, j, k] + qˢ[i, j, k]
         pᵢ  = p[i, j, k]
@@ -104,7 +107,7 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
         ρv[i, j, k]   = ρᵈ[i, j, k] * vₚ[i, j, k]
         ρqᵛᵉ[i, j, k] = ρ * qᵛᵉ
 
-        # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
+        # When performing lateral boundary `Relaxation` toward a `PrescribedAtmosphere` parent, we construct
         # `SpecificForcing`s with these intensive quantities
         #
         # Note: we can do a memory optimization here for `parent_atmosphere.velocities.*`
@@ -116,10 +119,11 @@ end
 
 # A per-variable input accessor at time level `n`: a `FieldTimeSeries` yields its `n`-th snapshot, a
 # static `AbstractField` (e.g. the pressure-level coordinate) is time-constant, and `nothing` means the
-# variable is absent (a `ZeroField` — e.g. omitted cloud condensate, so `qᵗ = qᵛ`).
-@inline source_snapshot(fts::FieldTimeSeries, n) = fts[n]
-@inline source_snapshot(field::AbstractField, n) = field
-@inline source_snapshot(::Nothing, n) = ZeroField()
+# variable is absent (a `ZeroField` of the grid's float type `FT` — e.g. omitted cloud condensate, so
+# `qᵗ = qᵛ`).
+@inline source_snapshot(fts::FieldTimeSeries, n, FT) = fts[n]
+@inline source_snapshot(field::AbstractField, n, FT) = field
+@inline source_snapshot(::Nothing, n, FT) = ZeroField(FT)
 
 # Full-memory snapshot at `Time(time)` for the parity reconstruction (`reconstruct_parent_state`): an FTS
 # yields its time-interpolated snapshot over its *whole* series (not a 3-level window), a static
@@ -142,12 +146,19 @@ end
 function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory = 3)
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
-    window = clamp(time_indices_in_memory, 3, length(times))
+    # Not `clamp`: with fewer than 3 times its lower bound would win over `length(times)`
+    window = min(max(time_indices_in_memory, 3), length(times))
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
-                                                      time_indexing = Cyclical())
+                                                      time_indexing = length(times) > 1 ? Cyclical() : Clamp())
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛᵉ = build(), θ = build(), u = build(), v = build())
 end
+
+# The number of time levels `parent_atmosphere` holds in memory (the fewest over the strips of a
+# `BoundaryPrescribedComponent`).
+resident_time_indices(parent_atmosphere::PrescribedAtmosphere) = length(time_indices(parent_atmosphere.temperature))
+resident_time_indices(parent_atmosphere::BoundaryPrescribedComponent) =
+    minimum(resident_time_indices, boundary_strips(parent_atmosphere))
 
 # Fill the derived FTS's resident window with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
@@ -155,6 +166,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                                    moisture_name)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
+    FT = eltype(grid)
 
     equilibrium_moisture = moisture_name === :ρqᵉ   # host-side, so the kernel takes an isbits `Bool`
 
@@ -162,9 +174,9 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
                 prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛᵉ[n], prognostic.θ[n], prognostic.u[n], prognostic.v[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
-                source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qʳ, n),
-                source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
-                source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
+                source_snapshot(condensates.qᶜˡ, n, FT), source_snapshot(condensates.qʳ, n, FT),
+                source_snapshot(condensates.qᶜⁱ, n, FT), source_snapshot(condensates.qˢ, n, FT),
+                source_snapshot(parent_atmosphere.pressure, n, FT),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
                 pˢᵗ, constants, equilibrium_moisture)
     end
@@ -225,12 +237,51 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
 
     # Fill any hydrometeor a caller-supplied `condensates` omits with `nothing` (⇒ ZeroField), so the
     # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
-    condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), condensates)
+    condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), something(condensates, (;)))
 
-    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
+    prognostic = child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+                                        time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
+    exchange_state!(exchanger, @allowscalar first(parent_atmosphere.temperature.times))   # position the parent's windows
     return exchanger
+end
+
+# The derived child prognostics of `parent_atmosphere`, filled over the initial resident window.
+function child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+                                time_indices_in_memory = 3)
+    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
+    return compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name)
+end
+
+# One exchanger per strip, keyed by side; `condensates` is keyed by side too, or `nothing`.
+function state_exchanger(parent_atmosphere::BoundaryPrescribedComponent, pˢᵗ, constants; condensates, kw...)
+    strips = boundary_strips(parent_atmosphere)
+    return NamedTuple{keys(strips)}(state_exchanger(strips[side], pˢᵗ, constants;
+                                                    condensates = isnothing(condensates) ? nothing : condensates[side], kw...)
+                                    for side in keys(strips))
+end
+
+# The derived child prognostics of `parent_atmosphere` with the constants, moisture and condensate species
+# of `exchanger`.
+function child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchanger::StateExchanger)
+    names = keys(exchanger.condensates)
+    condensates = NamedTuple{names}(isnothing(exchanger.condensates[name]) ? nothing :
+                                    parent_atmosphere.microphysical_variables[name] for name in names)
+    return child_prognostic_state(parent_atmosphere, exchanger.pˢᵗ, exchanger.constants, condensates,
+                                  exchanger.moisture_name)
+end
+
+# A strip parent carries one exchanger per side, all with the child's constants, moisture and
+# condensate species, so the first one reconstructs the state.
+child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchangers::NamedTuple) =
+    child_prognostic_state(parent_atmosphere, first(exchangers))
+
+# The derived child prognostics, keyed by variable; for strips, each variable is keyed by side.
+parent_prognostic(exchanger::StateExchanger) = exchanger.prognostic
+
+function parent_prognostic(exchangers::NamedTuple)
+    names = keys(first(exchangers).prognostic)
+    return NamedTuple{names}(map(exchanger -> exchanger.prognostic[name], exchangers) for name in names)
 end
 
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
@@ -246,18 +297,17 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
     # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
     # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
-    N = length(p.ρᵈ.times)
+    # Host copy of the times: a single time stays a device array (only 2+ evenly spaced times become a range)
+    times = on_architecture(CPU(), p.ρᵈ.times)
+    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, time)
+    N = length(times)
     window = length(p.ρᵈ.backend)
     start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
 
-    # Advance the parent's own (possibly limited-memory) FTS windows to bracket the child window's LOWER
-    # edge `times[start]`, NOT `time` (= t + Δt). A parent bracketed on t+Δt holds a forward window from
-    # n₁ that EXCLUDES the n₁-1 (= start) level the 3-level child window needs, so on a window-move recompute
-    # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
-    # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
+    # Hold the child window's levels `start:start+window-1` in the parent's own (possibly limited-memory)
+    # FTS windows; they also bracket the parent's clock, which trails `time` by at most one interval.
     for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(p.ρᵈ.times[start]))
+        update_field_time_series!(fts, start, start + window - 1)
     end
 
     moved = p.ρᵈ.backend.start != start

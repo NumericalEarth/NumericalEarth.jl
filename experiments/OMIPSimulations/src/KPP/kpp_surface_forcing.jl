@@ -39,9 +39,7 @@ end
 
 @inline function shortwave_fraction(i, j, d, radiation)
     FT = typeof(d)
-    ϵ₁ = radiation.first_color_fraction
-    κ₁ = radiation.first_absorption_coefficient
-    κ₂ = blue_green_absorption_coefficient(radiation.second_absorption_coefficient, i, j)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, radiation)
     return ϵ₁ * exp(- κ₁ * d) + (one(FT) - ϵ₁) * exp(- κ₂ * d)
 end
 

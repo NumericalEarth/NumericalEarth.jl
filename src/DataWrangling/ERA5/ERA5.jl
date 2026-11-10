@@ -19,7 +19,7 @@ using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: Distributed, child_architecture
 using Oceananigans.Fields: Field, Center, set!
-using Oceananigans.OutputReaders: Cyclical, Linear, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
+using Oceananigans.OutputReaders: Cyclical, Linear, Clamp, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
 using Oceananigans.TimeSteppers: Clock
 using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
@@ -28,9 +28,10 @@ using Statistics: Statistics, mean
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity, prescribed_radiation,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
-                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
+                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend, PrefetchingBackend,
                        instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
+using ...EarthSystemModels: default_clock
 
 download_ERA5_cache::String = ""
 
