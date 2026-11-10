@@ -420,6 +420,8 @@ Keyword Arguments
 - `major_basins`: Number of independent connected ocean basins to retain via
                   [`remove_minor_basins!`](@ref). Basins are removed from smallest to largest;
                   `major_basins = 1` keeps only the largest. Default: `Inf` (keep all basins).
+- `minimum_depth`: Minimum depth [m] of the wet columns, defined as a positive value; shallower wet columns are
+                   deepened to it. Default: 0.
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
@@ -435,6 +437,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   with_bathymetry = true,
                   active_cells_map = true,
                   major_basins = Inf,
+                  minimum_depth = 0,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
                   dir = default_download_directory(dataset))
 
@@ -544,6 +547,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     bottom_field = Field{Center, Center, Nothing}(underlying_grid)
     set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid, arch, FT, major_basins))
+    launch!(arch, underlying_grid, :xy, _enforce_minimum_depth!, bottom_field, minimum_depth)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
 end

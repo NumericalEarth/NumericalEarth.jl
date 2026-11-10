@@ -51,7 +51,7 @@ grid = ORCAGrid(arch; dataset = ORCAOne(), Nz = 100, z, halo = (8, 8, 8), major_
 # Finally, a biharmonic viscosity ``ν = A_z^2 / λ`` damps grid-scale motions on a timescale ``λ`` = 50 days
 # independently of the cell area ``A_z``.
 
-using Oceananigans.TurbulenceClosures: TriadIsopycnalSkewSymmetricDiffusivity
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEMixingLength
 using Oceananigans.Operators: Az
 
@@ -64,7 +64,7 @@ vertical_mixing = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(
 
 background_mixing = VerticalScalarDiffusivity(κ = 1e-5, ν = 3e-5)
 
-eddy_closure = TriadIsopycnalSkewSymmetricDiffusivity(κ_skew = 500, κ_symmetric = 800)
+eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew = 500, κ_symmetric = 800)
 
 @inline biharmonic_viscosity(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
 

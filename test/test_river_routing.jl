@@ -8,7 +8,7 @@ using Oceananigans.Units: Time
 
 using NumericalEarth.EarthSystemModels: interpolate_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
-using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
+using NumericalEarth.Lands: RiverRouting, build_flux_routing, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 
 # A target ocean grid whose western half (longitude < 0) is ocean and whose
@@ -187,6 +187,23 @@ end
     @test sum(Q) ≈ Q₀ + Q₁ + q
     @test count(>(0), Q) == 3
     @test (coast_i, 20) ∈ collect(zip(outlet_i, outlet_j))  # the channel's largest coastal cell
+end
+
+@testset "Flux routing finds the mouths of the first year [$arch]" for arch in test_architectures
+    target_grid = half_land_ocean_grid(arch)
+    source_grid = LatitudeLongitudeGrid(CPU(); size = (40, 40), longitude = (-10, 10), latitude = (-10, 10),
+                                        topology = (Bounded, Bounded, Flat))
+    coast_i = findfirst(>(0), Array(λnodes(source_grid, Center(), Center(), Center())))
+
+    flux_time_series = FieldTimeSeries{Center, Center, Nothing}(source_grid, [0, 180, 400] .* 86400.0)
+    interior(flux_time_series[2])[coast_i, 10, 1] = 1
+    interior(flux_time_series[3])[coast_i, 30, 1] = 1
+
+    routing = build_flux_routing(target_grid, flux_time_series)
+    outlets = collect(zip(Array(routing.contribution_outlet_i), Array(routing.contribution_outlet_j)))
+
+    @test (coast_i, 10) ∈ outlets
+    @test (coast_i, 30) ∉ outlets
 end
 
 @testset "Routed PrescribedLand interpolate_state! [$arch]" for arch in test_architectures

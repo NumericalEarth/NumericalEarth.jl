@@ -228,7 +228,7 @@ end
                        maximum_spread_cells = nothing)
 
 Route a component stored as a per-area mass flux (kg m⁻² s⁻¹) on coastal cells — the JRA55-do convention — onto `target_grid`. Mouths are
-the cells positive in any record of `flux_time_series`, weighted by their source-cell area. Remaining keyword arguments
+the cells positive in any record of the first year of `flux_time_series`, weighted by their source-cell area. Remaining keyword arguments
 go to [`build_river_routing`](@ref).
 """
 function build_flux_routing(target_grid, flux_time_series;
@@ -239,9 +239,11 @@ function build_flux_routing(target_grid, flux_time_series;
     source_grid = on_architecture(CPU(), flux_time_series.grid)
     kᴺ = size(source_grid, 3)
 
-    # Every record, so intermittent and seasonally frozen rivers stay in the map.
+    # A full seasonal cycle, so intermittent and seasonally frozen rivers stay in the map.
+    times = flux_time_series.times
+    last_record = findlast(t -> t - first(times) < 365days, times)
     outlet_mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
-    for n in 2:length(flux_time_series.times)
+    for n in 2:last_record
         outlet_mask .|= Array(interior(flux_time_series[n]))[:, :, 1] .> 0
     end
 

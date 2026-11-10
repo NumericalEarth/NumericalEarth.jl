@@ -127,6 +127,17 @@ end
     @test grid.Nz == 5
 end
 
+@testset "ORCAGrid deepens wet columns to minimum_depth on $(arch)" for arch in test_architectures
+    z = [-5000, -1000, -100, -20, -10, 0]
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z, halo=(4, 4, 4), minimum_depth=20)
+    Nx, Ny, _ = size(grid)
+    bottom_height = Array(view(grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1))
+    wet = bottom_height .< 0
+
+    @test any(wet)
+    @test maximum(bottom_height[wet]) ≤ -20
+end
+
 @testset "ORCAGrid validates z against Nz on $(arch)" for arch in test_architectures
     for z in (ExponentialDiscretization(7, -5000, 0; scale = 1000, mutable = true), collect(range(-5000, 0, length = 8)))
         @test ORCAGrid(arch; dataset=ORCAOne(), Nz=7, z, with_bathymetry=false).Nz == 7

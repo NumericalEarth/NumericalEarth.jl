@@ -40,7 +40,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters,
+                                                 vector_component_boundary_conditions
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
