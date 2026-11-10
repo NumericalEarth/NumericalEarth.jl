@@ -123,7 +123,10 @@ Sᵢ(x, y, z) = S₀
 top_load = TopLoad(buoyancy, (; T = Tᵢ, S = Sᵢ))
 
 grid = ImmersedBoundaryGrid(underlying_grid,
-                            PartialCellBottom(bed; top_height = ice_draft, minimum_fractional_cell_height = 0.05, top_load))
+                            PartialCellVerticalBoundaries(; bottom_height = bed,
+                                                            top_height = ice_draft,
+                                                            minimum_fractional_cell_height = 0.05,
+                                                            top_load))
 
 # ## Melting at the ice base
 #
