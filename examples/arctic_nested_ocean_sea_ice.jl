@@ -5,6 +5,7 @@ using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
+using CopernicusMarine   # loads the GLORYS download extension
 using CUDA
 using Dates, Printf
 
