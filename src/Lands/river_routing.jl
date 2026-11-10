@@ -1,4 +1,4 @@
-using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Periodic
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
 using Oceananigans.ImmersedBoundaries: underlying_grid
@@ -70,6 +70,7 @@ end
     i, j = @index(Global, NTuple)
     Nx, Ny = size(grid, 1), size(grid, 2)
     R = grid.radius
+    periodic = topology(grid, 1) === Periodic
     λ = λnode(i, j, 1, grid, Center(), Center(), Center())
     φ = φnode(i, j, 1, grid, Center(), Center(), Center())
 
@@ -83,9 +84,11 @@ end
         for j′ in max(1, j - nφ):min(Ny, j + nφ)
             φ′ = φnode(i, j′, 1, grid, Center(), Center(), Center())
             nλ = min(Nx, ceil(Int, rad2deg(D / R) / (Δλ * cosd(φ′))))
-            for i′ in max(1, i - nλ):min(Nx, i + nλ)
-                λ′ = λnode(i′, j′, 1, grid, Center(), Center(), Center())
-                ocean = isnan(drainage_direction[i′, j′, 1])
+            # A periodic window wraps across the dateline
+            for i′ in ifelse(periodic, i - nλ, max(1, i - nλ)):ifelse(periodic, i + nλ, min(Nx, i + nλ))
+                i″ = mod1(i′, Nx)
+                λ′ = λnode(i″, j′, 1, grid, Center(), Center(), Center())
+                ocean = isnan(drainage_direction[i″, j′, 1])
                 coastal |= ocean & (haversine((λ, φ), (λ′, φ′), R) ≤ D)
             end
         end

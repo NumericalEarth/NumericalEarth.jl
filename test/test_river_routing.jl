@@ -158,6 +158,33 @@ end
     @test mouths(maximum_coastal_distance = 20kilometers) == Set([(coast_i, 10)])
     @test mouths(maximum_coastal_distance = 300kilometers) ==
           Set([(coast_i, 10), (coast_i + 10, 20), (coast_i + 40, 30)])
+
+    # A larger cutoff only adds mouths, so more discharge reaches the ocean
+    pit_discharge = Dict((coast_i, 10) => 100.0, (coast_i + 10, 20) => 200.0, (coast_i + 40, 30) => 400.0)
+    selected = [mouths(maximum_coastal_distance = D) for D in (20kilometers, 100kilometers, 300kilometers)]
+    @test selected[1] ⊊ selected[2] ⊊ selected[3]
+    @test [sum(pit_discharge[m] for m in s) for s in selected] == [100, 300, 700]
+end
+
+# A pit in the last column of a global grid, ~111 km from ocean found only across the dateline.
+@testset "River mouths across the dateline [$arch]" for arch in test_architectures
+    Nx, Ny = 360, 4
+
+    function dateline_mouths(topology, maximum_coastal_distance)
+        grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny), longitude = (-180, 180), latitude = (-2, 2),
+                                     topology = (topology, Bounded, Flat), halo = (3, 3))
+        data = [i == 1 ? NaN : 4.0 for i in 1:Nx, j in 1:Ny, k in 1:1]
+        data[Nx, Ny, 1] = 5
+
+        drainage_direction = Field{Center, Center, Nothing}(grid)
+        set!(drainage_direction, data)
+
+        return Set(zip(river_mouth_indices(drainage_direction; maximum_coastal_distance)[1:2]...))
+    end
+
+    @test dateline_mouths(Periodic, 150kilometers) == Set([(Nx, Ny)])
+    @test isempty(dateline_mouths(Periodic, 100kilometers))   # the wrapped distance is the true ~111 km
+    @test isempty(dateline_mouths(Bounded, 150kilometers))    # a regional grid does not wrap
 end
 
 @testset "Routed PrescribedLand interpolate_state! [$arch]" for arch in test_architectures
