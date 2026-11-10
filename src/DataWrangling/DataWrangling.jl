@@ -421,6 +421,7 @@ function default_inpainting(metadata)
 end
 
 include("prescribed_radiation.jl")
+include("prescribed_ocean.jl")
 include("boundary_prescribed_component.jl")
 
 # Datasets

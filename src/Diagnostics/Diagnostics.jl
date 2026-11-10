@@ -18,7 +18,7 @@ using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Utils: launch!
 
 using ..EarthSystemModels: EarthSystemModel, NoSeaIceInterfaceModel,
-                           NoOceanInterfaceModel, NoInterfaceModel
+                           NoOceanInterfaceModel, NoInterfaceModel, prognostic_model
 using ..Oceans: MultipleFluxes
 
 include("mixed_layer_depth.jl")
