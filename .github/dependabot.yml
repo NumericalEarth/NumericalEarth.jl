@@ -1,7 +1,29 @@
 # https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
 version: 2
+
 updates:
   - package-ecosystem: "github-actions"
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    labels:
+      - "dependencies 🖇️"
+  - package-ecosystem: "julia"
+    # Every Julia environment in the repository
+    directories:
+      - "/"
+      - "/docs"
+      - "/examples"
+      - "/test"
+      - "/test/reactant"
+    schedule:
+      interval: "cron"
+      cronjob: "0 9 * * 1,3,5" # Monday, Wednesday and Friday at 09:00 UTC
+    ignore:
+      # Ignore package itself
+      - dependency-name: "NumericalEarth"
+    labels:
+      - "dependencies 🖇️"
+    groups:
+      per-dependency:
+        group-by: dependency-name
