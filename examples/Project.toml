@@ -18,7 +18,7 @@ NumericalEarth = {path = ".."}
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/oceananigans-0.116"} # TODO: remove once Terrarium 0.1.10 is registered (NumericalEarth/Terrarium.jl#225)
 
 [compat]
-Breeze = "0.13"
+Breeze = "0.13, 0.14"
 CopernicusClimateDataStore = "0.2"
 CUDA = "6"
 CairoMakie = "0.15"

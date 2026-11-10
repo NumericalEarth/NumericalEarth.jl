@@ -157,6 +157,20 @@ end
             @test atmos.model isa Breeze.AtmosphereModel
         end
 
+        @testset "atmosphere_model forwards formulation on $A" begin
+            grid = RectilinearGrid(arch,
+                                   size = (8, 8), halo = (5, 5),
+                                   x = (-10kilometers, 10kilometers),
+                                   z = (0, 10kilometers),
+                                   topology = (Periodic, Flat, Bounded))
+
+            default = atmosphere_model(grid)
+            chosen = atmosphere_model(grid; formulation = Breeze.LiquidIcePotentialTemperatureFormulation())
+            @test chosen.formulation isa Breeze.LiquidIcePotentialTemperatureFormulation
+            @test typeof(chosen.formulation) == typeof(default.formulation)
+            @test_throws Exception atmosphere_model(grid; formulation = :NotAFormulation)
+        end
+
         @testset "Construction on $A" begin
             model = build_test_model(arch)
 
@@ -293,8 +307,8 @@ end
 
         @testset "Net atmosphere fluxes are partition-weighted on $A" begin
             ## West half land, east half ocean, with a fractional strip across the middle.
-            þ(x) = clamp(1/2 + x / 10kilometers, 0, 1)
-            model = build_partition_test_model(arch; ocean_fraction=þ)
+            ℵᵒᶜ(x) = clamp(1/2 + x / 10kilometers, 0, 1)
+            model = build_partition_test_model(arch; ocean_fraction=ℵᵒᶜ)
             update_state!(model)
 
             interfaces = model.interfaces
