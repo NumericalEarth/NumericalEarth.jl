@@ -4,7 +4,7 @@ using NumericalEarth.Bathymetry: bottom_height_from_mask
 using NumericalEarth.DataWrangling: bracketing_dates
 using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, sample_parent!,
                                    BoundaryTimeSeries, BarotropicBoundaryTransport, ConsistentBoundaryVelocity,
-                                   OceanBoundaryExchanger
+                                   OceanBoundaryExchanger, ScaledParentSeries
 using NumericalEarth.Oceans: fill_prescribed_halo_regions!
 using Oceananigans.Grids: TwoSided, topology
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
@@ -15,7 +15,8 @@ using Oceananigans.Grids: MutableVerticalDiscretization, inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
 using Oceananigans.TimeSteppers: update_state!
-using Oceananigans.Units: days
+using Oceananigans.OutputReaders: InMemory, OnDisk
+using Oceananigans.Units: days, hours, minutes
 
 # The synthetic ocean is 10° resolution, with land over λ ∈ [-60, 20], φ ∈ [-30, 40]. Its velocities
 # (u = 0.1 m/s, v = -0.05 m/s) and free surface (η = 0.2 m) are uniform.
@@ -539,6 +540,95 @@ end
     T = Array(interior(model.child.tracers.T))
     @test all(isfinite, T)
     @test maximum(T) > 10
+end
+
+@testset "Tracers beyond T and S take their parent from parent_tracers on $(arch)" for arch in test_architectures
+    parent_ocean = nesting_test_parent(arch; u = 0.1, T = 15)
+    grid = nesting_test_child_grid(arch)
+    Nx, Ny, Nz = size(grid)
+    parent_tracers = (c = parent_ocean.temperature, d = 2)
+    model = nested_ocean_model(parent_ocean, grid; tracers = (:T, :S, :c, :d, :q), parent_tracers, coriolis = nothing)
+    child = model.child
+
+    for side in lateral_sides, name in (:c, :d)
+        bc = getproperty(child.tracers[name].boundary_conditions, side)
+        @test bc.classification isa Value
+        @test bc.classification.scheme isa TracerReservoir
+    end
+    @test !(child.tracers.q.boundary_conditions.west.classification isa Value)
+
+    @test all(Array(interior(child.tracers.c)) .≈ 15)
+    @test all(Array(interior(child.tracers.d)) .== 2)
+    @test all(Array(interior(child.tracers.q)) .== 0)
+
+    set!(child, c = 0, d = 0, q = 0)
+    time_step!(model, 60)
+    c = Array(interior(child.tracers.c))
+    d = Array(interior(child.tracers.d))
+    q = Array(interior(child.tracers.q))
+    j = Ny ÷ 2
+    @test all(isfinite, c) && all(isfinite, d)
+    @test all(c[1, j, :] .> 0) && all(d[1, j, :] .> 0)
+    @test maximum(c[Nx ÷ 2, j, :]) < minimum(c[1, j, :])
+    @test all(q .== 0)
+
+    @test_throws ArgumentError nested_ocean_model(parent_ocean, grid; parent_tracers = (z = 1,))
+    @test_throws ArgumentError nested_ocean_model(parent_ocean, grid; parent_tracers = (T = 1,))
+end
+
+@testset "Parent tracers held partly in memory advance with the child on $(arch)" for arch in test_architectures
+    parent_ocean = nesting_test_parent(arch)
+    parent_grid = on_architecture(CPU(), parent_ocean.temperature.grid)
+    times = (0:3) .* hours
+    path = joinpath(mktempdir(), "parent_tracer.jld2")
+    on_disk = FieldTimeSeries{Center, Center, Center}(parent_grid, times; backend = OnDisk(), path, name = "c")
+    field = CenterField(parent_grid)
+    for n in eachindex(times)
+        set!(field, 10 + 10 * times[n] / hours)
+        set!(on_disk, field, n)
+    end
+
+    streamed = FieldTimeSeries(path, "c"; backend = InMemory(2), architecture = arch)
+    parent_tracers = (c = streamed, d = ScaledParentSeries(streamed, 2))
+    grid = nesting_test_child_grid(arch)
+    model = nested_ocean_model(parent_ocean, grid; tracers = (:T, :S, :c, :d), parent_tracers, coriolis = nothing)
+
+    @test all(Array(interior(model.child.tracers.c)) .≈ 10)
+    @test all(Array(interior(model.child.tracers.d)) .≈ 20)
+
+    for _ in 1:15
+        time_step!(model, 10minutes)
+    end
+
+    bands = model.exchanger.bands.west
+    @test model.exchanger.times.current ≈ 2.5hours
+    @test all(Array(interior(bands.c.current)) .≈ 35)
+    @test all(Array(interior(bands.d.current)) .≈ 70)
+end
+
+@testset "parent_tracer_series reads further tracers from a dataset on $(arch)" for arch in test_architectures
+    grid = coastal_grid(arch)
+    tracers = (c = :salinity, d = :temperature => 2)
+    parent_tracers = parent_tracer_series(grid, SyntheticOcean(); dates = synthetic_dates, tracers, padding = 10)
+
+    @test keys(parent_tracers) == (:c, :d)
+    @test parent_tracers.c isa FieldTimeSeries
+    @test parent_tracers.d isa ScaledParentSeries
+    @test parent_tracers.d.factor == 2
+
+    nested = nested_ocean_model(grid, SyntheticOcean(); dates = synthetic_dates, parent_padding = 10, relaxation_width = 3,
+                                tracers = (:T, :S, :c, :d), parent_tracers)
+    T, S, c, d = nested.child.tracers
+
+    @test parent_tracers.c.times == nested.parent.east.salinity.times
+
+    time_step!(nested, 60)
+    @test all(isfinite, Array(interior(c))) && all(isfinite, Array(interior(d)))
+
+    # The child's T and S start from a single-date snapshot; the bands read the same series as the tracers
+    band = nested.exchanger.bands.east
+    @test Array(interior(band.c.current)) ≈ Array(interior(band.S.current))
+    @test Array(interior(band.d.current)) ≈ 2 .* Array(interior(band.T.current))
 end
 
 @testset "regrid_bathymetry from the missing values of an ocean dataset on $(arch)" for arch in test_architectures

@@ -13,7 +13,7 @@ using Oceananigans.Fields: Field, interpolate
 using Oceananigans.Grids: Center, Closed, Connected, Face, Open, TwoSided, inactive_cell, new_data, topology,
                           validate_indices, λnode, φnode, rnode, ξnode, ηnode
 using Oceananigans.Operators: Δz
-using Oceananigans.OutputReaders: FlavorOfFTS
+using Oceananigans.OutputReaders: FlavorOfFTS, update_field_time_series!
 using Oceananigans.Utils: KernelParameters, launch!
 using KernelAbstractions: @kernel, @index
 
@@ -143,11 +143,13 @@ end
 """
     sample_parent!(field, loc, source, time)
 
-Interpolate the parent `source`, a `FieldTimeSeries`, at `time` onto every point of `field`
+Interpolate the parent `source`, a `FieldTimeSeries` or a number, at `time` onto every point of `field`
 at location `loc`, halos included. Halo points beyond a wall of the domain, which can lie outside the parent's
 region, take the value at the nearest interior point; halo points across a rank seam are sampled where they are.
+A `FieldTimeSeries` holding only some of its samples in memory first loads those that bracket `time`.
 """
 function sample_parent!(field, loc, source, time)
+    update_field_time_series!(source, Time(time))
     grid = field.grid
     ranges = axes(field.data)[1:3]
     params = KernelParameters(length.(ranges), first.(ranges) .- 1)
@@ -157,6 +159,9 @@ function sample_parent!(field, loc, source, time)
             field, grid, loc, bounds, source, source.grid, source_loc, Time(time))
     return field
 end
+
+# A constant parent
+sample_parent!(field, loc, source::Number, time) = (fill!(Base.parent(field), source); field)
 
 @kernel function _sample_parent!(field, grid, loc, bounds, source, source_grid, source_loc, time)
     i, j, k = @index(Global, NTuple)
