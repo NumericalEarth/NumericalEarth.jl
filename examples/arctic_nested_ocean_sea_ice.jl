@@ -30,7 +30,7 @@ underlying_grid = RotatedLatitudeLongitudeGrid(arch; size = (70, 70, Nz), halo =
                                                z, north_pole)
 
 bottom_height = regrid_bathymetry(underlying_grid; minimum_depth = 10, major_basins = 1,
-                                  interpolation_passes = 10, dir = joinpath(datadir, "bathymetry"))
+                                  interpolation_passes = 10)
 grid = ImmersedBoundaryGrid(underlying_grid, PartialCellBottom(bottom_height); active_cells_map = true)
 
 #####
