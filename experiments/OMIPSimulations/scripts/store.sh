@@ -13,7 +13,10 @@
 #     Everything else is moved.
 #   - Checkpoint files (*_checkpoint_iteration<N>.jld2): the highest
 #     iteration is kept locally so `run!(sim; pickup=true)` still works;
-#     older checkpoints are moved.
+#     older checkpoints are moved. With KEEP_CHECKPOINT_YEARS=<Y>, an older
+#     checkpoint is moved only when its model day (read from <RUN_NAME>.err)
+#     lies within 180 days of a multiple of Y years; the rest are deleted.
+#     A checkpoint whose day is not in the log is always moved.
 #   - Anything else in the run folder is left untouched.
 #   - If a run directory disappears mid-cycle (sim crashed, folder
 #     deleted), it is skipped with a warning rather than killing the job.
@@ -112,6 +115,21 @@ echo "Storing outputs for ${#RUN_NAMES[@]} run(s): ${RUN_NAMES[*]}"
 
 shopt -s nullglob
 
+# Model day of checkpoint iteration $2, read from the run's step log. A relaunched job logs from the step after
+# its pickup checkpoint, hence the n+1 fallback. Prints nothing when neither step is in the log.
+checkpoint_day() {
+    local log="$1.err" n="$2" line
+    line=$(grep -m1 -F "iteration: ${n}," "$log" 2>/dev/null || grep -m1 -F "iteration: $((n + 1))," "$log" 2>/dev/null)
+    [[ "$line" =~ time:\ ([0-9]+) ]] && echo "${BASH_REMATCH[1]}"
+}
+
+# true when day $1 lies within 180 days of a multiple of $2 years
+near_year_mark() {
+    local period=$(( $2 * 365 ))
+    local offset=$(( $1 % period ))
+    (( offset <= 180 || period - offset <= 180 ))
+}
+
 archive_run() {
     local RUN_NAME="$1"
     local RUN_DIR="${RUN_NAME}_run"
@@ -195,7 +213,7 @@ archive_run() {
         fi
     done
 
-    local moved_ckpts=0 kept_ckpts=0
+    local moved_ckpts=0 kept_ckpts=0 deleted_ckpts=0 day
     for f in "$RUN_DIR"/*_iteration[0-9]*.jld2; do
         base=$(basename "$f")
         tail="${base##*_iteration}"
@@ -208,13 +226,22 @@ archive_run() {
             kept_ckpts=$((kept_ckpts + 1))
             continue
         fi
+        if [[ -n "${KEEP_CHECKPOINT_YEARS:-}" ]]; then
+            day=$(checkpoint_day "$RUN_NAME" "$n")
+            if [[ -n "$day" ]] && ! near_year_mark "$day" "$KEEP_CHECKPOINT_YEARS"; then
+                echo "  delete (day ${day}):  ${base}"
+                rm -- "$f"
+                deleted_ckpts=$((deleted_ckpts + 1))
+                continue
+            fi
+        fi
         echo "  move:           ${base}"
         mv -- "$f" "$DEST_DIR/"
         moved_ckpts=$((moved_ckpts + 1))
     done
 
     echo "  done: moved ${moved_parts} part file(s) (kept ${kept_parts})," \
-         "moved ${moved_ckpts} checkpoint file(s) (kept ${kept_ckpts})."
+         "moved ${moved_ckpts} checkpoint file(s) (kept ${kept_ckpts}, deleted ${deleted_ckpts})."
 }
 
 while true; do

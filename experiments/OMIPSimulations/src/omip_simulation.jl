@@ -1336,6 +1336,8 @@ end
 
 @inline abyssal_henyey_diffusivity(x, y, z, t) = henyey_diffusivity(x, y, z, t) + abyssal_enhancement(z)
 
+resolve_background_diffusivity(κ, grid) = resolve_background_diffusivity(κ)
+resolve_background_diffusivity(directory::AbstractString, grid) = observed_background_diffusivity(grid, directory)
 resolve_background_diffusivity(κ::Number) = κ
 resolve_background_diffusivity(κ::Symbol) =
     κ === :henyey         ? henyey_diffusivity :
@@ -1435,7 +1437,7 @@ function omip_closure(vertical_closure::Symbol;
                       background_vertical_viscosity = nothing,
                       Cᵂu★ = nothing)
 
-    background_κ = resolve_background_diffusivity(background_vertical_diffusivity)
+    background_κ = resolve_background_diffusivity(background_vertical_diffusivity, grid)
     background_ν = resolve_background_viscosity(background_vertical_viscosity)
 
     primary, background = if vertical_closure == :catke

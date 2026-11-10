@@ -427,7 +427,9 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 "abyssal_henyey" for Henyey in the thermocline with the same arctangent
                 enhancement added beneath it, reaching +5e-5 at 5000 m — the abyssal upwelling
                 without the upper-ocean value that sets the drift, or "henyey2x" for twice the
-                Henyey profile everywhere.
+                Henyey profile everywhere, or an absolute path to a directory with the observed
+                log10 κ maps k_u.txt, k_c.txt, k_l.txt (300–500, 500–1000, 1000–2000 m, 1°),
+                clipped to 1e-7…1e-4 and blended smoothly in depth; adds "_bgkmaps".
                 Default: unset, i.e. the Henyey et al. (1986) latitudinal internal-wave
                 scaling κ = max(2e-6, 1e-5 |sin φ|), 2e-6 at the equator to 1e-5 at the poles.
                 Raising it strengthens the diapycnal upwelling that closes the AMOC lower limb
@@ -458,6 +460,10 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 Adds "_ub<value>" to the run name. It bites where the flow is slow: at |u| =
                 1 cm/s and u_b = 0.1 the stress is ten times the resolved one, at 50 cm/s it is
                 within a percent of it. GFDL's OM4 uses 0.1.
+  DT_START      quarterdegree only: time step for the first 60 days. Default: 8minutes.
+  DT_AFTER_FIRST_YEAR  quarterdegree only: time step from day 365 on (e.g. 45minutes); DT applies from day 60
+                to day 365. Default: DT throughout. The substep count is fixed at construction, so set
+                BAROTROPIC_SUBSTEPS for the larger step.
   BAROTROPIC_SUBSTEPS
                 *** TAGGED "_substeps<val>" SINCE 2026-09-03 when it differs from the config default
                 (orca 300, quarterdegree/twelfthdegree 200, else 100). Before that it had NO tag, so
@@ -509,6 +515,7 @@ Examples:
   BACKGROUND_K=3e-5 ./launch.sh orca          # uniform background κ = 3e-5 m^2/s (AMOC sensitivity)
   BACKGROUND_K=1e-4 ./launch.sh orca          # uniform background κ = 1e-4 m^2/s
   BACKGROUND_K=bryan_lewis ./launch.sh orca   # Bryan-Lewis depth profile, 3e-5 → 1.3e-4
+  BACKGROUND_K=~/diffusivity-test ./launch.sh orca  # observed log10 κ maps (k_u/k_c/k_l.txt), tag "_bgkmaps"
   SKEW_FORMULATION=boundary_value ./launch.sh orca            # Ferrari et al. (2010) GM transport
   SKEW_FORMULATION=boundary_value KSKEW=nemo ./launch.sh orca # ... with the Treguier coefficient
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
@@ -558,11 +565,15 @@ run!(sim, pickup=:latest)"
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT=""
         RUN_CMD="Δt = sim.Δt
-sim.Δt = 8minutes
+sim.Δt = ${DT_START:-8minutes}
 sim.stop_time = 60days
 run!(sim, pickup = :latest)
 
 sim.Δt = Δt
+sim.stop_time = 365days
+run!(sim)
+
+sim.Δt = ${DT_AFTER_FIRST_YEAR:-Δt}
 sim.stop_time = 300 * 365days
 run!(sim)"
         ;;
@@ -784,7 +795,9 @@ esac
 [[ "$NZ" != "$DEFAULT_NZ" ]]                    && RUN_NAME="${RUN_NAME}_nz${NZ}"
 [[ -n "${MAXDZ:-}" ]]                           && RUN_NAME="${RUN_NAME}_maxdz${MAXDZ}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
-[[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K}"
+BACKGROUND_K="${BACKGROUND_K/#\~/$HOME}"
+BACKGROUND_K_TAG="${BACKGROUND_K}"; [[ "$BACKGROUND_K" == /* ]] && BACKGROUND_K_TAG="maps"
+[[ -n "${BACKGROUND_K:-}" ]]                   && RUN_NAME="${RUN_NAME}_bgk${BACKGROUND_K_TAG}"
 [[ "${BACKGROUND_NU:-3e-5}" != "3e-5" ]]       && RUN_NAME="${RUN_NAME}_bgnu${BACKGROUND_NU}"
 [[ "${CHLOROPHYLL:-seawifs}" != "seawifs" ]]   && RUN_NAME="${RUN_NAME}_chl${CHLOROPHYLL}"
 [[ "${IMEX_DRAG:-true}" == "false" ]]            && RUN_NAME="${RUN_NAME}_explicitdrag"
@@ -1012,6 +1025,7 @@ case "$BACKGROUND_K" in
     "")                     ;;
     henyey|henyey2x|bryan_lewis|abyssal_henyey)
                             BACKGROUND_K_KWARG="background_vertical_diffusivity = :${BACKGROUND_K}," ;;
+    /*)                     BACKGROUND_K_KWARG="background_vertical_diffusivity = \"${BACKGROUND_K}\"," ;;
     *)                      BACKGROUND_K_KWARG="background_vertical_diffusivity = ${BACKGROUND_K}," ;;
 esac
 
