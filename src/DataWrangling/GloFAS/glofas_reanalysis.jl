@@ -13,9 +13,6 @@ GloFASReanalysis(; system_version="version_4_0") = GloFASReanalysis(system_versi
 
 dataset_name(::GloFASReanalysis) = "GloFASReanalysis"
 
-# GloFAS v4 is 0.05° (7200 × 3000 covering -180:180, -60:90).
-Base.size(::GloFASReanalysis, variable) = (7200, 3000, 1)
-
 # Daily consolidated reanalysis. Available from 1979 to near-present; we use a
 # practical upper bound matching the ERA5 forcing range.
 DataWrangling.all_dates(::GloFASReanalysis, variable) =
@@ -36,7 +33,8 @@ GloFAS_dataset_variable_names = Dict(
 
 # NumericalEarth name → NetCDF short variable name.
 GloFAS_netcdf_variable_names = Dict(
-    :river_discharge => "avg_dis",
+    :river_discharge    => "avg_dis",
+    :drainage_direction => "ldd",
 )
 
 DataWrangling.available_variables(::GloFASDataset) = GloFAS_dataset_variable_names

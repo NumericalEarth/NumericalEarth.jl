@@ -559,9 +559,15 @@ bottom_height = regrid_bathymetry(ocean_grid; minimum_depth = 5)
 ocean_grid = ImmersedBoundaryGrid(ocean_grid, GridFittedBottom(bottom_height))
 nothing #hide
 
-# `GloFASPrescribedLand` downloads the discharge, locates the river mouths from
-# the land/ocean boundary, and spreads each mouth over the active ocean cells of
-# `ocean_grid` around it — conserving the total volume of freshwater (see
+# `GloFASPrescribedLand` downloads the discharge and locates the river mouths
+# from LISFLOOD's local drainage direction map, a static map of GloFAS
+# ([`GloFASStaticMaps`](@ref)) downloaded alongside the discharge. Every
+# catchment ends in exactly one *pit*, a cell that drains nowhere; the mouths are
+# the pits within `maximum_coastal_distance` (100 km by default) of the ocean,
+# so each river is counted once. The cutoff keeps estuaries that GloFAS treats
+# as land, whose pit sits a few cells inland, and drops endorheic sinks such as
+# the Caspian Sea. Each mouth is then spread over the active ocean cells of
+# `ocean_grid` around it, conserving the total volume of freshwater (see
 # [`build_river_routing`](@ref)).
 
 land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
