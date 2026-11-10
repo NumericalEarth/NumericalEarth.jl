@@ -173,6 +173,7 @@ export
     hydrostatic_pressure_from_surface,
     ocean_simulation,
     river_mouth_vertical_diffusivity,
+    area_scaled_biharmonic_viscosity,
     sea_ice_simulation,
     default_sea_ice,
     initialize!,
