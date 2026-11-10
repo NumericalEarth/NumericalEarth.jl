@@ -26,9 +26,11 @@ struct Example
     basename::String
     build_always::Bool
     gpu::Bool
+    credentials::Vector{String}
 end
 
-Example(title, basename; build_always, gpu) = Example(title, basename, build_always, gpu)
+Example(title, basename; build_always, gpu, credentials=String[]) =
+    Example(title, basename, build_always, gpu, credentials)
 
 const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
 const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
@@ -40,7 +42,8 @@ mkpath(OUTPUT_DIR)
 # Set `build_always = false` for long-running examples that should only be built
 # by the scheduled build, or when the `build all examples` label is added to a PR.
 examples = [
-    Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false),
+    Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false,
+            credentials=["COPERNICUSMARINE_SERVICE_USERNAME", "COPERNICUSMARINE_SERVICE_PASSWORD"]),
     Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
     Example("Nested regional ocean near Bouvet Island", "bouvet_nested_ocean_simulation"; build_always=false, gpu=true),
@@ -49,11 +52,13 @@ examples = [
     Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
     # Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
     Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
-    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
+    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false,
+            credentials=["CDSAPI_KEY"]),
     Example("Breeze over slab land", "breeze_over_slab_land"; build_always=true, gpu=false),
     # Example("Differentiable ERA5-forced slab land", "era5_forced_slab_land"; build_always=false, gpu=false),
     Example("ERA5-forced Terrarium land", "era5_forced_terrarium_land"; build_always=false, gpu=false),
-    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5"; build_always=true, gpu=true,
+            credentials=["CDSAPI_KEY"]),
     # The MODIS examples need NASA Earthdata credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD),
     # which the docs workflow does not have yet.
     # Example("MODIS leaf area index", "modis_leaf_area_index"; build_always=false, gpu=false),
@@ -71,6 +76,16 @@ developer_examples = [
 build_all = get(ENV, "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES", "false") == "true"
 filter!(x -> x.build_always || build_all, examples)
 filter!(x -> x.build_always || build_all, developer_examples)
+
+# Pull requests from forks get no repository secrets, so skip examples that
+# download data with credentials this run lacks.
+missing_credentials(example) = filter(name -> isempty(get(ENV, name, "")), example.credentials)
+
+for example in filter(!isempty ∘ missing_credentials, examples)
+    @warn "Skipping example $(example.basename), which needs " * join(missing_credentials(example), ", ")
+end
+
+filter!(isempty ∘ missing_credentials, examples)
 
 #####
 ##### Generate examples using Literate (each in a subprocess for memory isolation)

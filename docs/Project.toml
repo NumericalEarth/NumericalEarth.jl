@@ -39,7 +39,7 @@ Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "glw/
 
 [compat]
 ArchGDAL = "0.10"
-Breeze = "0.13"
+Breeze = "0.15"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"
@@ -47,7 +47,7 @@ Documenter = "1"
 DocumenterCitations = "1.3"
 Enzyme = "0.13.166"
 Literate = "2.2"
-Oceananigans = "0.116"
+Oceananigans = "0.117"
 Reactant = "0.2.278"
-SpeedyWeather = "0.23"
+SpeedyWeather = "0.23, 0.24"
 Terrarium = "0.1.10"

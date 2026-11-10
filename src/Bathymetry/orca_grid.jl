@@ -379,9 +379,9 @@ end
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,
-`(Periodic, RightCenterFolded, Bounded)` with a `TPivot` fold for the T-pivot eORCA025 and eORCA12.
+`(Periodic, RightCenterFolded, Bounded)` with a `TPivot` fold for the T-pivot ORCA2, eORCA025 and eORCA12.
 
-The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCAQuarter()`, or `ORCATwelfth()`).
+The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCATwo()`, `ORCAQuarter()`, or `ORCATwelfth()`).
 The mesh mask and bathymetry files are downloaded automatically via the
 `DataWrangling.ORCA` metadata interface.
 
@@ -391,7 +391,7 @@ directly from the `mesh_mask` NetCDF file. If all staggered NEMO fields are pres
 coordinates are available (`glamt/gphit/glamf/gphif`), staggered coordinates and
 metrics are reconstructed approximately using Tripolar-style spherical assumptions.
 The duplicated columns eORCA carries at its east edge for cyclic exchange are dropped, so `Nx` is the number
-of distinct columns: 360 for eORCA1, 1440 for eORCA025 and 4320 for eORCA12.
+of distinct columns: 360 for eORCA1, 180 for ORCA2, 1440 for eORCA025 and 4320 for eORCA12.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
 and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
@@ -405,7 +405,7 @@ Positional Arguments
 Keyword Arguments
 =================
 
-- `dataset`: The ORCA dataset to use. Default: `ORCAOne()`. `ORCAQuarter()` (eORCA025, quarter-degree) and `ORCATwelfth()`
+- `dataset`: The ORCA dataset to use. Default: `ORCAOne()`. `ORCATwo()` (ORCA2, two-degree), `ORCAQuarter()` (eORCA025, quarter-degree) and `ORCATwelfth()`
              (eORCA12, twelfth-degree) are also supported (eORCA1 data from Zenodo; <https://doi.org/10.5281/zenodo.4436658>).
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
