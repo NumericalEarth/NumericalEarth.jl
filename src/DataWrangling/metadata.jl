@@ -46,13 +46,36 @@ function BoundingBox(grid::AbstractGrid; padding = 0)
                        latitude  = (all_reduce(min, φ₁, arch) - δφ, all_reduce(max, φ₂, arch) + δφ))
 end
 
-function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
+"""
+    BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0, i = 1:Nx+1, j = 1:Ny+1)
+
+Create a `BoundingBox` spanning the cell corners `i × j` of `grid`. A patch whose edge circles a pole spans every
+longitude and reaches that pole, and a patch cut by the seam of its longitude labels spans every longitude.
+"""
+function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0,
+                     i = 1:size(grid, 1)+1, j = 1:size(grid, 2)+1)
     δλ, δφ = axis_padding(padding)
-    Nx, Ny, _ = size(grid)
-    λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
-    φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
-    return BoundingBox(longitude = (minimum(λ) - δλ, maximum(λ) + δλ),
-                       latitude  = (minimum(φ) - δφ, maximum(φ) + δφ))
+    λ = on_architecture(CPU(), grid.λᶠᶠᵃ)[i, j]
+    φ = on_architecture(CPU(), grid.φᶠᶠᵃ)[i, j]
+    λ₁, λ₂ = extrema(λ)
+    φ₁, φ₂ = extrema(φ)
+    every_longitude = λ₁ < 0 ? (-180, 180) : (0, 360)
+
+    edge(a) = vcat(a[:, 1], a[end, 2:end], a[end-1:-1:1, end], a[1, end-1:-1:1])
+    winding = sum(δ -> mod(δ + 180, 360) - 180, diff(edge(λ)))
+
+    if abs(winding) > 180 && !(topology(grid, 1) <: Periodic)
+        φᵉ = edge(φ)
+        holds_north_pole = φ[(end+1)÷2, (end+1)÷2] > sum(φᵉ) / length(φᵉ)
+        latitude = holds_north_pole ? (φ₁ - δφ, 90) : (-90, φ₂ + δφ)
+        return BoundingBox(; longitude = every_longitude, latitude)
+    end
+
+    # Relabeled across the seam: [0, 360) for labels in [-180, 180], and the reverse
+    λʳ₁, λʳ₂ = extrema(λ₁ < 0 ? mod.(λ, 360) : mod.(λ .+ 180, 360) .- 180)
+    longitude = λʳ₂ - λʳ₁ < λ₂ - λ₁ ? every_longitude : (λ₁ - δλ, λ₂ + δλ)
+
+    return BoundingBox(; longitude, latitude = (φ₁ - δφ, φ₂ + δφ))
 end
 
 axis_padding(padding::Number) = (padding, padding)

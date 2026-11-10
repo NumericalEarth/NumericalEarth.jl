@@ -14,6 +14,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, GravityWaveRad
 using Oceananigans.Grids: MutableVerticalDiscretization, inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
+using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: days
 
@@ -280,6 +281,84 @@ end
     @test maximum(abs, T .- T₀) < 1e-10
     @test maximum(abs, S .- S₀) < 1e-10
     @test model.parent.clock.time == model.clock.time == 20 * 60.0
+end
+
+# A child on a rotated grid, nested in a parent that covers it with uniform eastward and northward velocities
+function rotated_nested_ocean(arch; north_pole, longitude, latitude, uₑ, vₑ)
+    grid = RotatedLatitudeLongitudeGrid(arch; size = (16, 16, 6), halo = (7, 7, 7), north_pole, longitude, latitude,
+                                        z = (-1000, 0))
+
+    box = BoundingBox(grid; padding = 1)
+    parent_grid = LatitudeLongitudeGrid(arch; size = (24, 24, 6), longitude = box.longitude, latitude = box.latitude,
+                                        z = (-1000, 0), topology = (Bounded, Bounded, Bounded))
+
+    parent_ocean = PrescribedOcean(parent_grid, [0.0, 10days])
+    set!(parent_ocean; T = 15, S = 35, u = uₑ, v = vₑ, η = 0)
+
+    return nested_ocean_model(parent_ocean, grid)
+end
+
+# The components of an eastward `uₑ` and northward `vₑ` along the axes of `grid` at its `u` and `v` points, from the
+# cell corners that straddle each: the `y` line through a `u` point and the `x` line through a `v` point.
+function velocities_along_grid_axes(grid, uₑ, vₑ)
+    Nx, Ny, _ = size(grid)
+    λ = Array(grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1])
+    φ = Array(grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1])
+
+    function east_north(i₁, j₁, i₂, j₂)
+        δe = cosd((φ[i₁, j₁] + φ[i₂, j₂]) / 2) * (λ[i₂, j₂] - λ[i₁, j₁])
+        δn = φ[i₂, j₂] - φ[i₁, j₁]
+        return δe / hypot(δe, δn), δn / hypot(δe, δn)
+    end
+
+    y_lines = [east_north(i, j, i, j + 1) for i in 1:Nx+1, j in 1:Ny]
+    x_lines = [east_north(i, j, i + 1, j) for i in 1:Nx, j in 1:Ny+1]
+
+    u = [uₑ * n - vₑ * e for (e, n) in y_lines]
+    v = [vₑ * e - uₑ * n for (e, n) in x_lines]
+
+    return u, v
+end
+
+@testset "A nested ocean on a rotated grid takes the parent's velocities along its own axes on $(arch)" for arch in test_architectures
+    uₑ, vₑ = 0.1, -0.05
+
+    nested = rotated_nested_ocean(arch; north_pole = (-150, 40), longitude = (118, 122), latitude = (-2, 2), uₑ, vₑ)
+    grid = nested.child.grid
+    Nx, Ny, Nz = size(grid)
+    @test topology(grid, 1) == topology(grid, 2) == TwoSided{Open, Open}
+    @test keys(nested.exchanger.bands) == lateral_sides
+
+    u★, v★ = velocities_along_grid_axes(grid, uₑ, vₑ)
+    @test !(u★[1, 1] ≈ uₑ) && !(v★[1, 1] ≈ vₑ)
+
+    u = Array(interior(nested.child.velocities.u))
+    v = Array(interior(nested.child.velocities.v))
+    @test all(isapprox(u[:, :, k], u★; atol = 1e-6) for k in 1:Nz)
+    @test all(isapprox(v[:, :, k], v★; atol = 1e-6) for k in 1:Nz)
+
+    bands = nested.exchanger.bands
+    @test Array(interior(bands.west.u.current))[1, :, 1]    ≈ u★[1, :]    atol = 1e-6
+    @test Array(interior(bands.east.u.current))[end, :, 1]  ≈ u★[Nx+1, :] atol = 1e-6
+    @test Array(interior(bands.south.v.current))[:, 1, 1]   ≈ v★[:, 1]    atol = 1e-6
+    @test Array(interior(bands.north.v.current))[:, end, 1] ≈ v★[:, Ny+1] atol = 1e-6
+    @test Array(interior(bands.west.v.current))[1, :, 1]    ≈ v★[1, :]    atol = 1e-6
+
+    for n in 1:3
+        time_step!(nested, 60)
+    end
+
+    @test !any(isnan, Array(interior(nested.child.velocities.u)))
+    @test maximum(abs, Array(interior(nested.child.tracers.T)) .- 15) < 1e-10
+
+    # The x axis of this grid points south at its center, and its y axis east
+    nested = rotated_nested_ocean(arch; north_pole = (90, 0), longitude = (-122, -118), latitude = (-2, 2), uₑ, vₑ)
+    u = Array(interior(nested.child.velocities.u))
+    v = Array(interior(nested.child.velocities.v))
+    @test u[Nx÷2 + 1, Ny÷2, Nz] ≈ -vₑ atol = 1e-3
+    @test v[Nx÷2, Ny÷2 + 1, Nz] ≈ uₑ atol = 1e-3
+    time_step!(nested, 60)
+    @test !any(isnan, Array(interior(nested.child.velocities.v)))
 end
 
 @testset "Split-explicit substeps past the child step hold the parent, not extrapolate it, on $(arch)" for arch in test_architectures

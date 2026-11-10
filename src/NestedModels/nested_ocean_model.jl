@@ -4,7 +4,8 @@
 
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interior, interpolate!
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
-using Oceananigans.Grids: LatitudeLongitudeGrid, Open, TwoSided, constructor_arguments, λnodes, φnodes
+using Oceananigans.Grids: LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, Open, TwoSided, constructor_arguments,
+                          λnodes, φnodes
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: days, hours, kilometers
 using Oceananigans.DistributedComputations: all_reduce, reconstruct_global_grid
@@ -26,10 +27,21 @@ const default_bathymetry_blend_degrees = 4 / 12
 
 # The number of cells of `grid` that span `degrees` along its finest horizontal direction.
 function cells_spanning(grid, degrees)
-    cpu_grid = on_architecture(CPU(), underlying_grid(grid))
-    Δ = min(minimum(diff(λnodes(cpu_grid, Face()))), minimum(diff(φnodes(cpu_grid, Face()))))
-    Δ = all_reduce(min, Δ, architecture(grid))
+    Δ = all_reduce(min, finest_spacing(underlying_grid(grid)), architecture(grid))
     return max(1, round(Int, degrees / Δ))
+end
+
+# The finest horizontal spacing of `grid`: in degrees of longitude or latitude, or of arc along its own axes
+function finest_spacing(grid::LatitudeLongitudeGrid)
+    cpu_grid = on_architecture(CPU(), grid)
+    return min(minimum(diff(λnodes(cpu_grid, Face()))), minimum(diff(φnodes(cpu_grid, Face()))))
+end
+
+function finest_spacing(grid::OrthogonalSphericalShellGrid)
+    Nx, Ny, _ = size(grid)
+    Δx = view(on_architecture(CPU(), grid.Δxᶜᶜᵃ), 1:Nx, 1:Ny)
+    Δy = view(on_architecture(CPU(), grid.Δyᶜᶜᵃ), 1:Nx, 1:Ny)
+    return rad2deg(min(minimum(Δx), minimum(Δy)) / grid.radius)
 end
 
 const OceanParent = Union{PrescribedOcean, BoundaryPrescribedComponent}
@@ -38,9 +50,8 @@ underlying_grid(grid) = grid
 underlying_grid(grid::ImmersedBoundaryGrid) = grid.underlying_grid
 
 function validate_nested_ocean_grid(grid)
-    underlying_grid(grid) isa LatitudeLongitudeGrid ||
-        throw(ArgumentError("a nested ocean requires a LatitudeLongitudeGrid (possibly immersed), whose velocity " *
-                            "components are eastward and northward like the parent's; got $(summary(grid))."))
+    underlying_grid(grid) isa Union{LatitudeLongitudeGrid, OrthogonalSphericalShellGrid} ||
+        throw(ArgumentError("a nested ocean requires a grid on the sphere; got $(summary(grid))."))
     return nothing
 end
 
@@ -74,6 +85,15 @@ function with_open_sides(grid::LatitudeLongitudeGrid, sides)
     kwargs[:topology] = (open_topology(TX, :west ∈ sides, :east ∈ sides),
                          open_topology(TY, :south ∈ sides, :north ∈ sides), TZ)
     return LatitudeLongitudeGrid(architecture(grid), args[:number_type]; kwargs...)
+end
+
+# The copy shares the coordinates and metrics of `grid`.
+function with_open_sides(grid::OrthogonalSphericalShellGrid, sides)
+    TX, TY, TZ = topology(grid)
+    TXᵒ = open_topology(TX, :west ∈ sides, :east ∈ sides)
+    TYᵒ = open_topology(TY, :south ∈ sides, :north ∈ sides)
+    properties = ntuple(n -> getfield(grid, n), fieldcount(typeof(grid)))
+    return OrthogonalSphericalShellGrid{eltype(grid), TXᵒ, TYᵒ, TZ}(properties...)
 end
 
 function with_open_sides(grid::GridFittedBottomGrid, sides)
@@ -221,7 +241,7 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
     validate_nested_ocean_grid(grid)
     open_sides = domain_boundary_sides(grid, open_sides)
     validate_open_sides(grid, open_sides)
-    region = BoundingBox(grid; padding = parent_padding)
+    region = BoundingBox(underlying_grid(grid); padding = parent_padding)
 
     # The seafloor the parent state was produced over, every basin of it: the dataset's own, or where its
     # temperature is missing. The Flather exterior takes the parent's depth mean over it.
@@ -231,7 +251,7 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
         parent_bottom_height = regrid_bathymetry(underlying_grid(grid), metadatum; major_basins = Inf)
     end
 
-    parent = BoundaryPrescribedComponent(PrescribedOcean, grid, dates, parent_dataset;
+    parent = BoundaryPrescribedComponent(PrescribedOcean, underlying_grid(grid), dates, parent_dataset;
                                          width = relaxation_width, padding = parent_padding, sides = open_sides,
                                          dir, time_indices_in_memory = parent_time_indices_in_memory)
 
@@ -262,7 +282,7 @@ end
 # boundaries.
 function set_from_parent!(child, parent, time)
     grid = child.grid
-    sources = parent_ocean_sources(parent)
+    sources = child_frame_sources(grid, parent_ocean_sources(parent))
 
     u₀ = XFaceField(grid)
     v₀ = YFaceField(grid)
@@ -276,7 +296,7 @@ function set_from_parent!(child, parent, time)
     sample_parent!(S₀, boundary_location(:S), sources.S, time)
     sample_parent!(η₀, boundary_location(:η), sources.η, time)
 
-    set!(child; u = u₀, v = v₀, T = T₀, S = S₀, η = interior(η₀))
+    set!(child; u = u₀, v = v₀, T = T₀, S = S₀, η = interior(η₀), intrinsic_velocities = true)
 
     return child
 end

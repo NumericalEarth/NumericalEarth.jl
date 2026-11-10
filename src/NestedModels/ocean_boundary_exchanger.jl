@@ -55,7 +55,7 @@ normal_velocity_name(side) = boundary_dimension(side) == 1 ? :u : :v
 function boundary_floor(grid, name, parent_bottom_height)
     LX, LY, _ = typeof.(boundary_location(name))
     floor = Field{LX, LY, Nothing}(underlying_grid(grid))
-    interpolate!(floor, parent_bottom_height)
+    interpolate_bottom_height!(floor, parent_bottom_height, parent_bottom_height.grid)
     fill_halo_regions!(floor)
     return floor
 end
@@ -79,7 +79,7 @@ sample_depth_mean!(band, source, floor, side, time) =
     sample_parent_depth_mean!(band.current, depth_mean_location(side), source, floor, time)
 
 function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing)
-    sources = parent_ocean_sources(parent, sides)
+    sources = map(side_sources -> child_frame_sources(grid, side_sources), parent_ocean_sources(parent, sides))
     times = ParentTimes(time, time)
 
     function side_bands(side)

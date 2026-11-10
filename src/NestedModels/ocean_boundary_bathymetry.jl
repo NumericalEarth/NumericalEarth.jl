@@ -29,6 +29,16 @@ rebuilds any active cells map for the blended seafloor; `grid` itself is not cha
 bottom, or a parent without a known seafloor (`nothing`), is returned as it is.
 """
 blend_parent_bathymetry(grid, parent_bottom_height, sides; kw...) = grid
+
+# The parent's seafloor at the points of `field`. `interpolate!` cannot read a field on an
+# `OrthogonalSphericalShellGrid`: a seafloor on one is taken to be on the grid of `field`, and is averaged onto its points.
+interpolate_bottom_height!(field, bottom_height, grid) = interpolate!(field, bottom_height)
+
+function interpolate_bottom_height!(field, bottom_height, ::OrthogonalSphericalShellGrid)
+    LX, LY, _ = location(field)
+    field .= @at (LX, LY, Nothing) 1 * bottom_height
+    return field
+end
 blend_parent_bathymetry(grid::GridFittedBottomGrid, ::Nothing, sides; kw...) = grid
 
 function blend_parent_bathymetry(grid::GridFittedBottomGrid, parent_bottom_height, sides; width, minimum_depth)
@@ -41,7 +51,7 @@ function blend_parent_bathymetry(grid::GridFittedBottomGrid, parent_bottom_heigh
     set!(bottom_height, bottom_height_field(grid))
 
     parent_height = Field{Center, Center, Nothing}(underlying_grid)
-    interpolate!(parent_height, parent_bottom_height)
+    interpolate_bottom_height!(parent_height, parent_bottom_height, parent_bottom_height.grid)
 
     Nx, Ny, _ = size(underlying_grid)
     open = map(side -> side in sides, lateral_sides)

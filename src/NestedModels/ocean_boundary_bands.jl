@@ -12,7 +12,7 @@
 using Oceananigans.Fields: Field, interpolate
 using Oceananigans.Grids: Center, Closed, Connected, Face, Open, TwoSided, inactive_cell, new_data, topology,
                           validate_indices, λnode, φnode, rnode, ξnode, ηnode
-using Oceananigans.Operators: Δz
+using Oceananigans.Operators: Δz, rotation_angle
 using Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Utils: KernelParameters, launch!
 using KernelAbstractions: @kernel, @index
@@ -132,7 +132,54 @@ end
 ##### Sampling the parent
 #####
 
-@inline parent_value(source::FlavorOfFTS, X, loc, grid, time) = interpolate(X, time, source, loc, grid)
+"""
+    ParentVelocity{C}(eastward, northward)
+
+The component `C` (`:u` or `:v`) along the axes of a child grid of a parent velocity whose `eastward` and
+`northward` components are `FieldTimeSeries`: both are interpolated onto a child velocity point and rotated there by
+the grid's `rotation_angle`.
+"""
+struct ParentVelocity{C, U, V}
+    eastward  :: U
+    northward :: V
+end
+
+ParentVelocity{C}(eastward::U, northward::V) where {C, U, V} = ParentVelocity{C, U, V}(eastward, northward)
+
+Adapt.adapt_structure(to, v::ParentVelocity{C}) where C = ParentVelocity{C}(adapt(to, v.eastward), adapt(to, v.northward))
+
+parent_grid(source) = source.grid
+parent_grid(source::ParentVelocity) = (source.eastward.grid, source.northward.grid)
+
+parent_location(source) = Tuple(L() for L in location(source))
+parent_location(source::ParentVelocity) = (parent_location(source.eastward), parent_location(source.northward))
+
+@inline parent_levels_grid(grid) = grid
+@inline parent_levels_grid(grids::Tuple) = first(grids)
+
+"""
+    child_frame_sources(grid, sources)
+
+Return the parent `sources` as a child on `grid` samples them: unchanged on a `LatitudeLongitudeGrid`, whose
+velocity components are eastward and northward like the parent's, and with `u` and `v` replaced by
+[`ParentVelocity`](@ref)s on an `OrthogonalSphericalShellGrid`.
+"""
+child_frame_sources(grid, sources) = sources
+child_frame_sources(grid::ImmersedBoundaryGrid, sources) = child_frame_sources(grid.underlying_grid, sources)
+
+child_frame_sources(::OrthogonalSphericalShellGrid, sources) =
+    merge(sources, (u = ParentVelocity{:u}(sources.u, sources.v), v = ParentVelocity{:v}(sources.u, sources.v)))
+
+# The parent `source` at the node `X` of the point `(i, j)` of the child `grid` at `(ℓx, ℓy)`
+@inline parent_value(source::FlavorOfFTS, X, source_loc, source_grid, time, i, j, grid, ℓx, ℓy) =
+    interpolate(X, time, source, source_loc, source_grid)
+
+@inline function parent_value(source::ParentVelocity{C}, X, source_loc, source_grid, time, i, j, grid, ℓx, ℓy) where C
+    uₑ = interpolate(X, time, source.eastward,  source_loc[1], source_grid[1])
+    vₑ = interpolate(X, time, source.northward, source_loc[2], source_grid[2])
+    sinθ, cosθ = sincos(rotation_angle(i, j, grid, ℓx, ℓy))
+    return ifelse(C === :u, uₑ * cosθ - vₑ * sinθ, uₑ * sinθ + vₑ * cosθ)
+end
 
 # The parent's depths are below its free surface, so a z★ child samples it at its reference depth `rnode`, not its
 # `znode`, which rises with η above the parent's top level.
@@ -152,9 +199,8 @@ function sample_parent!(field, loc, source, time)
     ranges = axes(field.data)[1:3]
     params = KernelParameters(length.(ranges), first.(ranges) .- 1)
     bounds = parent_index_bounds(field, loc)
-    source_loc = Tuple(L() for L in location(source))
     launch!(architecture(field), grid, params, _sample_parent!,
-            field, grid, loc, bounds, source, source.grid, source_loc, Time(time))
+            field, grid, loc, bounds, source, parent_grid(source), parent_location(source), Time(time))
     return field
 end
 
@@ -164,7 +210,7 @@ end
     j′ = clamp(j, bounds[2]...)
     k′ = clamp(k, bounds[3]...)
     X = parent_node(i′, j′, k′, grid, loc...)
-    @inbounds field[i, j, k] = parent_value(source, X, source_loc, source_grid, time)
+    @inbounds field[i, j, k] = parent_value(source, X, source_loc, source_grid, time, i′, j′, grid, loc[1], loc[2])
 end
 
 """
@@ -180,9 +226,8 @@ function sample_parent_depth_mean!(field, loc, source, floor, time)
     ranges = axes(field.data)[1:2]
     params = KernelParameters(length.(ranges), first.(ranges) .- 1)
     bounds = parent_index_bounds(field, loc[1:2])
-    source_loc = Tuple(L() for L in location(source))
     launch!(architecture(field), grid, params, _sample_parent_depth_mean!,
-            field, grid, loc, bounds, source, source.grid, source_loc, floor, Time(time))
+            field, grid, loc, bounds, source, parent_grid(source), parent_location(source), floor, Time(time))
     return field
 end
 
@@ -196,10 +241,11 @@ end
 
     U = zero(grid)
     H = zero(grid)
-    for k in 1:size(source_grid, 3)
-        z = rnode(1, 1, k, source_grid, Center(), Center(), Center())
-        Δzᵏ = Δz(1, 1, k, source_grid, Center(), Center(), Center())
-        u = parent_value(source, (λ, φ, z), source_loc, source_grid, time)
+    levels_grid = parent_levels_grid(source_grid)
+    for k in 1:size(levels_grid, 3)
+        z = rnode(1, 1, k, levels_grid, Center(), Center(), Center())
+        Δzᵏ = Δz(1, 1, k, levels_grid, Center(), Center(), Center())
+        u = parent_value(source, (λ, φ, z), source_loc, source_grid, time, i′, j′, grid, loc[1], loc[2])
         wet = z > zᵇ
         U += ifelse(wet, u * Δzᵏ, zero(U))
         H += ifelse(wet, Δzᵏ, zero(H))
