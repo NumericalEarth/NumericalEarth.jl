@@ -1,14 +1,16 @@
 include("runtests_setup.jl")
 
 using Oceananigans.Grids: Center, Face, Flat, λnodes, φnodes
-using Oceananigans.Operators: Azᶜᶜᶜ
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.ImmersedBoundaries: inactive_node
+using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
+using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 using Oceananigans.Units: Time
-using NumericalEarth.Lands: RiverRouting, build_river_routing, coastal_outlet_indices, routable_grid
+
 using NumericalEarth.EarthSystemModels: interpolate_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
+using NumericalEarth.Lands: RiverRouting, build_flux_routing, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
-using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 
 # A target ocean grid whose western half (longitude < 0) is ocean and whose
 # eastern half is land, so the coastline runs down longitude = 0.
@@ -126,6 +128,34 @@ end
     @test peak(spread) < peak(capped) < peak(concentrated)
 end
 
+@testset "River discharge shared by column depth [$arch]" for arch in test_architectures
+    underlying = LatitudeLongitudeGrid(arch;
+                                       size = (20, 20, 10),
+                                       longitude = (-10, 10),
+                                       latitude = (-10, 10),
+                                       z = (-100, 0),
+                                       halo = (4, 4, 4))
+
+    bottom_height(λ, φ) = ifelse(λ < 0, 10λ - 10, 10) # ocean deepening westward from the coast
+    target_grid = ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom_height))
+    cpu_grid = on_architecture(CPU(), target_grid)
+
+    discharge = synthetic_discharge_field(arch, 1234.0)
+    discharge_cpu = Array(interior(discharge))[:, :, 1]
+    routing = routing_for(discharge, target_grid, 1000.0; spread_radius = 3, maximum_weighting_depth = 30)
+
+    flux, ti, tj = scattered_flux(routing, discharge_cpu, cpu_grid)
+    Nz = size(cpu_grid, 3)
+    column_depth(i, j) = sum(Δzᶜᶜᶜ(i, j, k, cpu_grid) for k in 1:Nz if !inactive_node(i, j, k, cpu_grid, Center(), Center(), Center()))
+
+    footprint = [c for c in eachindex(ti) if flux[ti[c], tj[c]] > 0]
+    deposited = [flux[ti[c], tj[c]] * Azᶜᶜᶜ(ti[c], tj[c], Nz, cpu_grid) for c in footprint]
+    capped_depth = [min(column_depth(ti[c], tj[c]), 30) for c in footprint]
+
+    @test length(unique(capped_depth)) > 1
+    @test deposited ./ sum(deposited) ≈ capped_depth ./ sum(capped_depth)
+end
+
 # GloFAS discharge accumulates downstream, so a channel running along the coast puts the river's
 # whole discharge in every coastal cell it passes. On a GloFAS-like 0.05ᵒ grid (ocean west of
 # λ = 0), a channel hugs the coast over j = 10:20, leaving it inland at j = 15:16, and reaches Q₀
@@ -158,6 +188,23 @@ end
     @test sum(Q) ≈ Q₀ + Q₁ + q
     @test count(>(0), Q) == 3
     @test (coast_i, 20) ∈ collect(zip(outlet_i, outlet_j))  # the channel's largest coastal cell
+end
+
+@testset "Flux routing finds the mouths of the first year [$arch]" for arch in test_architectures
+    target_grid = half_land_ocean_grid(arch)
+    source_grid = LatitudeLongitudeGrid(CPU(); size = (40, 40), longitude = (-10, 10), latitude = (-10, 10),
+                                        topology = (Bounded, Bounded, Flat))
+    coast_i = findfirst(>(0), Array(λnodes(source_grid, Center(), Center(), Center())))
+
+    flux_time_series = FieldTimeSeries{Center, Center, Nothing}(source_grid, [0, 180, 400] .* 86400.0)
+    interior(flux_time_series[2])[coast_i, 10, 1] = 1
+    interior(flux_time_series[3])[coast_i, 30, 1] = 1
+
+    routing = build_flux_routing(target_grid, flux_time_series)
+    outlets = collect(zip(Array(routing.contribution_outlet_i), Array(routing.contribution_outlet_j)))
+
+    @test (coast_i, 10) ∈ outlets
+    @test (coast_i, 30) ∉ outlets
 end
 
 @testset "Routed PrescribedLand interpolate_state! [$arch]" for arch in test_architectures
@@ -230,6 +277,28 @@ end
 
     @test ocean.model.closure isa VerticalScalarDiffusivity
     @test isnothing(ocean_simulation(target_grid; closure = nothing).model.closure)
+end
+
+@testset "River routing on a tripolar grid [$arch]" for arch in test_architectures
+    Q₀ = 3000.0
+    ρ = 1000.0
+
+    discharge = synthetic_discharge_field(arch, Q₀)
+    underlying = TripolarGrid(arch; size = (40, 40, 1), z = (-100, 0), halo = (4, 4, 4))
+    target_grid = ImmersedBoundaryGrid(underlying, GridFittedBottom((λ, φ) -> ifelse(φ > 60, 10, -100)))
+
+    cpu_grid = on_architecture(CPU(), target_grid)
+    kᴺ = size(cpu_grid, 3)
+    discharge_cpu = Array(interior(discharge))[:, :, 1]
+
+    flux, ti, tj = scattered_flux(routing_for(discharge, target_grid, ρ), discharge_cpu, cpu_grid)
+
+    @test length(ti) > 0
+    for c in eachindex(ti)
+        @test !inactive_node(ti[c], tj[c], kᴺ, cpu_grid, Center(), Center(), Center())
+    end
+
+    @test integrated_mass_flux(flux, cpu_grid) ≈ ρ * Q₀ rtol = 1e-4
 end
 
 @testset "Single-column grids carry no routing" begin

@@ -145,7 +145,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
     Jʷ = net_ocean_fluxes.η
-    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ — atmosphere freshwater enters at SST, ice meltwater at Tb
+    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ over every freshwater source
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
@@ -159,6 +159,8 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, sea_ice_concentration, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, sea_ice_concentration, ρτʸᵃᵒ)
+        # Only the ice-ocean drag is split: the atmosphere-ocean stress stays fully explicit, while
+        # the ℵˢⁱ-weighted coefficient feeds the ocean boundary condition's implicit term.
         τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, sea_ice_concentration)
         τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, sea_ice_concentration)
         λˣⁱᵒ = ρλˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, sea_ice_concentration)
@@ -185,7 +187,9 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
             # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!.
             # The atmosphere-ocean virtual salt flux (Sᴺ Jʷ) and the surface-value heat exchange
             # (Tᴺ Jʷ) are applied live in the salinity/temperature top BCs, so Jˢ holds only the
-            # sea-ice contribution and Jᴴ the freshwater enthalpy (rain − evaporation at SST).
+            # sea-ice contribution and Jᴴ the freshwater enthalpy: rain − evaporation at SST, plus the
+            # ice meltwater term, which is zero unless the meltwater is delivered at the interface
+            # temperature rather than at Conservative Temperature 0.
             Jᵀ[i, j, 1] = Jᵀao + Jᵀio
             Jˢ[i, j, 1] = Jˢio
             Jʷ[i, j, 1] = Jʷao + Jʷio

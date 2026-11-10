@@ -343,6 +343,8 @@ Oceananigans.initialize!(callback::ConservativeSurfaceFluxRestoringCallback, sim
 
 # The flux is rebuilt from the model on every call, so there is nothing to checkpoint
 Oceananigans.prognostic_state(::ConservativeSurfaceFluxRestoringCallback) = nothing
+Oceananigans.restore_prognostic_state!(callback::ConservativeSurfaceFluxRestoringCallback, state) = callback
+Oceananigans.restore_prognostic_state!(callback::ConservativeSurfaceFluxRestoringCallback, ::Nothing) = callback
 
 #####
 ##### Masks for restoring

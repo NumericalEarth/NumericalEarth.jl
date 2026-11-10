@@ -5,7 +5,7 @@ using ClimaSeaIce.SeaIceDynamics
 using Oceananigans.TimeSteppers: update_state!
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Units: hours, days
-using SeawaterPolynomials.TEOS10: θ_from_Θ
+using SeawaterPolynomials.TEOS10: θᴾ_from_Θ
 using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
                                                               celsius_to_kelvin,
@@ -179,7 +179,7 @@ end
 
             # Now manually compute the fluxes:
             Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
-            Tᵒᶜ = θ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
+            Tᵒᶜ = θᴾ_from_Θ(Sᵒᶜ, ocean.model.tracers.T[1, 1, 1]) + celsius_to_kelvin
 
             q_formulation = interfaces.atmosphere_ocean_interface.formulation.state.specific_humidity
             qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
@@ -455,4 +455,21 @@ end
 
     @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
     @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
+end
+
+@testset "Saturation vapor pressure enhancement (Gill 1982)" begin
+    ℂ = AtmosphereThermodynamicsParameters(Float64)
+    pᵃᵗ, Tₛ, Sₛ = 101325.0, 293.15, 35.0
+    phase = Thermodynamics.Liquid()
+
+    εᵈᵛ⁻¹ = 1 / Thermodynamics.Parameters.Rv_over_Rd(ℂ)
+    pᵛ⁺ = 0.98 * Thermodynamics.saturation_vapor_pressure(ℂ, Tₛ, phase)
+    fᵛ = 1 + 1e-8 * pᵃᵗ * (4.5 + 6e-4 * (Tₛ - celsius_to_kelvin)^2)
+    qᵛ⁺(pᵛ) = εᵈᵛ⁻¹ * pᵛ / (pᵃᵗ - (1 - εᵈᵛ⁻¹) * pᵛ)
+
+    unenhanced = ImpureSaturationSpecificHumidity(phase, 0.98)
+    enhanced = ImpureSaturationSpecificHumidity(phase, 0.98; saturation_enhancement = GillSaturationEnhancement())
+
+    @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
+    @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tₛ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
 end

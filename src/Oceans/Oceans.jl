@@ -4,6 +4,7 @@ export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, Prescribed
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -11,12 +12,12 @@ using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
-                                       IMEXFluxBoundaryCondition, IMEXFlux, getbc
+                                       IMEXFluxBoundaryCondition, IMEXFlux, fill_halo_regions!, getbc
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
-using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
+using Oceananigans.Fields: Field, CenterField, ZeroField, compute!, set!, interior
+using Oceananigans.Forcings: Forcings, MultipleForcings, DiscreteForcing
+using Oceananigans.Grids: Grids, architecture, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -32,7 +33,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVertic
 using Oceananigans.Units: minutes, hours
 using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
-using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θᴾ_from_Θ
 
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
@@ -40,7 +41,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters,
+                                                 vector_component_boundary_conditions
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -101,7 +103,7 @@ end
 
 @kernel function _ocean_state_to_potential_temperature!(Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
     i, j = @index(Global, NTuple)
-    @inbounds Tᵉˣ[i, j, 1] = θ_from_Θ(max(0, Sᵒᶜ[i, j, kᴺ]), Tᵒᶜ[i, j, kᴺ])
+    @inbounds Tᵉˣ[i, j, 1] = θᴾ_from_Θ(max(0, Sᵒᶜ[i, j, kᴺ]), Tᵒᶜ[i, j, kᴺ])
 end
 
 function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model)

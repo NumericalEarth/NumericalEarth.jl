@@ -385,6 +385,12 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
 
     Hx, Hy, Hz = Oceananigans.halo_size(native_z.grid)
 
+    # Intermediate grids are regular LatitudeLongitudeGrids — they have poles,
+    # not a fold. Inheriting TY from a TripolarGrid target (RightCenterFolded)
+    # is invalid: Field construction would default to PolarValue BCs at the
+    # pole, which folded topology rejects (only Zipper / distributed_comm /
+    # nothing are allowed). Use Bounded; the actual fold is applied at the
+    # final pass when interpolating onto target_grid.
     @info "Interpolation passes of bathymetry size $(size(old_z)) onto a $(typeof(target_grid).name.wrapper) target grid of size $Nt:"
     for pass = 1:passes - 1
         new_size = (Nλ[pass], Nφ[pass], 1)

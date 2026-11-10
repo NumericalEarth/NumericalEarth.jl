@@ -592,9 +592,8 @@ Adapt.@adapt_structure SoilConductiveFlux
     maximum_temperature_step = convert(typeof(T★), st.max_ΔT)
     Tⁱⁿ⁺ = Tⁱⁿ⁻ + clamp(ΔT★, -maximum_temperature_step, maximum_temperature_step)
 
-    # Cap at melting temperature
-    Tₘ = ℙᵢ.liquidus.freshwater_melting_temperature
-    Tₘ = convert_to_kelvin(ℙᵢ.temperature_units, Tₘ)
+    # Cap at the melting temperature of the ice top surface (snow or nearly fresh ice): 0 ᵒC
+    Tₘ = convert_to_kelvin(ℙᵢ.temperature_units, zero(T★))
     Tⁱⁿ⁺ = min(Tⁱⁿ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature
@@ -603,14 +602,14 @@ Adapt.@adapt_structure SoilConductiveFlux
     return Tⁱⁿ⁺
 end
 
-# Bare ice: R = hᵢ / kᵢ
+# Bare ice
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
                                           Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     R  = thermal_resistance(st.internal_flux, Ψᵢ.hi)
     return conductive_flux_balance_temperature(st, R, Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
-# Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
+# Snow + ice
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
                                           Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     R  = thermal_resistance(st.internal_flux, Ψᵢ.hi, Ψᵢ.hs)

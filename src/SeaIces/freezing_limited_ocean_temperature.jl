@@ -1,5 +1,6 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
-using Oceananigans.Grids: znode
+using Oceananigans.Grids: znode, Center
+using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Operators: Δzᶜᶜᶜ
 
 using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
@@ -106,9 +107,10 @@ end
             Sᵏ = Sᵒᶜ[i, j, k]
         end
 
-        z  = znode(i, j, k, grid, Center(), Center(), Center())
-        Tₘ = melting_temperature(liquidus, Sᵏ, z)
-        freezing = Tᵏ < Tₘ
+        z   = znode(i, j, k, grid, Center(), Center(), Center())
+        wet = !inactive_node(i, j, k, grid, Center(), Center(), Center())
+        Tₘ  = melting_temperature(liquidus, Sᵏ, z)
+        freezing = wet & (Tᵏ < Tₘ)
         δE = freezing * ρᵒᶜ * cᵒᶜ * (Tₘ - Tᵏ)
 
         @inbounds Tᵒᶜ[i, j, k] = ifelse(freezing, Tₘ, Tᵏ)

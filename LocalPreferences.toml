@@ -1,0 +1,13 @@
+[CUDA_Runtime_jll]
+local = "true"
+version = "12.4"
+
+[MPIPreferences]
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "OpenMPI"
+binary = "system"
+cclibs = []
+libmpi = "/orcd/software/community/001/rocky8/nvhpc/2024_245/Linux_x86_64/24.5/comm_libs/openmpi/openmpi-3.1.5/lib/libmpi.so"
+mpiexec = "mpiexec"
+preloads = []

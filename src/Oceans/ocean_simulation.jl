@@ -280,7 +280,7 @@ end
                                  closure = default_ocean_closure(),
                                  tracers = (:T, :S),
                                  free_surface = default_free_surface(grid),
-                                 reference_density = 1020,
+                                 reference_density = 1026,
                                  rotation_rate = default_planet_rotation_rate,
                                  gravitational_acceleration = default_gravitational_acceleration,
                                  bottom_drag_coefficient = Default(0.003),
@@ -388,7 +388,8 @@ override the defaults on a per-field basis.
 - `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
-- `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `radiative_forcing`: Additional temperature forcing; merged into `forcing`. A `CATKEVerticalDiffusivity` accounts for
+  it in its convective scales.
 - `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
@@ -404,7 +405,7 @@ function hydrostatic_ocean_simulation(grid;
                                       closure = default_ocean_closure(),
                                       tracers = (:T, :S),
                                       free_surface = default_free_surface(grid),
-                                      reference_density = 1020,
+                                      reference_density = 1026,
                                       rotation_rate = default_planet_rotation_rate,
                                       gravitational_acceleration = default_gravitational_acceleration,
                                       bottom_drag_coefficient = Default(0.003),

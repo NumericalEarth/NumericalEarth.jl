@@ -1,9 +1,48 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using Oceananigans.Grids: znode
+using Oceananigans.Grids: znode, Center
+using Oceananigans.ImmersedBoundaries: inactive_node
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
+
+#####
+##### The temperature the ice meltwater carries into the ocean
+#####
+
+"""
+    ZeroHeatContentMeltwater()
+
+Ice meltwater joins the ocean carrying no heat content, that is, at Conservative Temperature 0.
+"""
+struct ZeroHeatContentMeltwater end
+
+"""
+    InterfaceTemperatureMeltwater()
+
+Ice meltwater joins the ocean at the interface temperature `Tᵦ`. `ClimaSeaIce` evaluates the latent heat
+at the interface, `ℰb = ρⁱ latent_heat(phase_transitions, Tbi)`, so the liquid a basal phase change
+produces is at `Tᵦ` and not at 0; delivering it at 0 hands the ocean `ρᵒᶜ cᵒᶜ |Tᵦ|` of heat it never
+paid for, about 0.23 W m⁻² per m yr⁻¹ of basal melt.
+
+The same correction applies in the freezing direction: water leaving the ocean to form ice leaves at
+`Tᵦ` rather than at 0.
+
+The correction applies to the ocean-driven basal melt rate `q` of the interface heat balance only; top melt
+is produced at the surface melting temperature, near 0, and needs none.
+"""
+struct InterfaceTemperatureMeltwater end
+
+"""
+$(TYPEDSIGNATURES)
+
+The ocean-side heat-content flux carried by ice meltwater, given the interface temperature `Tᵦ` and the
+ice-only volume flux `Jʷⁱ`. Enters `Jᴴ`, which the temperature boundary condition subtracts from the
+ambient carry `Tᴺ Jʷ`, so returning `Tᵦ Jʷⁱ` delivers the ice water at `Tᵦ` and returning zero delivers
+it at Conservative Temperature 0.
+"""
+@inline meltwater_heat_content(::ZeroHeatContentMeltwater, Tᵦ, Jʷⁱ) = zero(Jʷⁱ)
+@inline meltwater_heat_content(::InterfaceTemperatureMeltwater, Tᵦ, Jʷⁱ) = Tᵦ * Jʷⁱ
 
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
@@ -72,7 +111,8 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tⁱⁿ, Sⁱⁿ, grid, clock,
             hˢⁱ, hc, ℵˢⁱ, Sˢⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
-            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)
+            liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow,
+            interface.meltwater_enthalpy)
 
     return nothing
 end
@@ -129,7 +169,8 @@ end
                                                 latent_heat,
                                                 Δt,
                                                 ice_ocean_mass_flux,
-                                                snow_ocean_mass_flux)
+                                                snow_ocean_mass_flux,
+                                                meltwater_enthalpy)
 
     i, j = @index(Global, NTuple)
 
@@ -160,6 +201,9 @@ end
     δ𝒬ᶠʳᶻ = zero(grid)
 
     for k = Nz:-1:1
+        # cells inside the bathymetry hold T = S = 0, which a liquidus with a non-zero intercept would flag as freezing
+        wet = !inactive_node(i, j, k, grid, Center(), Center(), Center())
+
         @inbounds begin
             Δz = Δzᶜᶜᶜ(i, j, k, grid)
             Tᵏ = Tᵒᶜ[i, j, k]
@@ -169,7 +213,7 @@ end
         # Melting/freezing temperature at this depth
         z  = znode(i, j, k, grid, Center(), Center(), Center())
         Tₘ = melting_temperature(liquidus, Sᵏ, z)
-        freezing = Tᵏ < Tₘ
+        freezing = wet & (Tᵏ < Tₘ)
 
         # Compute change in ocean heat energy due to freezing.
         # When Tᵏ < Tₘ, we heat the ocean back to melting temperature
@@ -232,6 +276,6 @@ end
         Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
         Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
         Eᵢᵒ = - q # bottom-only (ocean-driven) ice mass tendency, self-consistent with Tb/Sb
-        Jᴴ[i, j, 1] = - Tb * Eᵢᵒ / ρᵒᶜ # ice meltwater enters at the interface temperature, snow melts at 0
+        Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tb, - Eᵢᵒ / ρᵒᶜ)
     end
 end

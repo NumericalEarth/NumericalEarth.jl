@@ -1,4 +1,4 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, ConductiveFlux, effective_conductivity
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)
@@ -272,7 +272,7 @@ end
     h  = ice_state.h
     hc = ice_state.hc
     Tˢⁱ = ice_state.T
-    k  = flux.conductive_flux.conductivity
+    k  = effective_conductivity(flux.conductive_flux, h)
     # Set κ to zero when h < hc (ice not consolidated)
     consolidated = h ≥ hc
     κ = ifelse(consolidated, k / (h * ℰ), zero(h))
@@ -298,7 +298,7 @@ Arguments
 Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
 """
 @inline function solve_interface_conditions(flux::ThreeEquationHeatFlux, Tᵒᶜ, Sᵒᶜ, ice_state,
-                                            αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus::LinearLiquidus)
+                                            αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
     Sˢⁱ = ice_state.S
 
     # Get conductive flux parameters - dispatches on flux type
