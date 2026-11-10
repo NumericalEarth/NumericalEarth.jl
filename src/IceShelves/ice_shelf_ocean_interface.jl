@@ -127,6 +127,10 @@ acceleration when the ocean provides them.
 `boundary_layer_thickness` sets the fixed physical thickness over which the
 ocean state feeding the melt-rate solver is averaged, default 30 m
 (Mathiot et al., 2017).
+
+On a grid with a `MutableVerticalDiscretization` the meltwater enters as a real
+volume flux, so pass the model's `free_surface` to build the `freshwater` flux on
+the free-surface grid.
 """
 function IceShelfOceanInterface(grid;
                                 flux_formulation = ThreeEquationHeatFlux(eltype(grid);
@@ -137,7 +141,8 @@ function IceShelfOceanInterface(grid;
                                 heat_capacity = 3991,
                                 latent_heat = 334e3,
                                 ice_salinity = 0,
-                                boundary_layer_thickness = 30)
+                                boundary_layer_thickness = 30,
+                                free_surface = nothing)
 
     FT = eltype(grid)
 
@@ -150,7 +155,7 @@ function IceShelfOceanInterface(grid;
 
     fluxes = (interface_heat          = F(grid),
               salt                    = F(grid),
-              freshwater              = F(grid),
+              freshwater              = F(free_surface_grid(grid, free_surface)),
               freshwater_heat_content = F(grid))
 
     temperature = F(grid)
