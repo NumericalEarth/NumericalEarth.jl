@@ -84,7 +84,7 @@ outputs = (T = view(child.tracers.T, :, :, Nz),
 
 simulation.output_writers[:surface] = JLD2Writer(child, outputs; schedule = TimeInterval(2days),
                                                 filename = joinpath(outdir, "arctic_surface"),
-                                                overwrite_existing = true)
+                                                overwrite_files = true)
 
 run!(simulation)
 @info "done" time(simulation)
