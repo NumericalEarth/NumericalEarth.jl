@@ -7,22 +7,17 @@ CopernicusClimateDataStore = "bce3f73f-acea-4481-bd86-df89ecc2cb46"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
-LowerTriangularArrays = "ed20b33f-a660-45d0-a353-9c8c20bb5814"
 NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
-RingGrids = "d1845624-ad4f-453b-8ff4-a8db365bf3a7"
-SpeedyWeatherInternals = "34489162-d270-4603-8b96-37b04f830d73"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2
 LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
-LowerTriangularArrays = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "LowerTriangularArrays"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 NumericalEarth = {path = ".."}
-RingGrids = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "RingGrids"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
-SpeedyWeatherInternals = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeatherInternals"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
 [compat]
