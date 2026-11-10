@@ -241,17 +241,16 @@ simulation = Simulation(model; Δt = 30minutes, stop_time = 360days)
 
 add_callback!(simulation, sim -> compute_ice_shelf_fluxes!(interface, sim), IterationInterval(1))
 
-# The melt rate is a mass flux in kg m⁻² s⁻¹. Dividing it by the density of
-# fresh water gives metres of water per unit time.
+# The freshwater flux is the meltwater volume flux in m s⁻¹, positive into the ocean.
 
 # The mean is taken over the columns beneath the ice, where `k_draft > 0`.
 
-melt_rate = interface.fluxes.melt_rate
+freshwater = interface.fluxes.freshwater
 ice_covered = Array(interior(interface.k_draft)) .> 0
 
 function progress(sim)
     u, v, w = sim.model.velocities
-    mean_melt = mean(Array(interior(melt_rate))[ice_covered]) / 1000 * 365days
+    mean_melt = mean(Array(interior(freshwater))[ice_covered]) * 365days
 
     msg = @sprintf("iteration: %d, time: %s, mean melt: %.2f m/yr, max|u|: (%.2e, %.2e, %.2e) m/s",
                    iteration(sim), prettytime(sim), mean_melt,
@@ -263,7 +262,7 @@ end
 
 add_callback!(simulation, progress, IterationInterval(480))
 
-outputs = merge(model.velocities, model.tracers, (; melt_rate))
+outputs = merge(model.velocities, model.tracers, (; freshwater))
 
 simulation.output_writers[:fields] = JLD2Writer(model, outputs;
                                                 filename = "isomip_ice_shelf_cavity.jld2",
@@ -282,7 +281,7 @@ using CairoMakie
 
 vt = FieldTimeSeries("isomip_ice_shelf_cavity.jld2", "v")
 Tt = FieldTimeSeries("isomip_ice_shelf_cavity.jld2", "T")
-mt = FieldTimeSeries("isomip_ice_shelf_cavity.jld2", "melt_rate")
+mt = FieldTimeSeries("isomip_ice_shelf_cavity.jld2", "freshwater")
 
 yc = ynodes(Tt.grid, Center()) ./ 1kilometers
 yf = ynodes(vt.grid, Face()) ./ 1kilometers
@@ -300,7 +299,7 @@ T̄ = zonal_mean(interior(Tt[n]), wet)
 v̄[dropdims(sum(wet, dims=1), dims=1) .== 0] .= NaN
 T̄[dropdims(sum(wet, dims=1), dims=1) .== 0] .= NaN
 
-melt = interior(mt[n], :, :, 1) ./ 1000 .* 365days
+melt = interior(mt[n], :, :, 1) .* 365days
 melt[.!ice_covered[:, :, 1]] .= NaN
 
 fig = Figure(size = (1000, 900))
