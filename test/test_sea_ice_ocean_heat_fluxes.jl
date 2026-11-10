@@ -11,7 +11,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_
                                                               ComponentInterfaces,
                                                               compute_sea_ice_ocean_fluxes!
 
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
+using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature, ConductiveFlux
+using Oceananigans.Fields: ConstantField
 
 @testset "Ocean-sea ice heat flux formulations" begin
 
@@ -177,6 +178,49 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             @test Sb ≤ Sᵒᶜ
             @test Tb ≈ melting_temperature(liquidus, Sb)
         end
+    end
+
+    @testset "Interface heat flux excludes conduction through the ice" begin
+        liquidus = LinearLiquidus(Float64)
+        ocean_properties = (reference_density = 1025.0, heat_capacity = 3991.0)
+        ρᵒᶜ = ocean_properties.reference_density
+        cᵒᶜ = ocean_properties.heat_capacity
+        αₕ = 0.0095
+        αₛ = αₕ / 35
+        u★ = 0.002
+        ℰ  = 334e3
+        k  = 2.0
+        hˢⁱ = 1.0
+        ℵ  = 0.8
+        Tˢⁱ = -15.0
+
+        ocean_state = (; T = -1.0, S = 34.0)
+        ice_state = (; S = 5.0, h = hˢⁱ, hc = 0.1, ℵ, T = Tˢⁱ)
+
+        bare = ThreeEquationHeatFlux()
+        conducting = ThreeEquationHeatFlux(ConductiveFlux(conductivity=k), ConstantField(Tˢⁱ), αₕ, αₛ, u★)
+
+        for (flux, kᵢ) in ((bare, 0.0), (conducting, k))
+            Q, T★, S★, q★ = compute_interface_heat_flux(flux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+            T★′, S★′, q = solve_interface_conditions(flux, ocean_state.T, ocean_state.S, ice_state,
+                                                     αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
+
+            Fᵒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (ocean_state.T - T★)
+            Fᶜ = kᵢ * (Tˢⁱ - T★) / hˢⁱ
+
+            @test T★ ≈ T★′
+            @test S★ ≈ S★′
+            @test Q ≈ Fᵒ * ℵ
+            @test ℰ * q ≈ Fᵒ + Fᶜ
+        end
+
+        Q_bare, T★_bare, = compute_interface_heat_flux(bare, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+        Q_cond, T★_cond, = compute_interface_heat_flux(conducting, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+        # (trailing comma intentionally discards the remaining Sb, q return values)
+
+        # Cold ice draws the interface colder, so the ocean loses more heat, not less
+        @test T★_cond < T★_bare
+        @test Q_cond > Q_bare > 0
     end
 end
 
@@ -428,8 +472,8 @@ end
     end
 end
 
-# Needs an Oceananigans release with CliMA/Oceananigans.jl#6153
-if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
+# Needs an Oceananigans release with CliMA/Oceananigans.jl#6175
+if isdefined(Oceananigans, :TopLoad)
 
 @testset "No frazil under an ice shelf" begin
     for arch in test_architectures
@@ -444,7 +488,7 @@ if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
 
         # An ice shelf with its draft at -200 m covers the western half (i = 1, 2).
         ice_draft(λ, φ) = λ < 5 ? -200 : 0
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(-400; top_height = ice_draft))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedVerticalBoundaries(; bottom_height = -400, top_height = ice_draft))
 
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
@@ -456,7 +500,9 @@ if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
         set!(sea_ice.model, h=1, ℵ=0.5)
         compute_sea_ice_ocean_fluxes!(coupled_model)
 
-        Tₘ = melting_temperature(sea_ice.model.phase_transitions.liquidus, 35)
+        liquidus = sea_ice.model.phase_transitions.liquidus
+        z = reshape(Array(znodes(grid, Center())), 1, 1, :)
+        Tₘ = melting_temperature.(Ref(liquidus), 35, z)
         T = Array(interior(ocean.model.tracers.T))
         𝒬ᶠʳᶻ = Array(interior(coupled_model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat, :, :, 1))
 
@@ -468,7 +514,7 @@ if isdefined(Oceananigans, :GridFittedVerticalBoundaries)
 end
 
 else
-    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no GridFittedVerticalBoundaries"
+    @warn "Skipping the ice shelf frazil-masking test: this Oceananigans has no immersed tops"
 end
 
 @testset "Coupled model with different heat flux formulations" begin
