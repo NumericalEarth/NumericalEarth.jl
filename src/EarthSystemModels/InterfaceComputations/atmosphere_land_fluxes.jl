@@ -370,7 +370,8 @@ function land_canopy_water_capacity end
     Tⁱⁿ, qⁱⁿ = initial_interface_values(temperature_formulation(formulation.state), Ψˡᵃ.surface_storage, Ψˡᵃ.T, qⁱⁿ, Δt)
     Ψⁱⁿ⁰ = AirLandInterfaceState(u★, u★, u★, zero(FT), zero(FT), convert(FT, Tⁱⁿ), convert(FT, qⁱⁿ))
 
-    Ψⁱⁿ = compute_interface_state(formulation, Ψⁱⁿ⁰, Ψᵃᵗ, Ψˡᵃ, radiation_state, atmosphere_properties, (;), Δt)
+    Ψⁱⁿ = land_interface_state(temperature_formulation(formulation.state), Ψˡᵃ.surface_storage, formulation,
+                               Ψⁱⁿ⁰, Ψᵃᵗ, Ψˡᵃ, radiation_state, atmosphere_properties, Δt)
 
     Ψⁱⁿ = finalize_interface_state!(interface_temperature, next_surface_state, i, j, temperature_formulation(formulation.state),
                                     Ψⁱⁿ, Ψᵃᵗ, Ψˡᵃ, radiation_state, formulation, atmosphere_properties, Δt)
