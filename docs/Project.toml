@@ -21,6 +21,8 @@ GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
+LowerTriangularArrays = "ed20b33f-a660-45d0-a353-9c8c20bb5814"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
@@ -28,13 +30,23 @@ Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+RingGrids = "d1845624-ad4f-453b-8ff4-a8db365bf3a7"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
+SpeedyTransforms = "ed023a3f-7a3c-42dd-bab6-68c21c8c3105"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
+SpeedyWeatherInternals = "34489162-d270-4603-8b96-37b04f830d73"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
+LowerTriangularArrays = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "LowerTriangularArrays"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 NumericalEarth = {path = ".."}
+RingGrids = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "RingGrids"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
+SpeedyTransforms = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyTransforms"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
+SpeedyWeather = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeather"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
+SpeedyWeatherInternals = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeatherInternals"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
 [compat]
 ArchGDAL = "0.10"
