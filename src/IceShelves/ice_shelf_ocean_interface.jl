@@ -84,7 +84,7 @@ mutable struct IceShelfOceanInterface{K, A, J, F, L, T, S, U, P}
     k_draft :: K
     "fraction of each column's immersed top that is ice, by which the heat, salt and melt fluxes are scaled"
     ice_concentration :: A
-    "2D `interface_heat`, `temperature`, `salt` and `melt_rate` fluxes, positive out of the ocean"
+    "2D `interface_heat` (W m⁻²) and `salt` fluxes, positive out of the ocean, `freshwater` volume flux (m s⁻¹), positive into the ocean, and its `freshwater_heat_content`"
     fluxes :: J
     "`ThreeEquationHeatFlux` or `IceBathHeatFlux`"
     flux_formulation :: F
@@ -148,10 +148,10 @@ function IceShelfOceanInterface(grid;
     ℵ = F(grid)
     set!(ℵ, ice_concentration)
 
-    fluxes = (interface_heat = F(grid),
-              temperature    = F(grid),
-              salt           = F(grid),
-              melt_rate      = F(grid))
+    fluxes = (interface_heat          = F(grid),
+              salt                    = F(grid),
+              freshwater              = F(grid),
+              freshwater_heat_content = F(grid))
 
     temperature = F(grid)
     salinity = F(grid)

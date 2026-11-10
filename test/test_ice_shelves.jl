@@ -174,30 +174,26 @@ for arch in test_architectures
         compute_ice_shelf_fluxes!(interface, model)
         compute_ice_shelf_fluxes!(rock_interface, model)
         compute_ice_shelf_fluxes!(half_interface, model)
-        @test all(Array(interior(rock_interface.fluxes.melt_rate)) .== 0)
-        @test all(Array(interior(rock_interface.fluxes.temperature)) .== 0)
-        @test all(Array(interior(rock_interface.fluxes.salt)) .== 0)
+        for name in keys(rock_interface.fluxes)
+            @test all(Array(interior(rock_interface.fluxes[name])) .== 0)
+        end
 
-        for name in (:melt_rate, :temperature, :salt)
+        for name in (:interface_heat, :freshwater)
             @test Array(interior(half_interface.fluxes[name]))[2, 2, 1] ≈
                   Array(interior(interface.fluxes[name]))[2, 2, 1] / 2
         end
 
-        melt_rate      = Array(interior(interface.fluxes.melt_rate))[:, 2, 1]
         interface_heat = Array(interior(interface.fluxes.interface_heat))[:, 2, 1]
-        heat_flux      = Array(interior(interface.fluxes.temperature))[:, 2, 1]
-        salt_flux      = Array(interior(interface.fluxes.salt))[:, 2, 1]
+        freshwater     = Array(interior(interface.fluxes.freshwater))[:, 2, 1]
+        heat_content   = Array(interior(interface.fluxes.freshwater_heat_content))[:, 2, 1]
 
         # Melting only in the iced column
-        @test melt_rate[2] > 0
         @test interface_heat[2] > 0
-        @test heat_flux[2] > 0
-        @test salt_flux[2] > 0
+        @test freshwater[2] > 0
 
         for i in (1, 3, 4)
-            @test melt_rate[i] == 0
-            @test heat_flux[i] == 0
-            @test salt_flux[i] == 0
+            @test interface_heat[i] == 0
+            @test freshwater[i] == 0
         end
 
         # Interface state on the liquidus at the discrete ice base (z = -0.5)
@@ -206,9 +202,8 @@ for arch in test_architectures
         @test T★ ≈ melting_temperature(ice_shelf_liquidus(interface, model), S★, -0.5) atol = 1e-10
         @test Array(interior(interface.friction_velocity))[2, 2, 1] == 0.002
 
-        ρᵒᶜ = interface.properties.reference_density
-        cᵒᶜ = interface.properties.heat_capacity
-        @test heat_flux[2] ≈ interface_heat[2] / (ρᵒᶜ * cᵒᶜ)
+        # Meltwater enters at the interface temperature
+        @test heat_content[2] ≈ T★ * freshwater[2]
 
         # With a TEOS-10 ocean the interface sits on the TEOS-10 liquidus
         buoyancy = SeawaterBuoyancy(equation_of_state = TEOS10EquationOfState())
@@ -222,7 +217,7 @@ for arch in test_architectures
         T★ = Array(interior(interface.temperature))[2, 2, 1]
         S★ = Array(interior(interface.salinity))[2, 2, 1]
         @test T★ ≈ melting_temperature(liquidus, S★, -0.5) atol = 1e-10
-        @test Array(interior(interface.fluxes.melt_rate))[2, 2, 1] > 0
+        @test Array(interior(interface.fluxes.freshwater))[2, 2, 1] > 0
     end
 
     @testset "Partial-cell drafts [$(typeof(arch))]" begin
@@ -243,13 +238,13 @@ for arch in test_architectures
         set!(model, T = 1.0, S = 34.5)
         compute_ice_shelf_fluxes!(interface, model)
 
-        melt_rate = Array(interior(interface.fluxes.melt_rate))[:, 2, 1]
+        Jʷ = Array(interior(interface.fluxes.freshwater))[:, 2, 1]
         T★ = Array(interior(interface.temperature))[:, 2, 1]
         S★ = Array(interior(interface.salinity))[:, 2, 1]
         liquidus = ice_shelf_liquidus(interface, model)
 
-        @test all(melt_rate[2:3] .> 0)
-        @test melt_rate[1] == melt_rate[4] == 0
+        @test all(Jʷ[2:3] .> 0)
+        @test Jʷ[1] == Jʷ[4] == 0
         @test T★[2] ≈ melting_temperature(liquidus, S★[2], -0.1) atol = 1e-10
         @test T★[3] ≈ melting_temperature(liquidus, S★[3], -0.6) atol = 1e-10
     end
@@ -295,18 +290,19 @@ for arch in test_architectures
         @test all(isfinite, interior(S))
         @test all(isfinite, interior(u))
         @test all(isfinite, interior(w))
-        @test all(isfinite, interior(interface.fluxes.melt_rate))
+        @test all(isfinite, interior(interface.fluxes.freshwater))
 
-        k_draft   = Array(interior(interface.k_draft))[:, 1, 1]
-        melt_rate = Array(interior(interface.fluxes.melt_rate))[:, 1, 1]
+        k_draft    = Array(interior(interface.k_draft))[:, 1, 1]
+        freshwater = Array(interior(interface.fluxes.freshwater))[:, 1, 1]
         Tᵢ = Array(interior(T))[:, 1, :]
         Sᵢ = Array(interior(S))[:, 1, :]
 
         iced = findall(k_draft .> 0)
         @test length(iced) > 5
 
-        # melt_rate is in kg m⁻² s⁻¹; convert to m of ice per year
-        melt_rate_m_yr = melt_rate[iced] ./ 918 .* 3.156e7
+        # Meltwater volume flux in m s⁻¹ to m of ice per year
+        ρᵒᶜ = interface.properties.reference_density
+        melt_rate_m_yr = freshwater[iced] .* ρᵒᶜ ./ 918 .* 3.156e7
         @test all(melt_rate_m_yr .> 0.1)
         @test all(melt_rate_m_yr .< 1000)
 
