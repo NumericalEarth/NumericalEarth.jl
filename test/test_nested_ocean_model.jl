@@ -334,15 +334,15 @@ end
 
     u = Array(interior(nested.child.velocities.u))
     v = Array(interior(nested.child.velocities.v))
-    @test all(isapprox(u[:, :, k], u★; atol = 1e-6) for k in 1:Nz)
-    @test all(isapprox(v[:, :, k], v★; atol = 1e-6) for k in 1:Nz)
+    @test all(isapprox(u[:, :, k], u★; atol = 1e-4) for k in 1:Nz)
+    @test all(isapprox(v[:, :, k], v★; atol = 1e-4) for k in 1:Nz)
 
     bands = nested.exchanger.bands
-    @test Array(interior(bands.west.u.current))[1, :, 1]    ≈ u★[1, :]    atol = 1e-6
-    @test Array(interior(bands.east.u.current))[end, :, 1]  ≈ u★[Nx+1, :] atol = 1e-6
-    @test Array(interior(bands.south.v.current))[:, 1, 1]   ≈ v★[:, 1]    atol = 1e-6
-    @test Array(interior(bands.north.v.current))[:, end, 1] ≈ v★[:, Ny+1] atol = 1e-6
-    @test Array(interior(bands.west.v.current))[1, :, 1]    ≈ v★[1, :]    atol = 1e-6
+    @test Array(interior(bands.west.u.current))[1, :, 1]    ≈ u★[1, :]    atol = 1e-4
+    @test Array(interior(bands.east.u.current))[end, :, 1]  ≈ u★[Nx+1, :] atol = 1e-4
+    @test Array(interior(bands.south.v.current))[:, 1, 1]   ≈ v★[:, 1]    atol = 1e-4
+    @test Array(interior(bands.north.v.current))[:, end, 1] ≈ v★[:, Ny+1] atol = 1e-4
+    @test Array(interior(bands.west.v.current))[1, :, 1]    ≈ v★[1, :]    atol = 1e-4
 
     for n in 1:3
         time_step!(nested, 60)

@@ -39,7 +39,8 @@ Oceananigans.Architectures.on_architecture(to, b::SeaIceBoundarySeries{Dim}) whe
     SeaIceBoundaryVelocity{Dim}(ice_velocity, concentration, ocean_velocity, cell, face, surface, inward, along)
 
 The boundary-normal sea ice velocity on the boundary `face` of one open side. The exterior velocity is the parent's
-`ice_velocity` at the boundary-adjacent `cell`, or, where the parent's ice is free drifting with no velocity of its
+eastward and northward `ice_velocity`, a tuple of both series, along the normal axis of the grid
+at the boundary-adjacent `cell`, or, where the parent's ice is free drifting with no velocity of its
 own, the nested ocean's boundary-normal `ocean_velocity` band at level `surface`. With the interior velocity `uᴵ` on
 the first interior face and `inward` the sign of the inward normal:
 
@@ -86,7 +87,9 @@ end
                                           clock=nothing, fields=nothing, args...)
     t = boundary_time(clock)
     jᵇ = clamp(j, b.along...)
-    uᵢ = @inbounds b.ice_velocity[b.cell, jᵇ, 1, t]
+    uₑ = @inbounds b.ice_velocity[1][b.cell, jᵇ, 1, t]
+    vₑ = @inbounds b.ice_velocity[2][b.cell, jᵇ, 1, t]
+    uᵢ, _ = intrinsic_vector(b.cell, jᵇ, 1, grid, uₑ, vₑ)
     ℵ  = @inbounds b.concentration[b.cell, jᵇ, 1, t]
     uₒ = band_value(b.ocean_velocity, b.face, jᵇ, b.surface, t)
     uᴵ = interior_ice_velocity(Val(1), fields, b.face + b.inward, j, grid)
@@ -97,7 +100,9 @@ end
                                           clock=nothing, fields=nothing, args...)
     t = boundary_time(clock)
     iᵇ = clamp(i, b.along...)
-    vᵢ = @inbounds b.ice_velocity[iᵇ, b.cell, 1, t]
+    uₑ = @inbounds b.ice_velocity[1][iᵇ, b.cell, 1, t]
+    vₑ = @inbounds b.ice_velocity[2][iᵇ, b.cell, 1, t]
+    _, vᵢ = intrinsic_vector(iᵇ, b.cell, 1, grid, uₑ, vₑ)
     ℵ  = @inbounds b.concentration[iᵇ, b.cell, 1, t]
     vₒ = band_value(b.ocean_velocity, iᵇ, b.face, b.surface, t)
     vᴵ = interior_ice_velocity(Val(2), fields, i, b.face + b.inward, grid)
@@ -116,7 +121,7 @@ function parent_sea_ice(grid::AbstractGrid, parent_dataset; dates,
                         parent_padding = default_horizontal_padding(parent_dataset),
                         time_indices_in_memory = 2)
 
-    region = BoundingBox(grid; padding = parent_padding)
+    region = BoundingBox(underlying_grid(grid); padding = parent_padding)
 
     function series(name)
         metadata = Metadata(name; dataset = parent_dataset, dates = bracketing_dates(parent_dataset, name, dates), region, dir)
@@ -192,7 +197,7 @@ function nested_sea_ice_boundary_conditions(ocean::Simulation, parent_ice::Named
         cell = boundary_index(Center(), side, N)
         inward = side ∈ (:west, :south) ? 1 : -1
         along = along_bounds(band.previous.data, Center(), side)
-        return SeaIceBoundaryVelocity{dim}(parent_ice[name], parent_ice.ℵ, band, cell, face, surface, inward, along)
+        return SeaIceBoundaryVelocity{dim}((parent_ice.u, parent_ice.v), parent_ice.ℵ, band, cell, face, surface, inward, along)
     end
 
     h_bcs = Pair{Symbol, Any}[]
