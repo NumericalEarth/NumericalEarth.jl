@@ -34,11 +34,16 @@ blend_parent_bathymetry(grid, parent_bottom_height, sides; kw...) = grid
 # `OrthogonalSphericalShellGrid`: a seafloor on one is taken to be on the grid of `field`, and is averaged onto its points.
 interpolate_bottom_height!(field, bottom_height, grid) = interpolate!(field, bottom_height)
 
+@inline bottom_height_at(i, j, k, grid, ::Center, ::Center, h) = @inbounds h[i, j, 1]
+@inline bottom_height_at(i, j, k, grid, ::Face, ::Center, h) = @inbounds (h[i - 1, j, 1] + h[i, j, 1]) / 2
+@inline bottom_height_at(i, j, k, grid, ::Center, ::Face, h) = @inbounds (h[i, j - 1, 1] + h[i, j, 1]) / 2
+
 function interpolate_bottom_height!(field, bottom_height, ::OrthogonalSphericalShellGrid)
     LX, LY, _ = location(field)
-    field .= @at (LX, LY, Nothing) 1 * bottom_height
+    field .= KernelFunctionOperation{LX, LY, Nothing}(bottom_height_at, field.grid, LX(), LY(), bottom_height)
     return field
 end
+
 blend_parent_bathymetry(grid::GridFittedBottomGrid, ::Nothing, sides; kw...) = grid
 
 function blend_parent_bathymetry(grid::GridFittedBottomGrid, parent_bottom_height, sides; width, minimum_depth)
