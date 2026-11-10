@@ -7,7 +7,7 @@ using DocStringExtensions: TYPEDSIGNATURES
 """
 $(TYPEDSIGNATURES)
 
-Compute heat and salt fluxes and the melt rate at the ice shelf-ocean
+Compute the heat, salt and freshwater fluxes at the ice shelf-ocean
 interface, storing them in `interface.fluxes` (and the interface temperature,
 salinity, and friction velocity in the corresponding `interface` fields).
 
@@ -53,8 +53,7 @@ end
     kd = @inbounds k_draft[i, j, 1]
 
     𝒬  = zero(FT)
-    q  = zero(FT)
-    Jᵀ = zero(FT)
+    Jʷ = zero(FT)
     Jˢ = zero(FT)
     Tᵦ = zero(FT)
     Sᵦ = zero(FT)
@@ -68,7 +67,6 @@ end
         Sᵈ = surface_layer_average(i, j, kd, grid, Center(), Center(), Sᵒᶜ, H_TBL)
 
         ρᵒᶜ = properties.reference_density
-        cᵒᶜ = properties.heat_capacity
         ℰ   = properties.latent_heat
         Sˢⁱ = properties.ice_salinity
 
@@ -79,16 +77,15 @@ end
         𝒬, q, Tᵦ, Sᵦ = ice_ocean_interface_fluxes(nothing, i, j, flux_formulation, ocean_state, ice_state,
                                                  liquidus, zᵈ, properties, ℰ, u★)
 
-        # Kinematic fluxes, positive out of the ocean.
-        Jᵀ = 𝒬 / (ρᵒᶜ * cᵒᶜ)
-        Jˢ = q / ρᵒᶜ * (Sᵈ - Sˢⁱ)
+        Jʷ = q / ρᵒᶜ
+        Jˢ = - Jʷ * Sˢⁱ
     end
 
     @inbounds begin
-        fluxes.interface_heat[i, j, 1] = 𝒬
-        fluxes.temperature[i, j, 1]    = Jᵀ
-        fluxes.salt[i, j, 1]           = Jˢ
-        fluxes.melt_rate[i, j, 1]      = q
+        fluxes.interface_heat[i, j, 1]          = 𝒬
+        fluxes.salt[i, j, 1]                    = Jˢ
+        fluxes.freshwater[i, j, 1]              = Jʷ
+        fluxes.freshwater_heat_content[i, j, 1] = Tᵦ * Jʷ
         T★[i, j, 1] = Tᵦ
         S★[i, j, 1] = Sᵦ
         u★_field[i, j, 1] = u★

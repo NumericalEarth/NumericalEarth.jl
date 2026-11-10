@@ -28,11 +28,18 @@ using Oceananigans.Forcings: Forcing
         end
     end
 
-    J      = @inbounds -p.flux[i, j, 1]
+    J      = - ice_shelf_tracer_flux(p.tracer, i, j, kt_safe, p, model_fields)
     Δz_own = Δzᶜᶜᶜ(i, j, k, grid)
 
     return ifelse(own_weight > zero(FT), J * own_weight / total_weight / Δz_own, zero(grid))
 end
+
+@inline ice_shelf_tracer_flux(::Val{:T}, i, j, k, p, fields) =
+    @inbounds p.fluxes.interface_heat[i, j, 1] / (p.reference_density * p.heat_capacity)
+
+# The meltwater volume dilutes the column at the salinity of its topmost wet cell, as a virtual salt flux
+@inline ice_shelf_tracer_flux(::Val{:S}, i, j, k, p, fields) =
+    @inbounds p.fluxes.salt[i, j, 1] + fields.S[i, j, k] * p.fluxes.freshwater[i, j, 1]
 
 """
 $(TYPEDSIGNATURES)
@@ -65,10 +72,13 @@ keys(forcing)
 ```
 """
 function ice_shelf_tracer_forcing(interface::IceShelfOceanInterface)
-    H_TBL = interface.properties.boundary_layer_thickness
-    T_parameters = (k_draft = interface.k_draft, flux = interface.fluxes.temperature, boundary_layer_thickness = H_TBL)
-    S_parameters = (k_draft = interface.k_draft, flux = interface.fluxes.salt, boundary_layer_thickness = H_TBL)
+    properties = interface.properties
+    parameters = (k_draft = interface.k_draft,
+                  fluxes = interface.fluxes,
+                  boundary_layer_thickness = properties.boundary_layer_thickness,
+                  reference_density = properties.reference_density,
+                  heat_capacity = properties.heat_capacity)
 
-    return (T = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = T_parameters),
-            S = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = S_parameters))
+    return (T = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = merge(parameters, (; tracer = Val(:T)))),
+            S = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = merge(parameters, (; tracer = Val(:S)))))
 end

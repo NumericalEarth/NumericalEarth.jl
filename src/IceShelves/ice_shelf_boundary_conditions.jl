@@ -57,7 +57,7 @@ function ice_shelf_boundary_conditions(interface::IceShelfOceanInterface;
                                        u = NamedTuple(), v = NamedTuple(),
                                        T = NamedTuple(), S = NamedTuple())
 
-    FT = eltype(interface.fluxes.melt_rate)
+    FT = eltype(interface.fluxes.interface_heat)
     top_drag = (μ = convert(FT, drag_coefficient), ub = zero(FT))
 
     u_top = bottom_drag_bc(u_immersed_drag_coefficient, u_immersed_bottom_drag, top_drag, implicit_drag)
