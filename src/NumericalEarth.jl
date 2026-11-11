@@ -179,6 +179,7 @@ export
     net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
+    TransportSection, volume_transport, heat_transport, salt_transport, freshwater_transport,
     location,
     native_grid,
     natural_earth_lines,
