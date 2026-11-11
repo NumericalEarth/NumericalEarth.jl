@@ -21,11 +21,8 @@ DataWrangling.longitude_name(::GloFASStaticMapsMetadatum) = "lon"
 DataWrangling.latitude_name(::GloFASStaticMapsMetadatum)  = "lat"
 
 # e.g. ldd_glofas_v4_0.nc
-DataWrangling.metadata_filename(dataset::GloFASStaticMaps, name, date, region) =
-    string(GloFAS_netcdf_variable_names[name], "_glofas_", replace(dataset.system_version, "version_" => "v"), ".nc")
-
-DataWrangling.metadata_url(metadatum::GloFASStaticMapsMetadatum) =
-    string("https://confluence.ecmwf.int/download/attachments/242067380/", metadatum.filename)
+DataWrangling.metadata_filename(dataset::GloFASStaticMaps, name, date, region) = string(GloFAS_netcdf_variable_names[name], "_glofas_", replace(dataset.system_version, "version_" => "v"), ".nc")
+DataWrangling.metadata_url(metadatum::GloFASStaticMapsMetadatum) = string("https://confluence.ecmwf.int/download/attachments/242067380/", metadatum.filename)
 
 function Downloads.download(metadatum::GloFASStaticMapsMetadatum)
     filepath = metadata_path(metadatum)
