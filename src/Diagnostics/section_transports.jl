@@ -77,6 +77,37 @@ function TransportSection(grid, longitudes, latitudes)
     return TransportSection(u_signs, v_signs)
 end
 
+set_boundary_signs!(u_signs, v_signs, ::West)  = view(interior(u_signs), 1, :, 1) .= 1
+set_boundary_signs!(u_signs, v_signs, ::East)  = view(interior(u_signs), size(u_signs, 1), :, 1) .= -1
+set_boundary_signs!(u_signs, v_signs, ::South) = view(interior(v_signs), :, 1, 1) .= 1
+set_boundary_signs!(u_signs, v_signs, ::North) = view(interior(v_signs), :, size(v_signs, 2), 1) .= -1
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the `TransportSection` through the `West()`, `East()`, `South()` or `North()` edge of a
+`Bounded` domain, for example an open boundary. Positive transport flows into the domain.
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+using Oceananigans.BoundaryConditions: South
+
+grid = LatitudeLongitudeGrid(size = (20, 20, 2), longitude = (-10, 10), latitude = (60, 80), z = (-100, 0))
+section = TransportSection(grid, South())
+
+# output
+TransportSection on 20×20×2 LatitudeLongitudeGrid{Float64, Bounded, Bounded, Bounded} on CPU with 3×3×2 halo
+└── crosses 0 u faces and 20 v faces
+```
+"""
+function TransportSection(grid, side::Union{West, East, South, North})
+    u_signs = Field{Face, Center, Nothing}(grid)
+    v_signs = Field{Center, Face, Nothing}(grid)
+    set_boundary_signs!(u_signs, v_signs, side)
+    return TransportSection(u_signs, v_signs)
+end
+
 count_faces(signs) = count(!=(0), on_architecture(CPU(), interior(signs)))
 
 function Base.show(io::IO, section::TransportSection)

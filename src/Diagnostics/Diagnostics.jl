@@ -12,7 +12,8 @@ using KernelAbstractions: @index, @kernel
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: Integral, KernelFunctionOperation
 using Oceananigans.Architectures: CPU, architecture, on_architecture
-using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!,
+                                      West, East, South, North
 using Oceananigans.Fields: Field, FieldStatus, Reduction, ZeroField, interior
 using Oceananigans.Grids: new_data, inactive_cell, znode, λnode, φnode, Face, Center, OrthogonalSphericalShellGrid,
                          immersed_peripheral_node, immersed_inactive_node
