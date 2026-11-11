@@ -45,7 +45,7 @@ set!(ocean.model,   ecco_set)   # T, S
 set!(sea_ice.model, ecco_set)   # h, ℵ
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
-land       = JRA55PrescribedLand(arch)
+land       = JRA55PrescribedLand(grid)
 radiation  = JRA55PrescribedRadiation(arch)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
@@ -87,7 +87,7 @@ mht_OHC = meridional_heat_transport(simulation, TendencyMethod(); destination_gr
 ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht_OHC, mht_vT);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
-                                        overwrite_existing = true)
+                                        overwrite_files = true)
 
 run!(simulation)
 

@@ -23,21 +23,18 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
     end
 
     @testset "Downloads.download methods are defined" begin
-        # Test that the extension defines Downloads.download for ERA5Metadata/Metadatum types
         dataset = ERA5HourlySingleLevel()
         date = DateTime(2020, 1, 1, 0)
 
         # Create a metadatum (single timestep)
         metadatum = Metadatum(:temperature; dataset, date)
 
-        # Check that Downloads.download method exists for ERA5Metadatum
         @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
 
         # Create metadata (multiple timesteps)
         dates = DateTime(2020, 1, 1, 0):Hour(1):DateTime(2020, 1, 1, 2)
         metadata = Metadata(:temperature; dataset, dates)
 
-        # Check that Downloads.download method exists for ERA5Metadata
         @test hasmethod(Downloads.download, Tuple{typeof(metadata)})
     end
 
@@ -111,19 +108,13 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
     end
 
     @testset "Area builder utilities" begin
-        # Test that the bounding box area builder is accessible
-        @test isdefined(CDSExt, :build_era5_area)
-
-        # Test with nothing
         @test isnothing(CDSExt.build_era5_area(nothing))
 
-        # Test with a bounding box
         bbox = NumericalEarth.DataWrangling.BoundingBox(
             longitude = (0, 10),
             latitude = (40, 50)
         )
         area = CDSExt.build_era5_area(bbox)
-        @test !isnothing(area)
         @test length(area) == 4
         @test area[1] == 40   # south
         @test area[2] == 0    # west
@@ -132,57 +123,27 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
     end
 
     @testset "New ERA5 dataset types" begin
-        # Test ERA5YearlySingleLevel
         yearly_dataset = ERA5YearlySingleLevel()
         @test yearly_dataset isa ERA5.ERA5Dataset
 
-        # Test ERA5MonthlySingleLevel
         monthly_dataset = ERA5MonthlySingleLevel()
         @test monthly_dataset isa ERA5.ERA5Dataset
 
-        # Test ERA5HourlyPressureLevels
         pressure_levels = [100000.0, 85000.0, 50000.0]  # Pa
         hourly_pl = ERA5HourlyPressureLevels(pressure_levels)
         @test hourly_pl isa ERA5.ERA5Dataset
         @test hourly_pl.pressure_levels == pressure_levels
 
-        # Test ERA5MonthlyPressureLevels
         monthly_pl = ERA5MonthlyPressureLevels(pressure_levels)
         @test monthly_pl isa ERA5.ERA5Dataset
         @test monthly_pl.pressure_levels == pressure_levels
     end
 
-    @testset "Download methods for new dataset types" begin
-        # Test ERA5YearlySingleLevel
-        date = DateTime(2020, 1, 1)
-        metadatum = Metadatum(:temperature; dataset=ERA5YearlySingleLevel(), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-        # Test ERA5MonthlySingleLevel
-        metadatum = Metadatum(:temperature; dataset=ERA5MonthlySingleLevel(), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-        # Test ERA5HourlyPressureLevels
-        metadatum = Metadatum(:temperature; dataset=ERA5HourlyPressureLevels([100000.0]), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-
-        # Test ERA5MonthlyPressureLevels
-        metadatum = Metadatum(:temperature; dataset=ERA5MonthlyPressureLevels([100000.0]), date)
-        @test hasmethod(Downloads.download, Tuple{typeof(metadatum)})
-    end
-
     @testset "Helper function dispatch" begin
-        # Test variable_name_mapping
-        @test isdefined(CDSExt, :variable_name_mapping)
-
-        # Test pressure_levels extraction
-        @test isdefined(CDSExt, :pressure_levels)
         pl_dataset = ERA5HourlyPressureLevels([100000.0, 50000.0])
         @test CDSExt.pressure_levels(pl_dataset) == [100000.0, 50000.0]
         @test isnothing(CDSExt.pressure_levels(ERA5YearlySingleLevel()))
 
-        # Test date_keywords
-        @test isdefined(CDSExt, :date_keywords)
         date = DateTime(2020, 6, 15, 12)
 
         # Yearly
@@ -206,8 +167,6 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         @test kw.year == 2020
         @test kw.month == 6
 
-        # Test cds_download_function
-        @test isdefined(CDSExt, :cds_download_function)
         @test CDSExt.cds_download_function(ERA5YearlySingleLevel()) == CopernicusClimateDataStore.yearly
         @test CDSExt.cds_download_function(ERA5MonthlySingleLevel()) == CopernicusClimateDataStore.monthly
         @test CDSExt.cds_download_function(ERA5HourlyPressureLevels([100000.0])) == CopernicusClimateDataStore.hourly
@@ -480,6 +439,56 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
                 @test all(==(101f0), raw[:, :, 2])
                 @test all(==(102f0), raw[:, :, 3])
             end
+        end
+    end
+
+    @testset "download_era5_land through an injected retrieve" begin
+        dataset = ERA5MonthlyLand()
+        requests = []
+
+        # Stands in for the CDS: records the request and answers it with a file holding every
+        # month of the request's year × month product.
+        function fake_retrieve(product, request, path)
+            push!(requests, (product, request))
+            times = vec([DateTime(parse(Int, y), parse(Int, m)) for y in request["year"], m in request["month"]])
+            NCDatasets.Dataset(path, "c") do ds
+                NCDatasets.defDim(ds, "longitude", 2)
+                NCDatasets.defDim(ds, "latitude", 2)
+                NCDatasets.defDim(ds, "valid_time", length(times))
+                NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [-1.0, 1.0]
+                NCDatasets.defVar(ds, "latitude", Float64, ("latitude",))[:] = [40.0, 41.0]
+                time_var = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
+                                             attrib = ["units" => "seconds since 1970-01-01"])
+                time_var[:] = times
+                skt = NCDatasets.defVar(ds, "skt", Float32, ("longitude", "latitude", "valid_time"))
+                for (k, time) in enumerate(times)
+                    skt[:, :, k] .= Float32(Dates.month(time))
+                end
+            end
+            return path
+        end
+
+        mktempdir() do dir
+            meta = Metadatum(:skin_temperature; dataset, date = DateTime(2020, 3, 1), dir)
+            path = download(meta; retrieve = fake_retrieve)
+
+            @test path == metadata_path(meta)
+            @test length(requests) == 1
+            product, request = requests[1]
+            @test product == "reanalysis-era5-land-monthly-means"
+            @test request["variable"] == ["skin_temperature"]
+            @test request["year"] == ["2020"]
+            @test request["month"] == lpad.(string.(1:12), 2, '0')
+
+            NCDatasets.Dataset(path) do ds
+                @test ds.dim["valid_time"] == 12
+                @test ds["valid_time"][3] == DateTime(2020, 3, 1)
+                @test all(ds["skt"][:, :, 3] .== 3)
+            end
+
+            # The yearly file serves every other date of that year
+            download(Metadatum(:skin_temperature; dataset, date = DateTime(2020, 11, 1), dir); retrieve = fake_retrieve)
+            @test length(requests) == 1
         end
     end
 

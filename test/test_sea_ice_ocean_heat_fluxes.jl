@@ -10,7 +10,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_
                                                               SeaIceOceanInterface,
                                                               ComponentInterfaces
 
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
+using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature, ConductiveFlux
+using Oceananigans.Fields: ConstantField
 
 @testset "Ocean-sea ice heat flux formulations" begin
 
@@ -46,7 +47,6 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
     end
 
     @testset "solve_interface_conditions" begin
-        # Test parameters
         liquidus = LinearLiquidus(Float64)
         αₕ = 0.0095  # Heat transfer coefficient
         αₛ = αₕ / 35  # Salt transfer coefficient (R = 35)
@@ -70,15 +70,15 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             Sˢⁱ = 5.0    # Ice salinity
 
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-            Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
+            Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
             # Interface salinity should be between ice and ocean salinity
-            @test Sᵦ ≥ Sˢⁱ
-            @test Sᵦ ≤ Sᵒᶜ
+            @test Sb ≥ Sˢⁱ
+            @test Sb ≤ Sᵒᶜ
 
             # Interface temperature should be at freezing point of interface salinity
-            Tₘ = melting_temperature(liquidus, Sᵦ)
-            @test Tᵦ ≈ Tₘ
+            Tₘ = melting_temperature(liquidus, Sb)
+            @test Tb ≈ Tₘ
 
             # Warm ocean should cause melting (q > 0)
             @test q > 0
@@ -92,15 +92,15 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             Sˢⁱ = 5.0
 
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-            Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
+            Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
             # Interface salinity should be between ice and ocean salinity
-            @test Sᵦ ≥ Sˢⁱ
-            @test Sᵦ ≤ Sᵒᶜ
+            @test Sb ≥ Sˢⁱ
+            @test Sb ≤ Sᵒᶜ
 
             # Interface temperature should be at freezing point
-            Tₘ = melting_temperature(liquidus, Sᵦ)
-            @test Tᵦ ≈ Tₘ
+            Tₘ = melting_temperature(liquidus, Sb)
+            @test Tb ≈ Tₘ
 
             # Ocean above freezing should still cause melting (q > 0)
             @test q > 0
@@ -112,10 +112,10 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             Sˢⁱ = 5.0
 
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-            Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
+            Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ ≈ Sᵒᶜ
-            @test Tᵦ ≈ Tᵒᶜ
+            @test Sb ≈ Sᵒᶜ
+            @test Tb ≈ Tᵒᶜ
             @test abs(q) < eps(eltype(q))
         end
 
@@ -125,15 +125,15 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             for Sᵒᶜ in [30.0, 33.0, 35.0, 37.0, 40.0]
                 Sˢⁱ = 5.0
                 ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-                Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
+                Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
                 # Interface salinity must always be bounded
-                @test Sᵦ ≥ Sˢⁱ
-                @test Sᵦ ≤ Sᵒᶜ
+                @test Sb ≥ Sˢⁱ
+                @test Sb ≤ Sᵒᶜ
 
                 # Interface temperature at freezing point
-                Tₘ = melting_temperature(liquidus, Sᵦ)
-                @test Tᵦ ≈ Tₘ
+                Tₘ = melting_temperature(liquidus, Sb)
+                @test Tb ≈ Tₘ
             end
         end
 
@@ -143,11 +143,11 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             Sˢⁱ = 0.0  # Fresh ice
 
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-            Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
+            Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ ≥ Sˢⁱ
-            @test Sᵦ ≤ Sᵒᶜ
-            @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ)
+            @test Sb ≥ Sˢⁱ
+            @test Sb ≤ Sᵒᶜ
+            @test Tb ≈ melting_temperature(liquidus, Sb)
         end
 
         @testset "High friction velocity" begin
@@ -157,11 +157,11 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             u★_high = 0.1  # High turbulence
 
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-            Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★_high, L, ρᵒᶜ, cᵒᶜ, liquidus)
+            Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★_high, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ ≥ Sˢⁱ
-            @test Sᵦ ≤ Sᵒᶜ
-            @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ)
+            @test Sb ≥ Sˢⁱ
+            @test Sb ≤ Sᵒᶜ
+            @test Tb ≈ melting_temperature(liquidus, Sb)
         end
 
         @testset "Low friction velocity" begin
@@ -171,12 +171,55 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             u★_low = 0.0001  # Very low turbulence
 
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿ)
-            Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★_low, L, ρᵒᶜ, cᵒᶜ, liquidus)
+            Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★_low, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ ≥ Sˢⁱ
-            @test Sᵦ ≤ Sᵒᶜ
-            @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ)
+            @test Sb ≥ Sˢⁱ
+            @test Sb ≤ Sᵒᶜ
+            @test Tb ≈ melting_temperature(liquidus, Sb)
         end
+    end
+
+    @testset "Interface heat flux excludes conduction through the ice" begin
+        liquidus = LinearLiquidus(Float64)
+        ocean_properties = (reference_density = 1025.0, heat_capacity = 3991.0)
+        ρᵒᶜ = ocean_properties.reference_density
+        cᵒᶜ = ocean_properties.heat_capacity
+        αₕ = 0.0095
+        αₛ = αₕ / 35
+        u★ = 0.002
+        ℰ  = 334e3
+        k  = 2.0
+        hˢⁱ = 1.0
+        ℵ  = 0.8
+        Tˢⁱ = -15.0
+
+        ocean_state = (; T = -1.0, S = 34.0)
+        ice_state = (; S = 5.0, h = hˢⁱ, hc = 0.1, ℵ, T = Tˢⁱ)
+
+        bare = ThreeEquationHeatFlux()
+        conducting = ThreeEquationHeatFlux(ConductiveFlux(conductivity=k), ConstantField(Tˢⁱ), αₕ, αₛ, u★)
+
+        for (flux, kᵢ) in ((bare, 0.0), (conducting, k))
+            Q, T★, S★, q★ = compute_interface_heat_flux(flux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+            T★′, S★′, q = solve_interface_conditions(flux, ocean_state.T, ocean_state.S, ice_state,
+                                                     αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
+
+            Fᵒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (ocean_state.T - T★)
+            Fᶜ = kᵢ * (Tˢⁱ - T★) / hˢⁱ
+
+            @test T★ ≈ T★′
+            @test S★ ≈ S★′
+            @test Q ≈ Fᵒ * ℵ
+            @test ℰ * q ≈ Fᵒ + Fᶜ
+        end
+
+        Q_bare, T★_bare, = compute_interface_heat_flux(bare, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+        Q_cond, T★_cond, = compute_interface_heat_flux(conducting, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
+        # (trailing comma intentionally discards the remaining Sb, q return values)
+
+        # Cold ice draws the interface colder, so the ocean loses more heat, not less
+        @test T★_cond < T★_bare
+        @test Q_cond > Q_bare > 0
     end
 end
 
@@ -200,8 +243,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Salt flux with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -239,13 +282,8 @@ end
 end
 
 @testset "Salt flux unit consistency" begin
-    # The salt flux Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ must come out in psu m s⁻¹, consistent with the
-    # atmosphere-ocean salinity flux:
-    # - Eᵢ is a mass flux (kg m⁻² s⁻¹)
-    # - dividing by ρᵒᶜ (kg m⁻³) gives a volume flux (m s⁻¹)
-    # - multiplying by the ice salinity (psu) gives psu m s⁻¹
-    #
-    # Missing the density conversion would make the flux ~1000× too large and destabilize the ocean.
+    # The salt flux Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ comes out in psu m s⁻¹: Eᵢ is a mass flux (kg m⁻² s⁻¹),
+    # dividing by ρᵒᶜ (kg m⁻³) gives a volume flux (m s⁻¹), and the ice salinity (psu) scales it.
 
     for arch in test_architectures
         A = typeof(arch)
@@ -260,8 +298,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Flux magnitude with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -287,11 +325,8 @@ end
                 @test all(𝒬ⁱⁿ_cpu .> 0)
                 @test all(𝒬ⁱⁿ_cpu .< 1e5)  # Should not be unreasonably large
 
-                # Salt flux (in psu × m/s) should be small: typical values O(1e-7 to 1e-5)
-                # Before the fix, salt flux was ~1000× too large
-                # The salt flux magnitude should be comparable to:
-                # Jˢ ~ (Q / (ρ * c * L)) * ΔS ~ (1000 / (1025 * 4000 * 3e5)) * 30 ~ 2e-7 psu m/s
-                @test all(abs.(Jˢ_cpu) .< 1e-3)  # Should not be unreasonably large (was ~1 before fix)
+                # Jˢ ~ (Q / (ρᵒᶜ c ℰ)) ΔS ~ (1000 / (1025 · 4000 · 3e5)) · 30 ~ 2e-7 psu m s⁻¹
+                @test all(abs.(Jˢ_cpu) .< 1e-3)
                 @test all(abs.(Jˢ_cpu) .> 1e-10) # Should not be zero
             end
         end
@@ -319,7 +354,7 @@ end
 
     # Compute interface conditions
     ice_state = (; S = Sˢⁱ, h = 1.0, hc = 0.1, ℵ = 1.0, T = 0.0)
-    Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
+    Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
     # q is a mass flux (kg/m²/s)
     # Salt flux with density conversion: Jˢ = (q / ρᵒᶜ) * (Sᵒᶜ - Sˢⁱ)
@@ -360,7 +395,7 @@ end
     flux = ThreeEquationHeatFlux()
 
     ice_state = (; S = Sˢⁱ, h = 1.0, hc = 0.1, ℵ = 1.0, T = 0.0)
-    Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
+    Tb, Sb, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
     # Compute heat flux from melt rate
     Q = ℰ * q  # W/m² (without ice concentration scaling for this unit test)
@@ -385,10 +420,7 @@ end
 end
 
 @testset "Frazil ice formation and salt flux" begin
-    # Test that frazil ice formation is handled correctly and contributes
-    # to the salt flux with proper density conversion.
-    # When ocean temperature drops below freezing, frazil ice forms and
-    # the salt flux includes the frazil contribution.
+    # When the ocean drops below freezing, frazil forms and its contribution enters the salt flux.
 
     for arch in test_architectures
         A = typeof(arch)
@@ -403,8 +435,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Frazil with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -453,8 +485,8 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+        atmosphere = synthetic_prescribed_atmosphere(arch)
+        radiation = synthetic_prescribed_radiation(arch)
 
         # Test with ThreeEquationHeatFlux (default)
         @test begin
@@ -474,7 +506,6 @@ end
             flux_form isa IceBathHeatFlux
         end
 
-        # Test time stepping with each formulation
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(),
                                         ThreeEquationHeatFlux()]
 

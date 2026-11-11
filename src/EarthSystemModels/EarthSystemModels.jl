@@ -5,6 +5,7 @@ abstract type AbstractPrescribedComponent end
 export
     EarthSystemModel,
     AbstractPrescribedComponent,
+    BoundaryPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
@@ -13,23 +14,36 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-    ElevationCorrection,
+    CanopyConductanceHumidity,
+    CanopyInterface,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    ExponentialSoilResistance,
+    GroundSurfaceResistance,
+    TiledLandInterface,
+    JarvisConductance,
+    AbsorbedPhotosyntheticallyActiveRadiation,
+    AltitudeCorrection,
     atmosphere_land_interface,
+    surface_layer_diagnostics,
+    SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
-    LandRoughnessLength,
-    LandZeroPlaneDisplacement,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
@@ -50,10 +64,12 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 using Oceananigans: Oceananigans, AbstractModel, initialize!,
                     prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
+using Oceananigans.Grids: x_domain, y_domain
 using Oceananigans.Utils: launch!, prettytime
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
@@ -62,6 +78,7 @@ default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf :
 default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
+include("boundary_prescribed_component.jl")
 
 #####
 ##### The coupled model
@@ -69,6 +86,7 @@ include("components.jl")
 
 const default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 const default_freshwater_density = 1000 # kg m⁻³
+const default_latent_heat_of_fusion = 334e3 # J kg⁻¹
 
 include("InterfaceComputations/InterfaceComputations.jl")
 
@@ -98,7 +116,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel)   
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)    = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, Δt) = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing
@@ -107,7 +125,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    
 # are all absent. The atmosphere-land interface may still be present
 # (e.g. an `AtmosphereLandModel` with ocean = sea_ice = nothing), so we
 # explicitly do *not* fall back `compute_atmosphere_land_fluxes!` here —
-# its own 2-arg Nothing dispatch handles the missing-AL-interface case.
+# its own Nothing dispatch handles the missing-AL-interface case.
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel)      = nothing

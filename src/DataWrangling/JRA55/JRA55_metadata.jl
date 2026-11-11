@@ -5,7 +5,7 @@ using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
                        DownloadProgress, DatasetBackend, metadata_url,
-                       dataset_variable_name, getfilename
+                       dataset_variable_name, getfilename, download_with_retries
 
 abstract type JRA55Dataset end
 
@@ -54,7 +54,7 @@ DataWrangling.default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function DataWrangling.all_dates(::RepeatYearJRA55, name)
+function native_repeat_year_JRA55_dates(name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
@@ -62,32 +62,31 @@ function DataWrangling.all_dates(::RepeatYearJRA55, name)
     end
 end
 
+DataWrangling.all_dates(::RepeatYearJRA55, name) = native_repeat_year_JRA55_dates(name)
 DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
 DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
-# Valid for all JRA55 datasets
-function JRA55_time_indices(dataset, dates, name)
-    all_JRA55_dates = all_dates(dataset, name)
-    indices = Int[]
+# Fluxes, radiation, and precipitation are means over the interval between stamps; the state
+# variables are instantaneous.
+const JRA55_window_averaged_variables = (:river_freshwater_flux,
+                                         :iceberg_freshwater_flux,
+                                         :rain_freshwater_flux,
+                                         :snow_freshwater_flux,
+                                         :downwelling_longwave_radiation,
+                                         :downwelling_shortwave_radiation)
 
-    for date in dates
-        index = findfirst(x -> x == date, all_JRA55_dates)
-        !isnothing(index) && push!(indices, index)
-    end
-
-    return indices
+# The repeat-year files label each mean with the start of its interval; the multi-year files label
+# it with the center.
+function DataWrangling.averaging_window(md::RepeatYearJRA55Metadatum)
+    md.name in JRA55_window_averaged_variables || return (md.dates, md.dates)
+    span = md.name in (:river_freshwater_flux, :iceberg_freshwater_flux) ? Day(1) : Hour(3)
+    return (md.dates, md.dates + span)
 end
 
-# File name generation specific to each Dataset dataset
-# Note that `RepeatYearJRA55` has only one file associated, so the filename
-# is independent of the date. Override the multi-date fallback to return a plain String.
-DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
-
-DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =  "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]
@@ -172,40 +171,40 @@ JRA55_multiple_year_dates = Dict(
 
 JRA55_repeat_year_urls = Dict(
     :shortwave_radiation => "https://www.dropbox.com/scl/fi/z6fkvmd9oe3ycmaxta131/" *
-                            "RYF.rsds.1990_1991.nc?rlkey=r7q6zcbj6a4fxsq0f8th7c4tc&dl=0",
+                            "RYF.rsds.1990_1991.nc?rlkey=r7q6zcbj6a4fxsq0f8th7c4tc&dl=1",
 
     :river_freshwater_flux => "https://www.dropbox.com/scl/fi/21ggl4p74k4zvbf04nb67/" *
-                              "RYF.friver.1990_1991.nc?rlkey=ny2qcjkk1cfijmwyqxsfm68fz&dl=0",
+                              "RYF.friver.1990_1991.nc?rlkey=ny2qcjkk1cfijmwyqxsfm68fz&dl=1",
 
     :rain_freshwater_flux => "https://www.dropbox.com/scl/fi/5icl1gbd7f5hvyn656kjq/" *
-                             "RYF.prra.1990_1991.nc?rlkey=iifyjm4ppwyd8ztcek4dtx0k8&dl=0",
+                             "RYF.prra.1990_1991.nc?rlkey=iifyjm4ppwyd8ztcek4dtx0k8&dl=1",
 
     :snow_freshwater_flux => "https://www.dropbox.com/scl/fi/1r4ajjzb3643z93ads4x4/" *
-                             "RYF.prsn.1990_1991.nc?rlkey=auyqpwn060cvy4w01a2yskfah&dl=0",
+                             "RYF.prsn.1990_1991.nc?rlkey=auyqpwn060cvy4w01a2yskfah&dl=1",
 
     :iceberg_freshwater_flux => "https://www.dropbox.com/scl/fi/44nc5y27ohvif7lkvpyv0/" *
-                                "RYF.licalvf.1990_1991.nc?rlkey=w7rqu48y2baw1efmgrnmym0jk&dl=0",
+                                "RYF.licalvf.1990_1991.nc?rlkey=w7rqu48y2baw1efmgrnmym0jk&dl=1",
 
     :specific_humidity => "https://www.dropbox.com/scl/fi/66z6ymfr4ghkynizydc29/" *
-                          "RYF.huss.1990_1991.nc?rlkey=107yq04aew8lrmfyorj68v4td&dl=0",
+                          "RYF.huss.1990_1991.nc?rlkey=107yq04aew8lrmfyorj68v4td&dl=1",
 
     :sea_level_pressure => "https://www.dropbox.com/scl/fi/0fk332027oru1iiseykgp/" *
-                           "RYF.psl.1990_1991.nc?rlkey=4xpr9uah741483aukok6d7ctt&dl=0",
+                           "RYF.psl.1990_1991.nc?rlkey=4xpr9uah741483aukok6d7ctt&dl=1",
 
     :downwelling_longwave_radiation  => "https://www.dropbox.com/scl/fi/y6r62szkirrivua5nqq61/" *
-                                        "RYF.rlds.1990_1991.nc?rlkey=wt9yq3cyrvs2rbowoirf4nkum&dl=0",
+                                        "RYF.rlds.1990_1991.nc?rlkey=wt9yq3cyrvs2rbowoirf4nkum&dl=1",
 
     :downwelling_shortwave_radiation => "https://www.dropbox.com/scl/fi/z6fkvmd9oe3ycmaxta131/" *
-                                        "RYF.rsds.1990_1991.nc?rlkey=r7q6zcbj6a4fxsq0f8th7c4tc&dl=0",
+                                        "RYF.rsds.1990_1991.nc?rlkey=r7q6zcbj6a4fxsq0f8th7c4tc&dl=1",
 
     :temperature => "https://www.dropbox.com/scl/fi/fpl0npwi476w635g6lke9/" *
-                    "RYF.tas.1990_1991.nc?rlkey=0skb9pe6lgbfbiaoybe7m945s&dl=0",
+                    "RYF.tas.1990_1991.nc?rlkey=0skb9pe6lgbfbiaoybe7m945s&dl=1",
 
     :eastward_velocity => "https://www.dropbox.com/scl/fi/86wetpqla2x97isp8092g/" *
-                          "RYF.uas.1990_1991.nc?rlkey=rcaf18sh1yz0v9g4hjm1249j0&dl=0",
+                          "RYF.uas.1990_1991.nc?rlkey=rcaf18sh1yz0v9g4hjm1249j0&dl=1",
 
     :northward_velocity => "https://www.dropbox.com/scl/fi/d38sflo9ddljstd5jwgml/" *
-                           "RYF.vas.1990_1991.nc?rlkey=f9y3e57kx8xrb40gbstarf0x6&dl=0",
+                           "RYF.vas.1990_1991.nc?rlkey=f9y3e57kx8xrb40gbstarf0x6&dl=1",
 )
 
 DataWrangling.metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
@@ -223,7 +222,7 @@ function Downloads.download(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=DownloadProgress())
+            download_with_retries(fileurl, filepath; progress=DownloadProgress())
         end
     end
 

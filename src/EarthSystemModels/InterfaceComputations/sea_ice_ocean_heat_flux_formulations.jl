@@ -1,4 +1,4 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux, effective_conductivity
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)
@@ -76,13 +76,16 @@ end
 Three-equation formulation for sea ice-ocean heat flux.
 
 This formulation solves a coupled system for the interface temperature and salinity:
-1. Heat balance: ``\\rho c_p \\gamma_T (T - T_b) = ℰ q``
+1. Heat balance: ``\\rho c_p \\gamma_T (T - T_b) + F_c = ℰ q``
 2. Salt balance: ``\\gamma_S (S - S_b) = q (S_b - S_i)``
 3. Freezing point: ``T_b = T_m(S_b)``
 
 where ``T_b`` and ``S_b`` are the interface temperature and salinity,
 ``\\gamma_T = \\alpha_h u_*`` and ``\\gamma_S = \\alpha_s u_*`` are turbulent exchange velocities,
-``L`` is the latent heat of fusion, and ``q`` is the melt rate (computed, not input).
+``ℰ`` is the latent heat of fusion, ``q`` is the melt rate, and
+``F_c`` is the optional conductive flux through the ice (zero without a `ConductiveFlux`).
+The heat flux passed to the ocean and to the base of the sea ice is the turbulent ocean
+flux ``\\rho c_p \\gamma_T (T - T_b)`` only, since the sea-ice model accounts for ``F_c``.
 
 Fields
 ======
@@ -169,16 +172,17 @@ ThreeEquationHeatFlux(::Nothing, FT::DataType = Oceananigans.defaults.FloatType;
     compute_interface_heat_flux(flux::IceBathHeatFlux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
 
 Compute the heat flux at the sea ice-ocean interface using bulk formulation.
-Returns `(Q, Tᵦ, Sᵦ)` where:
+Returns `(Q, Tb, Sb, q)` where:
 - `Q > 0` means heat flux from ocean to ice (ocean cooling)
-- `Tᵦ, Sᵦ` are the interface temperature and salinity
+- `Tb, Sb` are the interface temperature and salinity
+- `q = Q / ℰ` is the implied ocean-driven melt rate (positive for melting)
 """
 @inline function compute_interface_heat_flux(flux::IceBathHeatFlux,
                                              ocean_state, ice_state,
                                              liquidus, ocean_properties, ℰ, u★)
     Tᵒᶜ = ocean_state.T
     Sᵒᶜ = ocean_state.S
-    ℵ  = ice_state.ℵ
+    ℵˢⁱ = ice_state.ℵ
 
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
@@ -188,10 +192,13 @@ Returns `(Q, Tᵦ, Sᵦ)` where:
     Tₘ = melting_temperature(liquidus, Sᵒᶜ)
 
     # Heat flux: Q > 0 means heat flux from ocean to ice (ocean cooling)
-    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵ
+    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - Tₘ) * ℵˢⁱ
+
+    # Implied ocean-driven melt rate (positive for melting), consistent with Qᵢₒ
+    q = Qᵢₒ / ℰ
 
     # For IceBathHeatFlux, interface is at ocean surface values
-    return Qᵢₒ, Tₘ, Sᵒᶜ
+    return Qᵢₒ, Tₘ, Sᵒᶜ, q
 end
 
 const NoInternalFluxTEF{FT} = ThreeEquationHeatFlux{<:Nothing, <:Nothing, FT} where FT
@@ -204,10 +211,10 @@ const ConductiveFluxTEF{FT} = ThreeEquationHeatFlux{<:ConductiveFlux, <:Abstract
 
 # For IceBathHeatFlux, T★ and S★ are views into ocean surface fields so we skip writing.
 # For ThreeEquationHeatFlux, T★ and S★ are dedicated interface fields.
-@inline store_interface_state!(::IceBathHeatFlux, T★, S★, i, j, Tᵦ, Sᵦ) = nothing
-@inline function store_interface_state!(::ThreeEquationHeatFlux, T★, S★, i, j, Tᵦ, Sᵦ)
-    @inbounds T★[i, j, 1] = Tᵦ
-    @inbounds S★[i, j, 1] = Sᵦ
+@inline store_interface_state!(::IceBathHeatFlux, T★, S★, i, j, Tb, Sb) = nothing
+@inline function store_interface_state!(::ThreeEquationHeatFlux, T★, S★, i, j, Tb, Sb)
+    @inbounds T★[i, j, 1] = Tb
+    @inbounds S★[i, j, 1] = Sb
 end
 
 """
@@ -217,9 +224,22 @@ Compute the heat flux at the sea ice-ocean interface using three-equation formul
 Dispatches to the appropriate `solve_interface_conditions` based on whether the flux has internal
 conductive flux or not.
 
-Returns `(Q, Tᵦ, Sᵦ)` where:
-- `Q > 0` means heat flux from ocean to ice (ocean cooling)
-- `Tᵦ, Sᵦ` are the interface temperature and salinity
+Returns `(Q, Tb, Sb, q)` where:
+- `Q = ρᵒᶜ cᵒᶜ αₕ u★ (Tᵒᶜ - Tb) ℵˢⁱ` is the turbulent ocean heat flux at the interface;
+  `Q > 0` means heat flux from ocean to ice (ocean cooling)
+- `Tb, Sb` are the interface temperature and salinity
+- `q` is the three-equation balance's own ocean-driven melt rate (positive for melting),
+  self-consistent with `Tb`/`Sb`
+
+`Q` excludes the conductive flux through the ice. The conductive flux enters the interface
+balance that determines `Tb` and `Sb`, but the sea-ice model accounts for it separately, so
+including it in `Q` would count it twice in the sea-ice heat budget and remove it from the ocean.
+
+`q` is purely a function of ocean-interface conditions (`Tᵒᶜ`, `Sᵒᶜ`, `Tb`, `Sb`, the conductive
+term via `ice_state.T`), unlike the sea-ice model's own `ice_ocean_mass_flux`, which also bundles
+in the atmosphere-driven top-surface melt/freeze tendency. Callers that attribute ocean-side
+heat/salt content (`Jᴴ`, `Jˢ`) to ice melting should use `q`, not `ice_ocean_mass_flux`, to avoid
+leaking top-surface melt into the ocean's heat/salt budget.
 """
 @inline function compute_interface_heat_flux(flux::ThreeEquationHeatFlux,
                                              ocean_state, ice_state,
@@ -227,7 +247,7 @@ Returns `(Q, Tᵦ, Sᵦ)` where:
     # Unpack states
     Tᵒᶜ = ocean_state.T
     Sᵒᶜ = ocean_state.S
-    ℵ  = ice_state.ℵ
+    ℵˢⁱ = ice_state.ℵ
 
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
@@ -239,10 +259,10 @@ Returns `(Q, Tᵦ, Sᵦ)` where:
     # Solve interface conditions - dispatch on flux type via ice_state
     T★, S★, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, ℰ, ρᵒᶜ, cᵒᶜ, liquidus)
 
-    # Scale by ice concentration
-    Qᵢₒ = ℰ * q * ℵ
+    # Turbulent ocean flux only: the sea-ice model accounts for conduction through the ice
+    Qᵢₒ = ρᵒᶜ * cᵒᶜ * αₕ * u★ * (Tᵒᶜ - T★) * ℵˢⁱ
 
-    return Qᵢₒ, T★, S★
+    return Qᵢₒ, T★, S★, q
 end
 
 # Helper to get conductive flux parameters (κ, Tˢⁱ) - dispatches on flux type
@@ -252,7 +272,7 @@ end
     h  = ice_state.h
     hc = ice_state.hc
     Tˢⁱ = ice_state.T
-    k  = flux.conductive_flux.conductivity
+    k  = effective_conductivity(flux.conductive_flux, h)
     # Set κ to zero when h < hc (ice not consolidated)
     consolidated = h ≥ hc
     κ = ifelse(consolidated, k / (h * ℰ), zero(h))
@@ -284,8 +304,8 @@ Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
     # Get conductive flux parameters - dispatches on flux type
     κ, Tˢⁱ = conductive_flux_parameters(flux, ice_state, ℰ)
 
-    λ₁ = -liquidus.slope
-    λ₂ = liquidus.freshwater_melting_temperature
+    λ₁ = - liquidus.salinity_slope
+    λ₂ =   liquidus.freshwater_melting_temperature
 
     # Transfer coefficients
     η = ρᵒᶜ * cᵒᶜ * αₕ * u★ / ℰ  # turbulent heat

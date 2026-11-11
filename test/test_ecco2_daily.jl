@@ -43,8 +43,7 @@ for arch in test_architectures
                 end
 
                 datum = first(metadata)
-                ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
-                @test ψ isa Field
+                Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                 datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                 @test isfile(datapath)
             end

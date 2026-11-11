@@ -11,7 +11,7 @@ using WorldOceanAtlasTools
 
 inpainting = NearestNeighborInpainting(10)
 
-# Ensure a WOA Metadatum file is on disk, trying NOAA first 
+# Ensure a WOA Metadatum file is on disk, trying NOAA first
 # and falling back to the NumericalEarthArtifacts mirror.
 function ensure_woa_file(metadatum; label)
     filepath = metadata_path(metadatum)
@@ -33,8 +33,7 @@ for arch in test_architectures
                 filepath = ensure_woa_file(metadata; label="WOA Annual $name")
                 @test isfile(filepath)
 
-                field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
-                @test field isa Field
+                Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
 
                 # Check inpainted data was cached
                 datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(metadata)
@@ -96,8 +95,7 @@ for arch in test_architectures
                 filepath = ensure_woa_file(metadata; label="WOA Monthly $name")
                 @test isfile(filepath)
 
-                field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
-                @test field isa Field
+                Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
             end
         end
 

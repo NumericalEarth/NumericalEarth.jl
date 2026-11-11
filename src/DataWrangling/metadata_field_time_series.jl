@@ -3,7 +3,8 @@
                     time_indices_in_memory = 2,
                     time_indexing = Cyclical(),
                     inpainting = nothing,
-                    cache_inpainted_data = true)
+                    cache_inpainted_data = true,
+                    prefetch = false)
 
 Create a FieldTimeSeries from a dataset that corresponds to `metadata`.
 
@@ -28,6 +29,10 @@ Keyword Arguments
 
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
+
+- `prefetch`: If `true`, the next window is loaded on a background task, so that reloading it costs one copy.
+              Doubles the memory the series holds, needs at least two Julia threads, and is not available
+              on a distributed grid. Default: `false`.
 """
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
     Downloads.download(metadata)
@@ -39,19 +44,18 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     time_indices_in_memory = 2,
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
-                                                    cache_inpainted_data = true)
+                                                    cache_inpainted_data = true,
+                                                    prefetch = false)
 
     Downloads.download(metadata)
 
-    # Match the time axis to the grid's float type. `native_times` returns `Float64` seconds, but with a
-    # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
-    # `Union{Float32, Float64}` — a type instability that boxes inside GPU tendency/halo kernels.
-    times = convert.(eltype(grid), native_times(metadata))
+    # Float64 like the model clock: past 2^28 s a Float32 axis rounds the nodes by up to 32 s
+    times = native_times(metadata)
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.
     if time_indexing isa Cyclical{Nothing}
-        period = sample_window_span(metadata)
+        period = window_span(metadata)
         isnothing(period) || (time_indexing = Cyclical(convert(eltype(grid), period)))
     end
 
@@ -63,16 +67,13 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    # Grids of different type are never equal; the `typeof` guard short-circuits
-    # before the node comparison, which for a `PressureLevelGrid` reduces the whole
-    # geopotential to a column-mean profile (`mean_height_profile`) only to discard
-    # it whenever — as for any interpolation target — the grid isn't the native one.
-    native = native_grid(metadata, architecture(grid))
-    on_native_grid = typeof(grid) === typeof(native) && grid == native
+    on_native_grid = same_grid(grid, native_grid(metadata, architecture(grid)))
     backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+
+    prefetch && (backend = PrefetchingBackend(FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)))
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)
@@ -101,6 +102,7 @@ warning_id(metadata) = Symbol(:time_coverage_, nameof(typeof(metadata.dataset)))
 
 function validate_time_coverage(metadata, time_indexing::Cyclical)
     length(metadata) == 1 && return nothing
+    spans_whole_cycle(metadata) && return nothing
     head, tail = uncovered_time_gaps(metadata)
     head == 0 && tail == 0 && return nothing
 

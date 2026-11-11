@@ -12,11 +12,12 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               atmosphere_ocean_stability_functions,
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
-                                                              LandZeroPlaneDisplacement,
-                                                              local_zero_plane_displacement,
                                                               iterate_interface_fluxes,
+                                                              land_surface_fluxes,
                                                               RelativeVelocity,
-                                                              celsius_to_kelvin
+                                                              celsius_to_kelvin,
+                                                              land_temperature,
+                                                              land_saturation
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics
 
@@ -81,12 +82,10 @@ using Thermodynamics
         NumericalEarth.Lands.time_step!(land.energy, land, 1)
         @test only(Array(interior(land.temperature))) > 10
 
-        # The atmosphere-facing land state exposes skin temperature and saturation;
-        # roughness lengths belong to the flux closure, not the land.
-        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
-        @test hasproperty(ex.state, :T)
-        @test hasproperty(ex.state, :saturation)
-        @test !hasproperty(ex.state, :momentum_roughness_length)
+        # The land publishes the state the interface requests.
+        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid; state_accessors = (T = land_temperature, 𝒮 = land_saturation))
+        @test keys(ex.state) == (:T, :𝒮)
+        @test ex.state.T === land.temperature
     end
 end
 
@@ -230,9 +229,10 @@ end
         P = CenterField(grid)
         E = CenterField(grid)
         Jʳⁿ = CenterField(grid)  # atmospheric rainfall flux on exchange grid
-        interface_fluxes = (sensible_heat = CenterField(grid),
-                           latent_heat   = CenterField(grid),
-                           water_vapor  = CenterField(grid))
+        model = coupled_land_model(arch; grid)
+        interface = model.interfaces.atmosphere_land_interface
+        interface_fluxes = interface.fluxes
+        land_fluxes = land_surface_fluxes(interface, model.land.temperature)
 
         # Evaporation in model convention is positive upward => water-vapor flux > 0
         fill!(parent(interface_fluxes.sensible_heat), 0)
@@ -245,7 +245,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0.5; atol=1e-12)
@@ -257,7 +257,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0.5; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -271,7 +271,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 1.7; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -286,7 +286,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                P, E, nothing, Es, nothing, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, nothing, land_fluxes, Jʳⁿ)
 
         @test isapprox(only(Array(interior(Es))), -3; atol=1e-12)
     end
@@ -400,10 +400,8 @@ end
 end
 
 @testset "SlabLand coupled checkpoint round-trip" begin
-    # The coupler-written forcing fields (`land.fluxes`) are computed at the end
-    # of each coupled step and consumed by the next `time_step!(land, Δt)`, so a
-    # restored model must carry them to be step-for-step identical to the
-    # uninterrupted run.
+    # The coupler-written forcing fields (`land.fluxes`) are consumed by the next
+    # `time_step!(land, Δt)`, so a restored model must carry them to reproduce the uninterrupted run.
     using Oceananigans.TimeSteppers: time_step!
     using NumericalEarth.Atmospheres: PrescribedAtmosphere
     using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
@@ -435,6 +433,9 @@ end
     for arch in test_architectures
         m1 = coupled_slab_model(arch)
         m2 = coupled_slab_model(arch)
+        radiation_fluxes = m1.radiation.interface_fluxes.land
+        @test only(Array(interior(radiation_fluxes.downwelling_shortwave))) ≈ -0.8 * 600
+        @test only(Array(interior(radiation_fluxes.downwelling_longwave))) ≈ -0.95 * 350
         for _ in 1:6
             time_step!(m1, 300.0)
         end
@@ -556,20 +557,12 @@ end
         # Displacement thins the effective surface layer, raising the drag.
         @test displaced_friction_velocity(6.0) > displaced_friction_velocity(3.0) > displaced_friction_velocity(0.0)
 
-        # A displacement at or above the surface-layer height stays finite: the
-        # profile height is floored at twice the momentum roughness length.
-        @test displaced_friction_velocity(2h) ≈ ϰ / log(2) * uᵃᵗ
+        # A displacement at or above the surface layer height leaves no room for the
+        # similarity profiles and is rejected when the interface is built.
+        @test_throws ArgumentError displaced_friction_velocity(2h)
     end
 
-    # Per-cell resolution: `LandZeroPlaneDisplacement` reads the displacement a land
-    # surface provides through the interior properties, and is undisplaced without one.
-    @test local_zero_plane_displacement(LandZeroPlaneDisplacement(), (; zero_plane_displacement = 3.0)) == 3.0
-    @test local_zero_plane_displacement(LandZeroPlaneDisplacement(), (;)) == 0
-    @test local_zero_plane_displacement(1.5, (;)) == 1.5
-
-    # A field-valued displacement reaches the solver as per-cell interior properties
-    # (the same route as `LandRoughnessLength`): the marker resolves the land-provided
-    # value inside `iterate_interface_fluxes`, matching the constant-displacement solve.
+    # The displacement on the flux closure enters the solver directly.
     ℓ  = 0.1
     Δh = 10.0
     U  = 5.0
@@ -584,22 +577,75 @@ end
 
     approximate_state     = (; fluxes = (; u★ = 0.1, θ★ = 0.0, q★ = 0.0), u = 0.0, v = 0.0)
     atmosphere_state      = (; u = U, v = 0.0, p = 101325.0, h_bℓ = 512.0)
-    interface_properties  = (; velocity_formulation = RelativeVelocity())
+    interface_formulation = (; velocity_difference = RelativeVelocity())
     atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(Float64),
                                gravitational_acceleration = 9.81)
 
-    solved_friction_velocity(fluxes, interior_properties) =
+    solved_friction_velocity(fluxes) =
         iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh,
                                  approximate_state, atmosphere_state,
-                                 interface_properties, atmosphere_properties,
-                                 interior_properties)[1]
+                                 interface_formulation, atmosphere_properties)[1]
 
-    per_cell = solved_friction_velocity(similarity_fluxes(LandZeroPlaneDisplacement()),
-                                        (; zero_plane_displacement = 4.0))
-    @test per_cell ≈ 0.4 / log((Δh - 4) / ℓ) * U
-    @test per_cell == solved_friction_velocity(similarity_fluxes(4.0), (;))
-    @test solved_friction_velocity(similarity_fluxes(LandZeroPlaneDisplacement()), (;)) ==
-          solved_friction_velocity(similarity_fluxes(0.0), (;))
+    @test solved_friction_velocity(similarity_fluxes(4.0)) ≈ 0.4 / log((Δh - 4) / ℓ) * U
+end
+
+@testset "Atmosphere-Land per-cell roughness and displacement fields" begin
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch, Float64;
+                                     size = (2, 2, 1), latitude = (10, 11), longitude = (10, 12),
+                                     z = (-1, 0), topology = (Bounded, Bounded, Bounded))
+
+        h   = 10.0
+        uᵃᵗ = 5.0
+        ϰ   = 0.4
+
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
+        fill!(parent(atmosphere.temperature),       288)
+        fill!(parent(atmosphere.specific_humidity), 0.003)
+        fill!(parent(atmosphere.velocities.u), uᵃᵗ)
+        fill!(parent(atmosphere.velocities.v), 0)
+        fill!(parent(atmosphere.pressure),     101325)
+
+        # Grassland-vs-forest contrast: per-cell momentum roughness and displacement
+        # fields sit directly on the flux closure and are localized at kernel entry.
+        grassland_roughness, forest_roughness = 0.03, 1.0
+        grassland_displacement, forest_displacement = 0.0, 4.0
+
+        momentum_roughness_length = Field{Center, Center, Nothing}(grid)
+        zero_plane_displacement   = Field{Center, Center, Nothing}(grid)
+        set!(momentum_roughness_length, (λ, φ) -> ifelse(λ < 11, grassland_roughness, forest_roughness))
+        set!(zero_plane_displacement,   (λ, φ) -> ifelse(λ < 11, grassland_displacement, forest_displacement))
+
+        zero_ψ(ζ) = zero(ζ)
+        fluxes = SimilarityTheoryFluxes(; momentum_roughness_length,
+                                          temperature_roughness_length = 0.01,
+                                          water_vapor_roughness_length = 0.01,
+                                          zero_plane_displacement,
+                                          subgrid_velocities = nothing,
+                                          stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
+
+        land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+        set!(land; T = 288.0)
+
+        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = fluxes, radiation = nothing)
+        update_state!(model)
+
+        u★ = Array(interior(model.interfaces.atmosphere_land_interface.fluxes.friction_velocity))
+        @test u★[1, 1, 1] ≈ ϰ / log(h / grassland_roughness) * uᵃᵗ
+        @test u★[2, 1, 1] ≈ ϰ / log((h - forest_displacement) / forest_roughness) * uᵃᵗ
+
+        # A displacement field reaching the surface layer height anywhere is rejected at
+        # construction, as a scalar one is.
+        tall_displacement = Field{Center, Center, Nothing}(grid)
+        set!(tall_displacement, (λ, φ) -> ifelse(λ < 11, grassland_displacement, h))
+        tall_fluxes = SimilarityTheoryFluxes(; momentum_roughness_length,
+                                               temperature_roughness_length = 0.01,
+                                               water_vapor_roughness_length = 0.01,
+                                               zero_plane_displacement = tall_displacement,
+                                               subgrid_velocities = nothing,
+                                               stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ))
+        @test_throws ArgumentError AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = tall_fluxes, radiation = nothing)
+    end
 end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
@@ -651,5 +697,89 @@ end
 
         # Larger roughness length increases the surface drag for a fixed wind.
         @test land_flux_response(neutral_skin; ℓ = 0.5).u★ > land_flux_response(neutral_skin; ℓ = 0.05).u★
+    end
+end
+
+@testset "Atmosphere-Land altitude correction" begin
+    for arch in test_architectures, FT in (Float32, Float64)
+        grid = LatitudeLongitudeGrid(arch, FT;
+                                    size = 1,
+                                    latitude = 10,
+                                    longitude = 10,
+                                    z = (-1, 0),
+                                    topology = (Flat, Flat, Bounded))
+
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = 10,
+                                              boundary_layer_height = 512)
+        land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+
+        Γ  = 6.5e-3 # K m⁻¹
+        Δz = 50     # the surface sits above the elevation the atmosphere data assumes
+        correction = AltitudeCorrection(300, 250; lapse_rate = Γ)
+        model = AtmosphereLandModel(atmosphere, land; radiation = nothing,
+                                    exchanger_correction = correction)
+
+        # The correction shares a single float type with the exchange grid, so it
+        # materializes on a `Float32` grid too.
+        materialized = model.interfaces.exchanger.atmosphere.correction
+        @test materialized.lapse_rate isa FT
+        @test materialized.gravitational_acceleration isa FT
+        @test materialized.dry_air_gas_constant isa FT
+        @test eltype(materialized.elevation_difference) == FT
+
+        Tᵃ = 300
+        pᵃ = 101_325
+        qᵃ = 0.005
+        fill!(parent(model.atmosphere.velocities.u), 1)
+        fill!(parent(model.atmosphere.velocities.v), 0)
+        fill!(parent(model.atmosphere.temperature), Tᵃ)
+        fill!(parent(model.atmosphere.pressure), pᵃ)
+        fill!(parent(model.atmosphere.specific_humidity), qᵃ)
+        fill!(model.land.temperature, Tᵃ)
+
+        update_state!(model)
+
+        g  = materialized.gravitational_acceleration
+        Rᵈ = materialized.dry_air_gas_constant
+        T̄  = Tᵃ - Γ * Δz / 2
+
+        state = model.interfaces.exchanger.atmosphere.state
+        @test only(Array(interior(state.T))) ≈ Tᵃ - Γ * Δz
+        @test only(Array(interior(state.p))) ≈ pᵃ * exp(-g * Δz / (Rᵈ * T̄))
+        @test only(Array(interior(state.q))) ≈ qᵃ # adiabatic lifting conserves q
+    end
+end
+
+@testset "Prognostic ocean beside a runoff-free SlabLand" begin
+    # SlabLand's exchanger carries (; T, saturation) and no runoff, so the ocean flux assembly
+    # must treat its freshwater contribution as zero rather than look up `runoff_freshwater_flux`.
+    using Oceananigans.TimeSteppers: time_step!
+    using NumericalEarth.Atmospheres: PrescribedAtmosphere
+
+    for arch in test_architectures
+        kw = (longitude = (0, 4), latitude = (0, 4))
+        ocean_grid = LatitudeLongitudeGrid(arch; size = (4, 4, 4), kw..., z = (-100, 0))
+        surface_grid = LatitudeLongitudeGrid(arch; size = (4, 4, 1), kw..., z = (-1, 0))
+
+        ocean = ocean_simulation(ocean_grid; momentum_advection = nothing, tracer_advection = nothing,
+                                 closure = nothing, coriolis = nothing, warn = false)
+        set!(ocean.model; T = 15, S = 35)
+
+        land = SlabLand(surface_grid)
+        set!(land; T = 290)
+
+        atmosphere = PrescribedAtmosphere(surface_grid; surface_layer_height = 10, boundary_layer_height = 512)
+        fill!(parent(atmosphere.temperature), 285.0)
+        fill!(parent(atmosphere.specific_humidity), 0.005)
+        fill!(parent(atmosphere.velocities.u), 8.0)
+        fill!(parent(atmosphere.pressure), 101325.0)
+
+        model = EarthSystemModel(; atmosphere, land, ocean, ocean_fraction = 0.5)
+        time_step!(model, 60)
+
+        Jᵀ = Array(interior(model.interfaces.net_fluxes.ocean.T))
+        @test all(isfinite, Jᵀ)
+        @test all(Jᵀ .> 0)   # 15 °C water under 285 K, 8 m/s air loses heat (positive = upward)
+        @test all(isfinite, Array(interior(model.ocean.model.tracers.T)))
     end
 end

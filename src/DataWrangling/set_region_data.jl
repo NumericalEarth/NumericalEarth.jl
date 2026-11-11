@@ -16,15 +16,21 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives Float32 to Float64 promotion noise so the slice doesn't lose a
-# cell at each end when grid centers are compared against file centers.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
-    ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
-    i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
-    i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
+    i₁ = max(searchsortedfirst(hc, h₁ - bounding_index_tolerance(hc, h₁)),  1)
+    i₂ = min(searchsortedlast(hc, h₂ + bounding_index_tolerance(hc, h₂)), Nh)
     return i₁, i₂
+end
+
+# A quarter of the local spacing: above a Float32 node's accumulated rounding, below the half
+# spacing that decides which cell a coordinate belongs to.
+function bounding_index_tolerance(hc, h)
+    float_noise = eps(Float32) * max(one(eltype(hc)), abs(h))
+    length(hc) < 2 && return float_noise
+    i = clamp(searchsortedfirst(hc, h), 2, length(hc))
+    return max(float_noise, abs(hc[i] - hc[i-1]) / 4)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -94,10 +100,11 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, in double precision
+    # so the modulo against 360 does not run in Float32.
     if !isempty(λc)
-        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
-        λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
+        λmin = convert_to_λ₀_λ₀_plus360(Float64(λmin), Float64(λc[1]))
+        λmax = convert_to_λ₀_λ₀_plus360(Float64(λmax), Float64(λc[1]))
     end
 
     i₁, _ = compute_bounding_indices((λmin, λmax), λc)
@@ -204,14 +211,6 @@ blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, mi
     @inbounds dst[i, j, k] = d
 end
 
-# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
-# `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
-# 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
-# reaches GPU kernels as CPU memory (kernel compilation failure).
-architecture_ready(arch, data) = on_architecture(arch, data)
-architecture_ready(arch, data::Base.ReshapedArray) =
-    reshape(on_architecture(arch, parent(data)), size(data))
-
 """
     set_region_data!(target, data, λc, φc, metadata)
 
@@ -220,15 +219,17 @@ applying mangling, NaN conversion, and unit conversion in a single GPU-friendly 
 """
 function set_region_data!(target::Field, data, λc, φc, metadata;
                           mangling = mangling_for(metadata, size(data, 2)),
-                          conversion = conversion_units(metadata))
+                          conversion = conversion_units(metadata),
+                          region = region_info(metadata.region, target, λc, φc),
+                          parameters = :xyz)
 
-    region      = region_info(metadata.region, target, λc, φc)
     FT          = eltype(target)
     grid        = target.grid
     arch        = architecture(grid)
-    data        = architecture_ready(arch, data)
+    data        = on_architecture(arch, data)
     missing_val = missing_value(metadata)
-    launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, missing_val, FT)
+    # With `parameters`, a windowed field is then filled over its own indices.
+    launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val, FT)
     return nothing
 end
 
@@ -241,7 +242,7 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     grid        = target.grid
     arch        = architecture(grid)
     FT          = eltype(target)
-    data        = architecture_ready(arch, data)
+    data        = on_architecture(arch, data)
     missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)

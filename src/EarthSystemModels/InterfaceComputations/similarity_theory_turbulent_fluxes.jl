@@ -17,15 +17,7 @@ struct SimilarityTheoryFluxes{FT, UF, R, D, B, S, SV}
     solver_stop_criteria :: S        # stop criteria for compute_interface_state
 end
 
-Adapt.adapt_structure(to, fluxes::SimilarityTheoryFluxes) =
-    SimilarityTheoryFluxes(adapt(to, fluxes.von_karman_constant),
-                           adapt(to, fluxes.turbulent_prandtl_number),
-                           adapt(to, fluxes.subgrid_velocities),
-                           adapt(to, fluxes.stability_functions),
-                           adapt(to, fluxes.roughness_lengths),
-                           adapt(to, fluxes.zero_plane_displacement),
-                           adapt(to, fluxes.similarity_form),
-                           adapt(to, fluxes.solver_stop_criteria))
+Adapt.@adapt_structure SimilarityTheoryFluxes
 
 #####
 ##### Subgrid velocity corrections: empirical enhancements of the bulk velocity
@@ -160,12 +152,15 @@ Keyword Arguments
 - `stability_functions`: The stability functions. Default: `default_stability_functions(FT)` that follow the
                          formulation of [edson2013exchange](@citet).
 - `roughness_lengths`: The roughness lengths used to calculate the characteristic scales for momentum, temperature and
-                       water vapor. Default: `default_roughness_lengths(FT)`, formulation taken from [edson2013exchange](@citet).
+                       water vapor. Each may be a formulation, a `Number`, or — at the
+                       atmosphere--land interface only — a `Field{Center, Center, Nothing}`
+                       of per-cell values.
+                       Default: `default_roughness_lengths(FT)`, formulation taken from [edson2013exchange](@citet).
 - `zero_plane_displacement`: The zero-plane displacement `d` [m] of surfaces with tall roughness
                              elements (buildings, plant canopy): the similarity profiles are evaluated
-                             at the height `Δh - d` above the interface. A `Number`, or
-                             [`LandZeroPlaneDisplacement`](@ref) to read a per-cell land displacement.
-                             Default: 0 (undisplaced).
+                             at the height `Δh - d` above the interface. A `Number`, or — at the
+                             atmosphere--land interface only — a `Field{Center, Center, Nothing}`
+                             of per-cell displacements. Default: 0 (undisplaced).
 - `similarity_form`: The type of similarity profile used to relate the atmospheric state to the
                              interface fluxes / characteristic scales.
 - `solver_tolerance`: The tolerance for convergence. Default: 1e-8.
@@ -185,13 +180,11 @@ function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
                                 solver_tolerance = 1e-8,
                                 solver_maxiter = 100)
 
-    roughness_lengths = SimilarityScales(momentum_roughness_length,
-                                         temperature_roughness_length,
-                                         water_vapor_roughness_length)
+    roughness_lengths = SimilarityScales(convert_if_number(FT, momentum_roughness_length),
+                                         convert_if_number(FT, temperature_roughness_length),
+                                         convert_if_number(FT, water_vapor_roughness_length))
 
-    if zero_plane_displacement isa Number
-        zero_plane_displacement = convert(FT, zero_plane_displacement)
-    end
+    zero_plane_displacement = convert_if_number(FT, zero_plane_displacement)
 
     if isnothing(solver_stop_criteria)
         solver_tolerance = convert(FT, solver_tolerance)
@@ -240,85 +233,93 @@ struct LogarithmicSimilarityProfile end
 struct COARELogarithmicSimilarityProfile end
 
 @inline function similarity_profile(::LogarithmicSimilarityProfile, stability_function, h, ℓ, L)
-    ζ = h / L
+    Φn = log(h / ℓ)
+    ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
-    ψℓ = stability_profile(stability_function, ℓ / L)
-    return log(h / ℓ) - ψh + ψℓ
+    ψℓ = inner_stability_profile(stability_function, ℓ / L)
+    Φm = Φn / 1000 # stability correction cannot overwhelm the log profile
+    return max(Φn - ψh + ψℓ, Φm)
 end
 
 @inline function similarity_profile(::COARELogarithmicSimilarityProfile, stability_function, h, ℓ, L)
-    ζ = h / L
+    Φn = log(h / ℓ)
+    ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
-    return log(h / ℓ) - ψh
+    Φm = Φn / 1000 # stability correction cannot overwhelm the log profile
+    return max(Φn - ψh, Φm)
 end
 
-# `local_roughness_length(ℓ, interior_properties, ::Val{R})` is the
-# per-surface entry point used by `local_roughness_lengths` below. `R`
-# is `:momentum` or `:scalar` and lets surface-specific formulations
-# (e.g. `LandRoughnessLength`) pick the right field on the interior
-# properties NamedTuple. The default just returns the formulation
-# unchanged, regardless of R or interior_properties — ocean
-# `MomentumRoughnessLength` / `ScalarRoughnessLength` hit this fallback.
-@inline local_roughness_length(ℓ, interior_properties) = ℓ
-@inline local_roughness_length(ℓ, interior_properties, ::Val) = ℓ
+# Localize the flux closure to cell (i, j) before the index-free MOST iteration:
+# `Field`-valued roughness lengths and displacement collapse to the cell's values,
+# `Number`s and formulations pass through.
+@inline local_flux_formulation(flux_formulation, i, j) = flux_formulation
 
-@inline function local_roughness_length(ℓ::LandRoughnessLength,
-                                        interior_properties::NamedTuple{names, T},
-                                        ::Val{R}) where {names, T, R}
-    candidate = if R === :momentum && hasproperty(interior_properties, :momentum_roughness_length)
-        max(interior_properties.momentum_roughness_length, ℓ.minimum_roughness_length)
-    elseif R === :scalar && hasproperty(interior_properties, :scalar_roughness_length)
-        max(interior_properties.scalar_roughness_length, ℓ.minimum_roughness_length)
-    else
-        ℓ.minimum_roughness_length
-    end
+@inline function local_flux_formulation(fluxes::SimilarityTheoryFluxes, i, j)
+    ℓ = fluxes.roughness_lengths
+    roughness_lengths = SimilarityScales(state2dindex(ℓ.momentum, i, j),
+                                         state2dindex(ℓ.temperature, i, j),
+                                         state2dindex(ℓ.water_vapor, i, j))
 
-    return max(ℓ.multiplier * candidate, ℓ.minimum_roughness_length)
+    return SimilarityTheoryFluxes(fluxes.von_karman_constant,
+                                  fluxes.turbulent_prandtl_number,
+                                  fluxes.subgrid_velocities,
+                                  fluxes.stability_functions,
+                                  roughness_lengths,
+                                  state2dindex(fluxes.zero_plane_displacement, i, j),
+                                  fluxes.similarity_form,
+                                  fluxes.solver_stop_criteria)
 end
 
-@inline function local_roughness_lengths(roughness_lengths, interior_properties)
-    momentum    = local_roughness_length(roughness_lengths.momentum,
-                                          interior_properties,
-                                          Val(:momentum))
-    temperature = local_roughness_length(roughness_lengths.temperature,
-                                          interior_properties,
-                                          Val(:scalar))
-    water_vapor = local_roughness_length(roughness_lengths.water_vapor,
-                                          interior_properties,
-                                          Val(:scalar))
-    return SimilarityScales(momentum, temperature, water_vapor)
+# A zero-plane displacement at or above the surface layer height leaves no room
+# for the similarity profiles.
+validate_zero_plane_displacement(flux_formulation, zᵃᵗ) = nothing
+
+function validate_zero_plane_displacement(fluxes::SimilarityTheoryFluxes, zᵃᵗ)
+    Δhᵈ = minimum(zᵃᵗ - fluxes.zero_plane_displacement)
+    Δhᵈ > 0 || throw(ArgumentError("zero_plane_displacement must be below the surface layer height, found a displaced profile height of $Δhᵈ m"))
+    return nothing
 end
 
-# Like `local_roughness_length`: a `Number` passes through, `LandZeroPlaneDisplacement`
-# reads the per-cell displacement off the interior properties, defaulting to 0.
-@inline local_zero_plane_displacement(d, interior_properties) = d
+#####
+##### Layout of `Field`-valued roughness lengths and displacement
+#####
 
-@inline function local_zero_plane_displacement(::LandZeroPlaneDisplacement,
-                                               interior_properties::NamedTuple{names, T}) where {names, T}
-    if hasproperty(interior_properties, :zero_plane_displacement)
-        return interior_properties.zero_plane_displacement
-    else
-        return 0
-    end
+function validate_interface_field(f::AbstractField, name, grid)
+    location(f) === (Center, Center, Nothing) &&
+        architecture(f) === architecture(grid) && f.grid == grid ||
+        throw(ArgumentError("$name must be a Field{Center, Center, Nothing} on the interface grid, got $(summary(f))"))
+
+    return nothing
 end
+
+validate_interface_field(f, name, grid) = nothing
 
 """
 $(TYPEDSIGNATURES)
 
-Height `Δh - d` at which the similarity profiles of a surface with zero-plane
-displacement `d` are evaluated, floored at twice the momentum roughness length `ℓ`
-so the profile stays above the roughness sublayer (and the transfer coefficients
-stay finite) when the displacement approaches the atmosphere surface layer height.
+Check that any `Field`-valued roughness length or zero-plane displacement of
+`flux_formulation` is laid out so the flux kernel can read it per cell on `grid`,
+and throw an `ArgumentError` naming the offending field otherwise.
 """
-@inline displaced_profile_height(Δh, d, ℓ) = max(Δh - d, 2ℓ)
+function validate_flux_formulation(fluxes::SimilarityTheoryFluxes, grid)
+    ℓ = fluxes.roughness_lengths
+
+    validate_interface_field(ℓ.momentum,    "momentum_roughness_length",    grid)
+    validate_interface_field(ℓ.temperature, "temperature_roughness_length", grid)
+    validate_interface_field(ℓ.water_vapor, "water_vapor_roughness_length", grid)
+    validate_interface_field(fluxes.zero_plane_displacement, "zero_plane_displacement", grid)
+
+    return nothing
+end
+
+validate_flux_formulation(flux_formulation, grid) = nothing
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
-                                  Tₛ, qₛ, Δθ, Δq, Δh,
+                                  Tⁱⁿ, qⁱⁿ, Δθ, Δq, Δh,
                                   approximate_interface_state,
                                   atmosphere_state,
-                                  interface_properties,
-                                  atmosphere_properties,
-                                  interior_properties = nothing)
+                                  interface_formulation,
+                                  atmosphere_properties)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     g  = atmosphere_properties.gravitational_acceleration
@@ -334,62 +335,56 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ψθ = flux_formulation.stability_functions.temperature
     ψq = flux_formulation.stability_functions.water_vapor
 
-    # Extract roughness lengths, resolving field-aware land formulations from
-    # local per-cell interior properties.
-    roughness_lengths = local_roughness_lengths(flux_formulation.roughness_lengths,
-                                                interior_properties)
-    ℓu = roughness_lengths.momentum
-    ℓθ = roughness_lengths.temperature
-    ℓq = roughness_lengths.water_vapor
+    ℓu = flux_formulation.roughness_lengths.momentum
+    ℓθ = flux_formulation.roughness_lengths.temperature
+    ℓq = flux_formulation.roughness_lengths.water_vapor
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
-    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
 
     # Squared subgrid velocity enhancements: convective gustiness and, on coarse
     # grids, an optional mesoscale contribution (see `SubgridVelocityCorrection`).
     h_bℓ = atmosphere_state.h_bℓ
     Uˢᵍ² = vsgs²(flux_formulation.subgrid_velocities, u★, b★, h_bℓ)
 
-    # Velocity difference accounting for subgrid velocity enhancements
-    Δu, Δv = velocity_difference(interface_properties.velocity_formulation,
+    Δu, Δv = velocity_difference(interface_formulation.velocity_difference,
                                  atmosphere_state,
                                  approximate_interface_state)
 
     U = sqrt(Δu^2 + Δv^2 + Uˢᵍ²)
 
     # Compute roughness length scales (pass surface temperature for viscosity calculation)
-    ℓu₀ = roughness_length(ℓu, u★, U, ℂᵃᵗ, Tₛ)
-    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
-    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
+    ℓu₀ = roughness_length(ℓu, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
 
     # Tall roughness elements displace the similarity profiles upward by `d`.
-    d = local_zero_plane_displacement(flux_formulation.zero_plane_displacement,
-                                      interior_properties)
-    Δh = displaced_profile_height(Δh, d, ℓu₀)
+    d = flux_formulation.zero_plane_displacement
+    Δhᵈ = Δh - d
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant
-    L★ = ifelse(b★ == 0, Inf, u★^2 / (ϰ * b★))
+    L★ = monin_obukhov_length(u★, b★, ϰ)
     form = flux_formulation.similarity_form
 
-    χu = ϰ / similarity_profile(form, ψu, Δh, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δh, ℓq₀, L★)
+    Ξu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
+    Ξθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
+    Ξq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
 
     # Recompute
-    u★ = χu * U
-    θ★ = χθ * Δθ
-    q★ = χq * Δq
+    u★ = Ξu * U
+    θ★ = Ξθ * Δθ
+    q★ = Ξq * Δq
 
-    return u★, θ★, q★
+    return u★, θ★, q★, Ξθ, Ξq
 end
 
 """
-    buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
+    buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
 
 Return the characteristic buoyancy scale `b★` associated with
 the characteristic temperature `θ★`, specific humidity scale `q★`,
-surface temperature `Tₛ`, surface specific humidity `qₛ`,
+surface temperature `Tⁱⁿ`, surface specific humidity `qⁱⁿ`,
 atmosphere thermodynamic parameters `ℂᵃᵗ`, and gravitational acceleration `g`.
 
 The buoyancy scale is defined in terms of the interface buoyancy flux,
@@ -402,7 +397,7 @@ where `u_★` is the friction velocity.
 Using the definition of buoyancy for clear air without condensation, we find that
 
 ```math
-b★ = (g / 𝒯ₛ) [θ★ (1 + δ qₛ) + δ 𝒯ₛ q★] ,
+b★ = (g / 𝒯ₛ) [θ★ (1 + δ qⁱⁿ) + δ 𝒯ₛ q★] ,
 ```
 where ``𝒯ₛ`` is the virtual temperature at the surface, and ``δ = Rᵛ / Rᵈ - 1``,
 where ``Rᵛ`` is the molar mass of water vapor and ``Rᵈ`` is the molar mass of dry air.
@@ -414,14 +409,32 @@ in terms of ``b★`` and additionally the Von Karman constant ``ϰ``,
 L★ = u★² / ϰ b★ .
 ```
 """
-@inline function buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
-    𝒯ₛ = AtmosphericThermodynamics.virtual_temperature(ℂᵃᵗ, Tₛ, qₛ)
+@inline function buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
+    𝒯ₛ = AtmosphericThermodynamics.virtual_temperature(ℂᵃᵗ, Tⁱⁿ, qⁱⁿ)
     ε  = AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
     δ  = ε - 1 # typically equal to 0.608
 
-    b★ = g / 𝒯ₛ * (θ★ * (1 + δ * qₛ) + δ * 𝒯ₛ * q★)
+    b★ = g / 𝒯ₛ * (θ★ * (1 + δ * qⁱⁿ) + δ * 𝒯ₛ * q★)
 
     return b★
+end
+
+"""
+    monin_obukhov_length(u★, b★, ϰ)
+
+Return the Monin--Obukhov length scale
+
+```math
+L★ = u★² / ϰ b★ ,
+```
+
+given the friction velocity `u★`, the buoyancy scale `b★` (see [`buoyancy_scale`](@ref)),
+and the Von Karman constant `ϰ`. A neutral interface (`b★ = 0`) has an infinite `L★`,
+typed like `u★` so that the profiles stay in the working precision.
+"""
+@inline function monin_obukhov_length(u★, b★, ϰ)
+    L★ = u★^2 / (ϰ * b★)
+    return ifelse(b★ == 0, convert(typeof(L★), Inf), L★)
 end
 
 
@@ -434,6 +447,8 @@ struct SimilarityScales{U, T, Q}
     temperature :: T
     water_vapor :: Q
 end
+
+Adapt.@adapt_structure SimilarityScales
 
 Base.summary(ss::SimilarityScales) =
     string("SimilarityScales(momentum=", prettysummary(ss.momentum),
@@ -680,34 +695,104 @@ end
 ##### From Paulson (1970), for unstable boundary layers
 #####
 
+# Integrated Businger--Dyer profiles, shared with the free-convection matched
+# functions below.
+@inline function businger_dyer_momentum_profile(a, b, ζ⁻)
+    z = sqrt(sqrt(1 - a * ζ⁻))
+    return 2 * log((1 + z) / 2) + log((1 + z^2) / 2) - 2 * atan(z) + b
+end
+
+@inline businger_dyer_scalar_profile(a, ζ⁻) = 2 * log((1 + sqrt(1 - a * ζ⁻)) / 2)
+
 @kwdef struct PaulsonMomentumStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0
     b :: FT = π/2
 end
 
-@inline function stability_profile(ψ::PaulsonMomentumStabilityFunction, ζ)
-    a = ψ.a
-    b = ψ.b
-    ζ⁻ = min(zero(ζ), ζ)
-    z = sqrt(sqrt((1 - a * ζ⁻)))
-
-    Ψ₁ = 2 * log((1 + z) / 2)
-    Ψ₂ = log((1 + z^2) / 2)
-    Ψ₃ = - 2 * atan(z)
-
-    return Ψ₁ + Ψ₂ + Ψ₃ + b
-end
+@inline stability_profile(ψ::PaulsonMomentumStabilityFunction, ζ) =
+    businger_dyer_momentum_profile(ψ.a, ψ.b, min(zero(ζ), ζ))
 
 @kwdef struct PaulsonScalarStabilityFunction{FT} <: AbstractStabilityFunction
     a :: FT = 16.0
 end
 
-@inline function stability_profile(ψ::PaulsonScalarStabilityFunction, ζ)
-    a = ψ.a
-    ζ⁻ = min(zero(ζ), ζ)
-    z = sqrt(sqrt((1 - a * ζ⁻)))
-    return 2 * log((1 + z^2) / 2)
+@inline stability_profile(ψ::PaulsonScalarStabilityFunction, ζ) =
+    businger_dyer_scalar_profile(ψ.a, min(zero(ζ), ζ))
+
+#####
+##### From Zeng et al. (1998), matching the unstable branch to free convection
+#####
+
+"""
+    FreeConvectionMomentumStabilityFunction{FT}
+
+Unstable momentum stability function of [zeng1998intercomparison](@citet): the
+Businger--Dyer profile up to a matching point ``ζ_m``, and the free-convection
+profile beyond it,
+
+```math
+ψ(ζ) = ψ_{BD}(-ζ_m) + \\log \\left ( \\frac{|ζ|}{ζ_m} \\right )
+       - C \\left ( |ζ|^{1/3} - ζ_m^{1/3} \\right ) , \\qquad ζ < -ζ_m ,
+```
+
+which is continuously differentiable at ``-ζ_m``. The default
+`matching_stability_parameter` and `free_convection_coefficient` produce that
+``C^1`` match for `a = 16`; retune them together with `a`.
+`maximum_stability_parameter` bounds ``|ζ|`` in the profile, as CLM does.
+"""
+@kwdef struct FreeConvectionMomentumStabilityFunction{FT} <: AbstractStabilityFunction
+    a :: FT = 16.0
+    b :: FT = π/2
+    matching_stability_parameter :: FT = 1.574
+    free_convection_coefficient :: FT = 1.14
+    maximum_stability_parameter :: FT = 100.0
 end
+
+@inline function stability_profile(ψ::FreeConvectionMomentumStabilityFunction, ζ)
+    ζₘ = ψ.matching_stability_parameter
+    ζ⁻ = min(zero(ζ), max(ζ, -ψ.maximum_stability_parameter))
+
+    # |ζ| clipped from below at the match, so both matched terms vanish above it
+    ζᶠ = max(-ζ⁻, ζₘ)
+    ψᴮᴰ = businger_dyer_momentum_profile(ψ.a, ψ.b, max(ζ⁻, -ζₘ))
+
+    return ψᴮᴰ + log(ζᶠ / ζₘ) - ψ.free_convection_coefficient * (cbrt(ζᶠ) - cbrt(ζₘ))
+end
+
+"""
+    FreeConvectionScalarStabilityFunction{FT}
+
+Unstable scalar stability function of [zeng1998intercomparison](@citet), matched to
+free convection at ``ζ_t`` as in [`FreeConvectionMomentumStabilityFunction`](@ref) with the
+scalar free-convection increment,
+
+```math
+ψ(ζ) = ψ_{BD}(-ζ_t) + \\log \\left ( \\frac{|ζ|}{ζ_t} \\right )
+       - C \\left ( ζ_t^{-1/3} - |ζ|^{-1/3} \\right ) , \\qquad ζ < -ζ_t .
+```
+"""
+@kwdef struct FreeConvectionScalarStabilityFunction{FT} <: AbstractStabilityFunction
+    a :: FT = 16.0
+    matching_stability_parameter :: FT = 0.465
+    free_convection_coefficient :: FT = 0.8
+    maximum_stability_parameter :: FT = 100.0
+end
+
+@inline function stability_profile(ψ::FreeConvectionScalarStabilityFunction, ζ)
+    ζₜ = ψ.matching_stability_parameter
+    ζ⁻ = min(zero(ζ), max(ζ, -ψ.maximum_stability_parameter))
+
+    ζᶠ = max(-ζ⁻, ζₜ)
+    ψᴮᴰ = businger_dyer_scalar_profile(ψ.a, max(ζ⁻, -ζₜ))
+
+    return ψᴮᴰ + log(ζᶠ / ζₜ) - ψ.free_convection_coefficient * (1 / cbrt(ζₜ) - 1 / cbrt(ζᶠ))
+end
+
+Base.summary(::FreeConvectionMomentumStabilityFunction{FT}) where FT = "FreeConvectionMomentumStabilityFunction{$FT}"
+Base.summary(::FreeConvectionScalarStabilityFunction{FT}) where FT = "FreeConvectionScalarStabilityFunction{$FT}"
+
+Base.show(io::IO, ψ::FreeConvectionMomentumStabilityFunction) = print(io, summary(ψ))
+Base.show(io::IO, ψ::FreeConvectionScalarStabilityFunction) = print(io, summary(ψ))
 
 struct SplitStabilityFunction{S, U}
     stable :: S
@@ -722,6 +807,30 @@ Base.show(io::IO, ss::SplitStabilityFunction) = print(io, "SplitStabilityFunctio
     Ψ_unstable = stability_profile(ψ.unstable, ζ)
     stable = ζ > 0
     return ifelse(stable, Ψ_stable, Ψ_unstable)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Stability function evaluated at the roughness height by [`similarity_profile`](@ref).
+
+The free-convection matched functions split the profile at ``z = -ζ_m L_★`` and keep
+the Businger--Dyer form below the match, so their roughness-height term is the
+*unmatched* function. Every other stability function evaluates identically at both
+heights.
+"""
+@inline inner_stability_profile(ψ, ζ) = stability_profile(ψ, ζ)
+
+@inline inner_stability_profile(ψ::FreeConvectionMomentumStabilityFunction, ζ) =
+    businger_dyer_momentum_profile(ψ.a, ψ.b, min(zero(ζ), ζ))
+
+@inline inner_stability_profile(ψ::FreeConvectionScalarStabilityFunction, ζ) =
+    businger_dyer_scalar_profile(ψ.a, min(zero(ζ), ζ))
+
+@inline function inner_stability_profile(ψ::SplitStabilityFunction, ζ)
+    Ψ_stable = stability_profile(ψ.stable, ζ)
+    Ψ_unstable = inner_stability_profile(ψ.unstable, ζ)
+    return ifelse(ζ > 0, Ψ_stable, Ψ_unstable)
 end
 
 #####
@@ -770,11 +879,29 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
     return SimilarityScales(momentum, scalar, scalar)
 end
 
-# Land currently borrows the NCAR/Large–Yeager Businger–Dyer form
-# (Paulson 1970 unstable + linear stable). TODO: replace with land-tuned
-# stability functions.
-atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType) =
-    large_yeager_stability_functions(FT)
+"""
+$(TYPEDSIGNATURES)
+
+Stability functions for the atmosphere--land interface: the free-convection matched
+unstable functions of [zeng1998intercomparison](@citet)
+([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)),
+bounded at ``|ζ| ≤`` `maximum_stability_parameter`, and the linear stable function
+``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter` (CLM4.5 bounds it at 2,
+CLM5 at 0.5, Noah-MP at 1).
+"""
+function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
+                                             maximum_stability_parameter = 100,
+                                             stable_maximum_stability_parameter = 2)
+    ζᵐᵃˣ = convert(FT, maximum_stability_parameter)
+    ζᵐᵃˣ⁺ = convert(FT, stable_maximum_stability_parameter)
+    stable   = LinearStableStabilityFunction{FT}(coefficient = 5,
+                                                 maximum_stability_parameter = ζᵐᵃˣ⁺)
+    momentum = SplitStabilityFunction(stable,
+                   FreeConvectionMomentumStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
+    scalar   = SplitStabilityFunction(stable,
+                   FreeConvectionScalarStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
+    return SimilarityScales(momentum, scalar, scalar)
+end
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()

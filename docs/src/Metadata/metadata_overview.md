@@ -181,6 +181,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
 | `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
+| `ORCATwo`          | `:bottom_height`, `:mesh_mask`                            | [ORCA2 domain configuration (Zenodo)](https://zenodo.org/records/15705144)                         |
 | `ORCAQuarter`      | `:bottom_height`, `:mesh_mask`                            | [eORCA025 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15494369)                       |
 | `ORCATwelfth`      | `:bottom_height`, `:mesh_mask`                            | [eORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                        |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
@@ -211,9 +212,12 @@ NumericalEarth currently ships connectors for the following data products:
 | `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
 | `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
 | `OpenLandMapSoilDB` | 30 m global soil texture (sand, silt, clay) and fine-earth bulk density over 0–100 cm | [OpenLandMap STAC](https://stac.openlandmap.org/) |
-| `CopernicusAlbedo` | `:albedo` — dekadal blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
+| `CopernicusAlbedo` | `:albedo` — ten-day blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
 | `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
+| `GHSBuilt`         | `:built_up_fraction` and `:building_volume` (m³ per m²): the GHS-BUILT-S fraction and its product with the epoch-2018 ANBH height, paired on the built-up surface pixels over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S and GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
 | `ESAWorldCover`    | `:landcover_class`, `:vegetation_fraction`, and a per-class `:<class>_fraction` — 10 m land-cover classification aggregated block-wise over a regional window (needs `ArchGDAL`) | [ESA WorldCover](https://esa-worldcover.org/en/data-access) |
-
+| `MCD15A2H` | `:leaf_area_index`, `:absorbed_par_fraction`, `:leaf_area_index_uncertainty`, `:landcover_code` — 8-day 500 m MODIS composites (needs `ArchGDAL`) | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
+| `MODISLAIClimatology` | 46-period seasonal climatology of an [`MCD15A2H`](@ref) variable | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
+| `MCD12Q1` | `:landcover_class`, `:quality_flag`, `:land_water_mask` — annual 500 m land cover on [`MCD15A2H`](@ref)'s lattice | [MCD12Q1 V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd12q1-061) |

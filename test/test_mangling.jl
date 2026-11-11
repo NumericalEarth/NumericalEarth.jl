@@ -23,12 +23,9 @@ end
 @testset "mangle clamps out-of-hull indices to the data extent" begin
     data = reshape(Float32[1 2 3; 4 5 6; 7 8 9], 3, 3, 1)
 
-    # A `BoundingBox` whose edge does not align with a native cell face can make
-    # the target grid one cell larger than the downloaded data, so the read
-    # index runs one past the array. The clamp must read the nearest edge cell
-    # rather than reading past the bounds into uninitialized memory (the bug
-    # fixed in `set_region_data!`); without the clamp the `@inbounds` read
-    # returns garbage (denormal/NaN) at the domain edge.
+    # A `BoundingBox` edge that does not align with a native cell face can make the target grid one
+    # cell larger than the data, so the read index runs one past the array and must clamp to the
+    # nearest edge cell.
     @test mangle(4, 2, 1, data, nothing) == data[3, 2, 1]   # i past east edge
     @test mangle(2, 4, 1, data, nothing) == data[2, 3, 1]   # j past north edge
     @test mangle(0, 2, 1, data, nothing) == data[1, 2, 1]   # i below west edge

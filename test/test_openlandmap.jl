@@ -5,11 +5,13 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, conversion_units, convert_units,
                                     default_inpainting, is_three_dimensional,
-                                    WeightPercent, GramPerCubicCentimeter
-using NumericalEarth.DataWrangling.OpenLandMap: cog_window_to_netcdf
+                                    WeightPercent, GramPerCubicCentimeter, native_grid
+using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
+                                                cog_window_to_netcdf, validate_wgs84_longitude_latitude,
+                                                validate_geographic_northup
 
 using ArchGDAL
-using NCDatasets: NCDataset
+using NCDatasets: NCDataset, defDim, defVar
 
 # The real /vsicurl reads require network access, so they are exercised manually /
 # in the docs build. Here we test the dataset-interface, unit-conversion, and
@@ -67,10 +69,58 @@ end
     @test validate_dataset_coverage(grid, meta_region) === nothing
 end
 
+@testset "OpenLandMapSoilDB COG windowing and decoding" begin
+    x0, y0, dx, dy = -5.0, 4.0, 0.1, -0.1
+    geotransform = [x0, dx, 0.0, y0, 0.0, dy]
+    width, height = 10, 8
+
+    # An interior request: the window must strictly contain it on all four sides.
+    bbox = BoundingBox(longitude = (-4.5, -4.2), latitude = (3.5, 3.8))
+    column_offset, row_offset, Nx, Ny = raster_window_indices(geotransform, width, height, bbox)
+
+    @test x0 + column_offset * dx < bbox.longitude[1]
+    @test x0 + (column_offset + Nx) * dx > bbox.longitude[2]
+    @test y0 + (row_offset + Ny) * dy < bbox.latitude[1]
+    @test y0 + row_offset * dy > bbox.latitude[2]
+
+    # A request overhanging every edge clamps to the raster instead of running off it.
+    huge = BoundingBox(longitude = (x0 - 1, x0 + width * dx + 1),
+                       latitude  = (y0 + height * dy - 1, y0 + 1))
+    @test raster_window_indices(geotransform, width, height, huge) == (0, 0, width, height)
+
+    value_scale, value_offset, missing_value = 0.5, 2.0, 255
+    raw = UInt8[i + 10 * (j - 1) for i in 1:4, j in 1:3]  # (lon, lat), north-first
+    raw[2, 1] = missing_value
+    longitude, latitude, data = assemble_raster_window(raw, geotransform, 2, 1, value_scale, value_offset, missing_value)
+
+    # Cell centers, half a pixel in from the window's west and north faces.
+    @test longitude[1] ≈ x0 + 2 * dx + dx / 2
+    @test latitude[end] ≈ y0 + 1 * dy + dy / 2
+    @test issorted(latitude)
+
+    # Latitude ascends, so raw row 1 (north) becomes the last latitude index.
+    @test eltype(data) == Float32
+    @test data[1, end] ≈ raw[1, 1] * value_scale + value_offset
+    @test data[1, 1] ≈ raw[1, 3] * value_scale + value_offset
+
+    # The fill is masked before scaling; scaling it would give a finite 129.5.
+    @test isnan(data[2, end])
+    @test count(isnan, data) == 1
+
+    @test validate_geographic_northup(geotransform) === nothing
+    @test_throws ErrorException validate_geographic_northup([x0, dx, 0.01, y0, 0.0, dy])
+    @test_throws ErrorException validate_geographic_northup([x0, dx, 0.0, y0, 0.0, -dy])
+
+    @test validate_wgs84_longitude_latitude(nothing) === nothing
+    @test validate_wgs84_longitude_latitude(4326) === nothing
+    @test_throws ErrorException validate_wgs84_longitude_latitude(3857)
+end
+
 # Build a small GeoTIFF with a known CRS/scale/offset/nodata; row 0 is north.
-function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw, epsg = 4326)
+function write_synthetic_tile(path; nx, ny, x0, y0, dx, dy, scale, offset, nodata, raw,
+                              epsg = 4326, dtype = UInt8)
     ArchGDAL.create(path; driver = ArchGDAL.getdriver("GTiff"),
-                    width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
+                    width = nx, height = ny, nbands = 1, dtype) do ds
         ArchGDAL.setgeotransform!(ds, [x0, dx, 0.0, y0, 0.0, dy])
         ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(epsg)))
         band = ArchGDAL.getband(ds, 1)
@@ -140,4 +190,124 @@ end
                                nodata = 255, raw, epsg = 3857)
     bbox = BoundingBox(longitude = (x0, x0 + nx * dx), latitude = (y0 + ny * dy, y0))
     @test_throws ErrorException cog_window_to_netcdf([tif], joinpath(dir, "bad.nc"), "clay", bbox)
+end
+
+@testset "OpenLandMapSoilDB tiled regrid on $arch" for arch in test_architectures
+    dir = mktempdir()
+
+    # A tile on the dataset's global lattice, carrying structure at every scale so that a
+    # misregistered tile boundary could not hide in a smooth field.
+    nx, ny = 512, 512
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[30 + 10 * sinpi(i / 64) * cospi(j / 48) + (i % 7) for i in 1:nx, j in 1:ny]
+    raw[100:140, 60:90] .= -1.0   # a masked patch straddling tile interiors
+
+    tif = write_synthetic_tile(joinpath(dir, "tiled.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    # The window spans the masked patch, so tile interiors have to straddle it.
+    grid = LatitudeLongitudeGrid(arch; size = (10, 10, 3),
+                                 longitude = collect(range(-111.98, -111.96; length=11)),
+                                 latitude = collect(range(35.97, 35.99; length=11)),
+                                 z = [-1.0, -0.6, -0.3, 0.0])
+    region = BoundingBox(grid)
+
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    # The path the regrid took before tiling: materialize the whole window, then interpolate.
+    native = Field(metadatum, arch)
+    copied = Field(metadatum, native.grid)
+    @test isequal(Array(interior(copied)), Array(interior(native)))
+
+    untiled = Field{Center, Center, Center}(grid)
+    NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
+
+    # Tiling changes where the data comes from, never the arithmetic done on it: each tile is a
+    # windowed field over the native grid interpolated into a window of the target, so it runs
+    # the same regrid over the same node coordinates. Every budget reproduces it bitwise.
+    reference = Array(interior(untiled))
+
+    for tile_bytes in (typemax(Int), 20_000, 5_000)
+        tiled = Array(interior(Field(metadatum, grid; tile_bytes)))
+        @test size(tiled) == size(reference)
+        @test isequal(tiled, reference)
+    end
+end
+
+@testset "windowed retrieval matches the whole-file read" begin
+    dir = mktempdir()
+    nx, ny = 256, 256
+    x0, y0, dx, dy = -112.0005, 36.0005, 0.00025, -0.00025
+    raw = Float32[(i % 11) + 3 * (j % 5) for i in 1:nx, j in 1:ny]
+
+    tif = write_synthetic_tile(joinpath(dir, "window.tif");
+                               nx, ny, x0, y0, dx, dy, scale = 1.0, offset = 0.0,
+                               nodata = -1.0, raw, dtype = Float32)
+
+    region = BoundingBox(longitude = (x0 + 0.01, x0 + 0.05), latitude = (y0 - 0.05, y0 - 0.01))
+    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(), region, dir)
+    cog_window_to_netcdf(fill(tif, 3), metadata_path(metadatum), "clay", region)
+
+    whole = NumericalEarth.DataWrangling.retrieve_data(metadatum)
+    λ, φ = NumericalEarth.DataWrangling.read_file_coords(metadatum)
+
+    for (longitude_indices, latitude_indices) in ((1:3, 1:4), (2:5, 3:6),
+                                                  (1:size(whole, 1), 1:size(whole, 2)),
+                                                  (:, :))
+        data, window_longitude, window_latitude =
+            NumericalEarth.DataWrangling.retrieve_window(metadatum, longitude_indices, latitude_indices)
+        @test isequal(Array(data), whole[longitude_indices, latitude_indices, :])
+        @test Array(window_longitude) ≈ λ[longitude_indices]
+        @test Array(window_latitude) ≈ φ[latitude_indices]
+    end
+end
+
+@testset "soil_hydraulic_properties from OpenLandMapSoilDB on $arch" for arch in test_architectures
+    dataset = OpenLandMapSoilDB()
+    dir = mktempdir()
+
+    grid = LatitudeLongitudeGrid(arch; size = (4, 3),
+                                 longitude = (0.0, 0.02), latitude = (40.0, 40.015),
+                                 topology = (Bounded, Bounded, Flat))
+
+    # The regional files a download would leave behind: uniform texture in the raw
+    # units (percent, g/cm3), with a NaN hole under the south-west grid cell.
+    values = (sand_fraction = 40.0f0, silt_fraction = 35.0f0,
+              clay_fraction = 25.0f0, bulk_density = 1.4f0)
+    for (name, value) in pairs(values)
+        metadatum = Metadatum(name; dataset, region = BoundingBox(grid), dir)
+        native = native_grid(metadatum, CPU())
+        Nx, Ny, Nz = size(native)
+        data = fill(value, Nx, Ny, Nz)
+        name == :sand_fraction && (data[1:Nx÷4, 1:Ny÷3, :] .= NaN32)
+        NCDataset(metadata_path(metadatum), "c") do ds
+            defDim(ds, "lon", Nx); defDim(ds, "lat", Ny); defDim(ds, "depth", Nz)
+            defVar(ds, "lon", Array(λnodes(native, Center())), ("lon",))
+            defVar(ds, "lat", Array(φnodes(native, Center())), ("lat",))
+            defVar(ds, dataset_variable_name(metadatum), data, ("lon", "lat", "depth"))
+        end
+    end
+
+    hydraulics = soil_hydraulic_properties(grid, dataset; slab_depth = 0.5, dir)
+
+    # Uniform texture reduces to the same parameters as hand-built lattice fields,
+    # with the hole inpainted from its (identical) neighbors.
+    lattice = LatitudeLongitudeGrid(arch; size = (4, 3, 3),
+                                    longitude = (0.0, 0.02), latitude = (40.0, 40.015),
+                                    z = [-1.0, -0.6, -0.3, 0.0],
+                                    topology = (Bounded, Bounded, Bounded))
+    texture = map((0.4f0, 0.35f0, 0.25f0, 1400.0f0)) do value
+        field = CenterField(lattice)
+        set!(field, value)
+        return field
+    end
+    reference = soil_hydraulic_properties(texture...; slab_depth = 0.5)
+
+    for name in keys(reference)
+        parameter = hydraulics[name]
+        @test parameter.grid === grid
+        @test Array(interior(parameter)) ≈ Array(interior(reference[name])) rtol=1e-6
+    end
 end

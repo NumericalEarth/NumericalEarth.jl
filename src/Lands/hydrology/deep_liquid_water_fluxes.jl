@@ -1,9 +1,9 @@
 #####
-##### Deep liquid flux closures for `VariablySaturatedHydrology`.
+##### Deep liquid water flux closures for `VariablySaturatedHydrology`.
 #####
 ##### Each closure implements
 #####
-#####     deep_liquid_flux(closure, M, θˡ, 𝒮, Π, K, Πᵈ, time) -> Jˡᵇ  (kg m⁻² s⁻¹)
+#####     deep_liquid_water_flux(closure, M, θˡ, 𝒮, Π, K, Πᵈ, time) -> Jˡᵇ  (kg m⁻² s⁻¹)
 #####
 ##### with `Jˡᵇ` positive upward (capillary rise / groundwater return) and
 ##### negative downward (drainage). All scalars are per-cell; the kernel
@@ -11,15 +11,15 @@
 #####
 
 """
-    NoDeepLiquidFlux()
+    NoDeepLiquidWaterFlux()
 
-Zero deep liquid flux. The slab is closed at the bottom.
+Zero deep liquid water flux. The slab is closed at the bottom.
 """
-struct NoDeepLiquidFlux end
+struct NoDeepLiquidWaterFlux end
 
-@inline deep_liquid_flux(::NoDeepLiquidFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) = zero(M)
+@inline deep_liquid_water_flux(::NoDeepLiquidWaterFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) = zero(M)
 
-Base.summary(::NoDeepLiquidFlux) = "NoDeepLiquidFlux"
+Base.summary(::NoDeepLiquidWaterFlux) = "NoDeepLiquidWaterFlux"
 
 """
     FreeDrainageFlux(liquid_density)
@@ -34,14 +34,14 @@ end
 FreeDrainageFlux(FT::Type = Oceananigans.defaults.FloatType; liquid_density = 1000) =
     FreeDrainageFlux(convert(FT, liquid_density))
 
-@inline deep_liquid_flux(c::FreeDrainageFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) =
+@inline deep_liquid_water_flux(c::FreeDrainageFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time) =
     -convert(typeof(M), c.liquid_density) * K
 
 Base.summary(c::FreeDrainageFlux) =
     string("FreeDrainageFlux(liquid_density=", prettysummary(c.liquid_density), ")")
 
 """
-    DarcyDeepLiquidFlux(exchange_length, liquid_density)
+    DarcyDeepLiquidWaterFlux(exchange_length, liquid_density)
 
 Darcy exchange between the slab bottom and a deep reservoir held at pressure
 head `Πᵈ`, set via `VariablySaturatedHydrology(deep_pressure_head = …)`. The
@@ -53,17 +53,17 @@ and `h_D = z_D + Πᵈ`,
 J^{lb} = \\rho^l K_b\\,\\frac{h_D - h_b}{\\ell_l}.
 ```
 """
-struct DarcyDeepLiquidFlux{FT}
+struct DarcyDeepLiquidWaterFlux{FT}
     exchange_length :: FT
     liquid_density  :: FT
 end
 
-DarcyDeepLiquidFlux(FT::Type = Oceananigans.defaults.FloatType;
-                    exchange_length, liquid_density = 1000) =
-    DarcyDeepLiquidFlux(convert(FT, exchange_length),
-                        convert(FT, liquid_density))
+DarcyDeepLiquidWaterFlux(FT::Type = Oceananigans.defaults.FloatType;
+                         exchange_length, liquid_density = 1000) =
+    DarcyDeepLiquidWaterFlux(convert(FT, exchange_length),
+                             convert(FT, liquid_density))
 
-@inline function deep_liquid_flux(c::DarcyDeepLiquidFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time)
+@inline function deep_liquid_water_flux(c::DarcyDeepLiquidWaterFlux, M, θˡ, 𝒮, Π, K, Πᵈ, time)
     FT = typeof(M)
     ℓ  = convert(FT, c.exchange_length)
     ρˡ = convert(FT, c.liquid_density)
@@ -71,8 +71,8 @@ DarcyDeepLiquidFlux(FT::Type = Oceananigans.defaults.FloatType;
     return ρˡ * K * (Πᵈ - Π - ℓ) / ℓ
 end
 
-Base.summary(c::DarcyDeepLiquidFlux) =
-    string("DarcyDeepLiquidFlux(exchange_length=", prettysummary(c.exchange_length),
+Base.summary(c::DarcyDeepLiquidWaterFlux) =
+    string("DarcyDeepLiquidWaterFlux(exchange_length=", prettysummary(c.exchange_length),
            ", liquid_density=", prettysummary(c.liquid_density), ")")
 
 """
@@ -96,7 +96,7 @@ LinearReservoirDrainage(FT::Type = Oceananigans.defaults.FloatType;
     LinearReservoirDrainage(convert(FT, drainage_time_scale),
                             convert(FT, equilibrium_storage))
 
-@inline function deep_liquid_flux(c::LinearReservoirDrainage, M, θˡ, 𝒮, Π, K, Πᵈ, time)
+@inline function deep_liquid_water_flux(c::LinearReservoirDrainage, M, θˡ, 𝒮, Π, K, Πᵈ, time)
     FT = typeof(M)
     return -max(M - convert(FT, c.equilibrium_storage), 0) / convert(FT, c.drainage_time_scale)
 end

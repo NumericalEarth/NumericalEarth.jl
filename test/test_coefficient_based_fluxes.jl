@@ -6,12 +6,13 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     LargeYeagerTransferCoefficients,
     LinearStableStabilityFunction,
     large_yeager_stability_functions,
+    atmosphere_land_stability_functions, FreeConvectionMomentumStabilityFunction, FreeConvectionScalarStabilityFunction,
+    LogarithmicSimilarityProfile, similarity_profile, inner_stability_profile,
+    PaulsonMomentumStabilityFunction, PaulsonScalarStabilityFunction,
     SimilarityScales,
     ComponentInterfaces,
     stability_profile,
     FixedIterations
-
-using NumericalEarth.DataWrangling: all_dates
 
 @testset "PolynomialNeutralDragCoefficient" begin
     p = PolynomialNeutralDragCoefficient()
@@ -56,6 +57,55 @@ end
     @test stability_profile(sf.temperature, 1.0) ≈ -5.0
 end
 
+@testset "Zeng free-convection matched stability functions" begin
+    ψu, pu = FreeConvectionMomentumStabilityFunction{Float64}(), PaulsonMomentumStabilityFunction{Float64}()
+    ψc, pc = FreeConvectionScalarStabilityFunction{Float64}(), PaulsonScalarStabilityFunction{Float64}()
+    # Matched below its matching point to the Businger-Dyer form it extends
+    for ζ in (-1.0, -0.4, -0.01, 0.0)
+        @test stability_profile(ψu, ζ) ≈ stability_profile(pu, ζ)
+    end
+    @test stability_profile(ψc, -0.4) ≈ stability_profile(pc, -0.4)
+    # Continuously differentiable across the match
+    ϵ = 1e-6
+    for (ψ, ζm) in ((ψu, -1.574), (ψc, -0.465))
+        ψ₋₂, ψ₋, ψ₊, ψ₊₂ = (stability_profile(ψ, ζm + n * ϵ) for n in (-2, -1, 1, 2))
+        @test abs(ψ₋ - ψ₊) < 10ϵ
+        @test (ψ₋ - ψ₋₂) / ϵ ≈ (ψ₊₂ - ψ₊) / ϵ rtol=1e-4
+    end
+    # The roughness-height evaluation keeps the unmatched Businger-Dyer form
+    @test inner_stability_profile(ψu, -100.0) == stability_profile(pu, -100.0)
+    @test inner_stability_profile(ψc, -100.0) == stability_profile(pc, -100.0)
+    # Beyond the match the free-convection term turns the profile over, while Businger-Dyer keeps growing;
+    # `maximum_stability_parameter` freezes the profile beyond its bound.
+    @test stability_profile(ψu, -50.0) < stability_profile(pu, -50.0)
+    ψu∞ = FreeConvectionMomentumStabilityFunction{Float64}(maximum_stability_parameter = Inf)
+    @test stability_profile(ψu∞, -1e3) < stability_profile(ψu∞, -100.0)
+    @test stability_profile(ψu, -1e3) == stability_profile(ψu, -100.0)
+end
+
+@testset "atmosphere_land_stability_functions" begin
+    sf, ly = atmosphere_land_stability_functions(), large_yeager_stability_functions()
+    @test sf isa SimilarityScales
+    # Stable branch bounded at ζ ≤ 2 (ocean large_yeager keeps ζ ≤ 10)
+    @test stability_profile(sf.momentum, 1.0) ≈ -5.0
+    @test stability_profile(sf.momentum, 20.0) ≈ -10.0
+    @test stability_profile(sf.temperature, 20.0) ≈ -10.0
+    @test stability_profile(ly.momentum, 20.0) ≈ -50.0
+    @test stability_profile(ly.momentum, -100.0) ≈ stability_profile(PaulsonMomentumStabilityFunction{Float64}(), -100.0)
+    # The similarity profile stays bounded away from zero as ζ → -∞, unlike unmatched Businger-Dyer
+    form = LogarithmicSimilarityProfile()
+    for (h, ℓ) in ((10.0, 0.1), (10.0, 0.01), (10.0, 5.0)), ζ in (-1e2, -1e4, -1e8)
+        Π = similarity_profile(form, sf.momentum, h, ℓ, h / ζ)
+        @test Π ≥ log(h / ℓ) / 3
+        @test Π > similarity_profile(form, ly.momentum, h, ℓ, h / ζ)
+        @test similarity_profile(form, sf.temperature, h, ℓ, h / ζ) ≥ log(h / ℓ) / 25
+    end
+    sf32 = atmosphere_land_stability_functions(Float32)
+    @test stability_profile(sf32.momentum, 20f0) isa Float32
+    @test stability_profile(sf32.momentum, -100f0) isa Float32
+    @test similarity_profile(form, sf32.momentum, 10f0, 0.1f0, -1f0) isa Float32
+end
+
 @testset "LargeYeagerTransferCoefficients constructor" begin
     ly = LargeYeagerTransferCoefficients()
     @test ly isa LargeYeagerTransferCoefficients{Float64}
@@ -69,104 +119,41 @@ end
     @test ly32 isa LargeYeagerTransferCoefficients{Float32}
 end
 
-@testset "CoefficientBasedFluxes with constant coefficients" begin
-    for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = 1,
-                                     latitude = 10,
-                                     longitude = 10,
-                                     z = (-1, 0),
-                                     topology = (Flat, Flat, Bounded))
+# Single-column coupled model whose atmosphere-ocean fluxes use `flux_formulation`.
+function coefficient_based_fluxes(arch, flux_formulation)
+    grid = LatitudeLongitudeGrid(arch;
+                                 size = 1,
+                                 latitude = 10,
+                                 longitude = 10,
+                                 z = (-1, 0),
+                                 topology = (Flat, Flat, Bounded))
 
-        ocean = ocean_simulation(grid;
-                                 momentum_advection = nothing,
-                                 tracer_advection = nothing,
-                                 closure = nothing,
-                                 bottom_drag_coefficient = 0)
+    ocean = ocean_simulation(grid;
+                             momentum_advection = nothing,
+                             tracer_advection = nothing,
+                             closure = nothing,
+                             bottom_drag_coefficient = 0)
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
+    atmosphere = synthetic_prescribed_atmosphere(arch)
+    interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=flux_formulation)
 
-        constant_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3))
-        interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=constant_fluxes)
+    set!(ocean.model, T=15, S=35)
+    coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
-        set!(ocean.model, T=15, S=35)
-        coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
-        fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-
-        CUDA.@allowscalar begin
-            @test isfinite(fluxes.sensible_heat[1, 1, 1])
-            @test isfinite(fluxes.latent_heat[1, 1, 1])
-            @test isfinite(fluxes.water_vapor[1, 1, 1])
-        end
-    end
+    return coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 end
 
-@testset "CoefficientBasedFluxes with PolynomialNeutralDragCoefficient" begin
-    for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = 1,
-                                     latitude = 10,
-                                     longitude = 10,
-                                     z = (-1, 0),
-                                     topology = (Flat, Flat, Bounded))
+@testset "CoefficientBasedFluxes" begin
+    poly_drag = PolynomialNeutralDragCoefficient()
 
-        ocean = ocean_simulation(grid;
-                                 momentum_advection = nothing,
-                                 tracer_advection = nothing,
-                                 closure = nothing,
-                                 bottom_drag_coefficient = 0)
+    formulations = ("constant coefficients"            => CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3)),
+                    "PolynomialNeutralDragCoefficient" => CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3)),
+                    "LargeYeagerTransferCoefficients"  => CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                                                                 solver_stop_criteria = FixedIterations(5)))
 
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
-
-        poly_drag = PolynomialNeutralDragCoefficient()
-        poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3))
-
-        interfaces = ComponentInterfaces(atmosphere, ocean;
-                                         atmosphere_ocean_fluxes=poly_fluxes)
-
-        set!(ocean.model, T=15, S=35)
-        coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
-        fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-
-        CUDA.@allowscalar begin
-            @test isfinite(fluxes.sensible_heat[1, 1, 1])
-            @test isfinite(fluxes.latent_heat[1, 1, 1])
-            @test isfinite(fluxes.water_vapor[1, 1, 1])
-            @test fluxes.friction_velocity[1, 1, 1] > 0
-        end
-    end
-end
-
-@testset "CoefficientBasedFluxes with LargeYeagerTransferCoefficients" begin
-    for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = 1,
-                                     latitude = 10,
-                                     longitude = 10,
-                                     z = (-1, 0),
-                                     topology = (Flat, Flat, Bounded))
-
-        ocean = ocean_simulation(grid;
-                                 momentum_advection = nothing,
-                                 tracer_advection = nothing,
-                                 closure = nothing,
-                                 bottom_drag_coefficient = 0)
-
-        dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
-
-        ly = LargeYeagerTransferCoefficients()
-        ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
-                                             solver_stop_criteria = FixedIterations(5))
-
-        interfaces = ComponentInterfaces(atmosphere, ocean;
-                                         atmosphere_ocean_fluxes=ly_fluxes)
-
-        set!(ocean.model, T=15, S=35)
-        coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
-        fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
+    for arch in test_architectures, (name, flux_formulation) in formulations
+        @info "Testing CoefficientBasedFluxes with $name..."
+        fluxes = coefficient_based_fluxes(arch, flux_formulation)
 
         CUDA.@allowscalar begin
             @test isfinite(fluxes.sensible_heat[1, 1, 1])

@@ -24,7 +24,12 @@ BitRoundFilter(; keepbits = 14, T = Float32, Tenc = T) = BitRoundFilter{T, Tenc}
 
 Zarr.zencode(data::AbstractArray, ::BitRoundFilter) = data
 Zarr.zdecode(data::AbstractArray, ::BitRoundFilter) = data
-Zarr.JSON.lower(filter::BitRoundFilter) = Dict("id" => "bitround", "keepbits" => filter.keepbits)
+
+# The JSON module Zarr serializes filters with: `Zarr.JSON` up to Zarr 0.10, `Zarr.ZarrCore.JSON` from 0.11.
+let JSON = isdefined(Zarr, :ZarrCore) ? Zarr.ZarrCore.JSON : Zarr.JSON
+    @eval $JSON.lower(filter::BitRoundFilter) = Dict("id" => "bitround", "keepbits" => filter.keepbits)
+end
+
 Zarr.getfilter(::Type{<:BitRoundFilter}, d) = BitRoundFilter(; keepbits = d["keepbits"])
 
 # Register at load time, not precompile time: mutating Zarr's global `filterdict`
@@ -32,6 +37,7 @@ Zarr.getfilter(::Type{<:BitRoundFilter}, d) = BitRoundFilter(; keepbits = d["kee
 # would be missing at runtime.
 function __init__()
     Zarr.filterdict["bitround"] = BitRoundFilter
+    return nothing
 end
 
 #####

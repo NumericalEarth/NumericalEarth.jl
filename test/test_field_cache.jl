@@ -10,7 +10,7 @@ using NumericalEarth.DataWrangling: FieldRegridding, field_cache_filename, field
                                  latitude = (-45, 45),
                                  z = (-1000, 0))
 
-    metadatum = Metadatum(:temperature; dataset = EN4Monthly(), date = start_date)
+    metadatum = Metadatum(:temperature; dataset = SyntheticOcean())
 
     config1 = FieldRegridding(grid, metadatum, (;))
     config2 = FieldRegridding(grid, metadatum, (;))
@@ -29,7 +29,7 @@ using NumericalEarth.DataWrangling: FieldRegridding, field_cache_filename, field
     @test field_cache_filename(FieldRegridding(grid, metadatum, (; inpainting = 7))) !=
           field_cache_filename(config1)
 
-    other_datum = Metadatum(:salinity; dataset = EN4Monthly(), date = start_date)
+    other_datum = Metadatum(:salinity; dataset = SyntheticOcean())
     @test field_cache_filename(FieldRegridding(grid, other_datum, (;))) !=
           field_cache_filename(config1)
 
@@ -48,7 +48,7 @@ end
                                  latitude = (-30, 30),
                                  z = (-800, 0))
 
-    metadatum = Metadatum(:temperature; dataset = EN4Monthly(), date = start_date)
+    metadatum = Metadatum(:temperature; dataset = SyntheticOcean())
 
     # Key the cache only after the dataset file exists — the key stamps it
     download(metadatum)
