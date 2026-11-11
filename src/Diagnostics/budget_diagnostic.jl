@@ -1,12 +1,26 @@
 """
-    BudgetComputation(:temperature, model)
+    BudgetComputation(name, model)
 
-Track the ocean temperature budget for a coupled model.
+Track an ocean column budget for a coupled model.
 
 ```julia
 budget = BudgetComputation(:temperature, model)
 add_callback!(simulation, budget)
 ```
+
+Supported budgets are `:temperature`, `:salinity`, and `:mass`.
+
+Each budget exposes names that describe its terms:
+
+* `:temperature`: `heat_content`, `previous_heat_content`,
+  `heat_content_tendency`, `surface_heat_flux`, `radiative_heat_flux`,
+  `applied_radiative_heat_flux`, and `residual`.
+* `:salinity`: `salinity_content`, `previous_salinity_content`,
+  `salinity_content_tendency`, `surface_salinity_flux`, and `residual`.
+* `:mass`: `mass_content`, `previous_mass_content`,
+  `mass_content_tendency`, `surface_mass_flux`, and `residual`.
+
+Call `propertynames(budget)` to list the terms for a particular budget.
 
 The callback runs once after every timestep. It saves the fields needed to
 finish the next budget, so restarting from a checkpoint preserves the budget.
@@ -26,25 +40,74 @@ struct BudgetComputation{H, P, T, S, R, A, B}
     residual :: B
 end
 
+const HEAT_BUDGET_PROPERTIES = (:tracer_name,
+                                :heat_content,
+                                :previous_heat_content,
+                                :heat_content_tendency,
+                                :surface_heat_flux,
+                                :radiative_heat_flux,
+                                :applied_radiative_heat_flux,
+                                :residual)
+
+const SALINITY_BUDGET_PROPERTIES = (:tracer_name,
+                                    :salinity_content,
+                                    :previous_salinity_content,
+                                    :salinity_content_tendency,
+                                    :surface_salinity_flux,
+                                    :residual)
+
+const MASS_BUDGET_PROPERTIES = (:tracer_name,
+                                :mass_content,
+                                :previous_mass_content,
+                                :mass_content_tendency,
+                                :surface_mass_flux,
+                                :residual)
+
+function Base.propertynames(budget::BudgetComputation, private::Bool=false)
+    names = budget.tracer_name === :temperature ? HEAT_BUDGET_PROPERTIES :
+            budget.tracer_name === :salinity ? SALINITY_BUDGET_PROPERTIES :
+            MASS_BUDGET_PROPERTIES
+    return private ? (names..., fieldnames(typeof(budget))...) : names
+end
+
+function Base.getproperty(budget::BudgetComputation, name::Symbol)
+    tracer_name = getfield(budget, :tracer_name)
+
+    if tracer_name === :temperature
+        name === :heat_content_tendency && return getfield(budget, :tendency)
+        name === :surface_heat_flux && return getfield(budget, :surface_flux)
+    elseif tracer_name === :salinity
+        name === :salinity_content && return getfield(budget, :heat_content)
+        name === :previous_salinity_content && return getfield(budget, :previous_heat_content)
+        name === :salinity_content_tendency && return getfield(budget, :tendency)
+        name === :surface_salinity_flux && return getfield(budget, :surface_flux)
+    elseif tracer_name === :mass
+        name === :mass_content && return getfield(budget, :heat_content)
+        name === :previous_mass_content && return getfield(budget, :previous_heat_content)
+        name === :mass_content_tendency && return getfield(budget, :tendency)
+        name === :surface_mass_flux && return getfield(budget, :surface_flux)
+    end
+
+    return getfield(budget, name)
+end
+
 Base.summary(budget::BudgetComputation) =
     string("BudgetComputation(:", budget.tracer_name, ") on ", summary(budget.residual.grid))
 
 Base.show(io::IO, budget::BudgetComputation) = print(io, summary(budget))
 
-function BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel)
-    tracer_name === :temperature ||
-        throw(ArgumentError("BudgetComputation currently supports only :temperature."))
+BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel) =
+    BudgetComputation(Val(tracer_name), tracer_name, esm)
 
+function BudgetComputation(kind::Val, tracer_name::Symbol, esm::EarthSystemModel)
     ocean = esm.ocean
     hasproperty(ocean, :model) ||
-        throw(ArgumentError("BudgetComputation(:temperature, model) requires a prognostic Oceananigans ocean."))
+        throw(ArgumentError("BudgetComputation(name, model) requires a prognostic Oceananigans ocean."))
 
     model = ocean.model
     grid = model.grid
-    ρᵒᶜ = reference_density(ocean)
-    cᵒᶜ = heat_capacity(ocean)
 
-    H = Field(Integral(ρᵒᶜ * cᵒᶜ * model.tracers.T, dims=3))
+    H = budget_inventory(kind, esm)
     ColumnField = Field{Center, Center, Nothing}
     H⁻ = ColumnField(grid)
     ∂t_H = ColumnField(grid)
@@ -52,11 +115,44 @@ function BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel)
     Qʳ = ColumnField(grid)
     B = ColumnField(grid)
 
-    forcing = get_radiative_forcing(ocean)
-    R = radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
+    R = budget_radiative_flux(kind, esm)
 
     return BudgetComputation(tracer_name, H, H⁻, ∂t_H, Qˢ, R, Qʳ, B)
 end
+
+function budget_inventory(::Val{:temperature}, esm)
+    ocean = esm.ocean
+    model = ocean.model
+    ρᵒᶜ = reference_density(ocean)
+    cᵒᶜ = heat_capacity(ocean)
+    return Field(Integral(ρᵒᶜ * cᵒᶜ * model.tracers.T, dims=3))
+end
+
+budget_inventory(::Val{:salinity}, esm) =
+    Field(Integral(esm.ocean.model.tracers.S, dims=3))
+
+function budget_inventory(::Val{:mass}, esm)
+    ocean = esm.ocean
+    model = ocean.model
+    ρᵒᶜ = reference_density(ocean)
+    return Field(Integral(0 * model.tracers.T + ρᵒᶜ, dims=3))
+end
+
+function budget_inventory(::Val{name}, esm) where name
+    throw(ArgumentError("BudgetComputation supports :temperature, :salinity, and :mass, not :" * string(name) * "."))
+end
+
+function budget_radiative_flux(::Val{:temperature}, esm)
+    ocean = esm.ocean
+    model = ocean.model
+    ρᵒᶜ = reference_density(ocean)
+    cᵒᶜ = heat_capacity(ocean)
+    forcing = get_radiative_forcing(ocean)
+    return radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
+end
+
+budget_radiative_flux(::Val{:salinity}, esm) = nothing
+budget_radiative_flux(::Val{:mass}, esm) = nothing
 
 radiative_heat_flux(::Nothing, model, ρᵒᶜ, cᵒᶜ) = nothing
 
@@ -82,20 +178,33 @@ end
 function cache_budget!(budget::BudgetComputation, esm)
     Oceananigans.compute!(budget.heat_content)
     Oceananigans.set!(budget.previous_heat_content, budget.heat_content)
-
-    # The previous frazil flux has already changed ocean temperature. Store
-    # only the fluxes that will be applied during the next timestep.
-    surface_flux = net_ocean_heat_flux(esm) - frazil_heat_flux(esm)
-    Oceananigans.set!(budget.surface_flux, surface_flux)
-
+    Oceananigans.set!(budget.surface_flux, budget_surface_flux(Val(budget.tracer_name), esm))
     cache_radiative_heat_flux!(budget.applied_radiative_heat_flux, budget.radiative_heat_flux)
     return nothing
 end
 
+function budget_surface_flux(::Val{:temperature}, esm)
+    # The previous frazil flux has already changed ocean temperature. Store
+    # only the fluxes that will be applied during the next timestep.
+    return net_ocean_heat_flux(esm) - frazil_heat_flux(esm)
+end
+
+budget_surface_flux(::Val{:salinity}, esm) = salinity_budget_surface_flux(esm)
+
+mass_budget_surface_flux(esm, grid) = ZeroField()
+
+# Only a mutable grid admits freshwater mass. Freshwater volume flux is
+# positive into the ocean, while the budget surface term is positive outward.
+function mass_budget_surface_flux(esm, ::MutableGridOfSomeKind)
+    ρᵒᶜ = reference_density(esm.ocean)
+    return - ρᵒᶜ * esm.interfaces.net_fluxes.ocean.η
+end
+
+budget_surface_flux(::Val{:mass}, esm) = mass_budget_surface_flux(esm, esm.ocean.model.grid)
+
 function complete_budget!(budget::BudgetComputation, esm, Δt)
-    # The new frazil flux has now changed ocean temperature. Include it in
-    # the surface flux for this completed timestep.
-    Oceananigans.set!(budget.surface_flux, budget.surface_flux + frazil_heat_flux(esm))
+    Oceananigans.set!(budget.surface_flux,
+                      completed_surface_flux(Val(budget.tracer_name), budget.surface_flux, esm))
 
     Oceananigans.compute!(budget.heat_content)
     Oceananigans.set!(budget.tendency,
@@ -105,6 +214,15 @@ function complete_budget!(budget::BudgetComputation, esm, Δt)
     Oceananigans.set!(budget.residual, residual)
     return nothing
 end
+
+function completed_surface_flux(::Val{:temperature}, surface_flux, esm)
+    # The new frazil flux has now changed ocean temperature. Include it in
+    # the surface flux for this completed timestep.
+    return surface_flux + frazil_heat_flux(esm)
+end
+
+completed_surface_flux(::Val{:salinity}, surface_flux, esm) = surface_flux
+completed_surface_flux(::Val{:mass}, surface_flux, esm) = surface_flux
 
 function Oceananigans.initialize!(budget::BudgetComputation, simulation)
     cache_budget!(budget, simulation.model)
@@ -164,7 +282,8 @@ function Oceananigans.restore_prognostic_state!(callback::Callback{P, <:BudgetCo
 end
 
 function Oceananigans.Simulations.add_callback!(simulation::Simulation, budget::BudgetComputation;
-                                                 name=:temperature_budget)
+                                                 name=nothing)
+    name = isnothing(name) ? Symbol(budget.tracer_name, :_budget) : name
     iteration = simulation.model.clock.iteration
     callback = Callback(budget)
 

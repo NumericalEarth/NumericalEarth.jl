@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Diagnostics: Diagnostics
+using Oceananigans.Grids: MutableVerticalDiscretization
 
 temperature_budgets(simulation) =
     [callback.func for callback in values(simulation.callbacks)
@@ -56,6 +57,8 @@ for arch in test_architectures
     frazil_heat_flux_value = 0.2
     interface_heat_flux_value = 0.3
     sea_ice_ocean_salt_flux_value = 0.9
+    atmosphere_ocean_freshwater_volume_flux_value = 0.007
+    sea_ice_ocean_freshwater_volume_flux_value = 0.002
 
     model_configurations = ((name = "OceanOnlyModel", with_sea_ice = false),
                             (name = "OceanSeaIceModel", with_sea_ice = true))
@@ -82,11 +85,16 @@ for arch in test_architectures
             fill!(T_flux, T_flux_value)
             fill!(S_flux, S_flux_value)
 
+            sea_ice_freshwater_volume_flux = config.with_sea_ice ? sea_ice_ocean_freshwater_volume_flux_value : 0
+            net_freshwater_volume_flux = atmosphere_ocean_freshwater_volume_flux_value + sea_ice_freshwater_volume_flux
+            fill!(esm.interfaces.net_fluxes.ocean.η, net_freshwater_volume_flux)
+
             if config.with_sea_ice
                 sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
                 fill!(sea_ice_ocean_fluxes.frazil_heat, frazil_heat_flux_value)
                 fill!(sea_ice_ocean_fluxes.interface_heat, interface_heat_flux_value)
                 fill!(sea_ice_ocean_fluxes.salt, sea_ice_ocean_salt_flux_value)
+                fill!(sea_ice_ocean_fluxes.freshwater, sea_ice_freshwater_volume_flux)
             end
 
             expected_frazil_heat = config.with_sea_ice ? frazil_heat_flux_value : 0
@@ -96,6 +104,7 @@ for arch in test_architectures
             ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
             cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
             Sᵒᶜ = 35.0
+            set!(ocean.model, S=Sᵒᶜ)
 
             # exported diagnostics
             net_ocean_heat = net_ocean_heat_flux(esm)
@@ -115,11 +124,13 @@ for arch in test_architectures
             sea_ice_ocean_salinity = Diagnostics.sea_ice_ocean_salinity_flux(esm)
             atmosphere_ocean_salinity = Diagnostics.atmosphere_ocean_salinity_flux(esm)
 
+            salinity_budget_surface = Diagnostics.salinity_budget_surface_flux(esm)
+            mass_budget_surface = Diagnostics.budget_surface_flux(Val(:mass), esm)
             for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,
                       atmosphere_ocean_temperature, frazil_heat, net_ocean_heat, sea_ice_ocean_heat,
                       atmosphere_ocean_heat, net_ocean_salinity, sea_ice_ocean_salinity,
                       atmosphere_ocean_salinity, net_ocean_freshwater, sea_ice_ocean_freshwater,
-                      atmosphere_ocean_freshwater)
+                      atmosphere_ocean_freshwater, salinity_budget_surface, mass_budget_surface)
 
                 @test f isa Oceananigans.Fields.AbstractField
 
@@ -147,11 +158,56 @@ for arch in test_architectures
                 @test atmosphere_ocean_salinity[1, 1, 1] ≈ S_flux_value - expected_sea_ice_ocean_salt
                 @test net_ocean_salinity[1, 1, 1] ≈ atmosphere_ocean_salinity[1, 1, 1] + sea_ice_ocean_salinity[1, 1, 1]
 
-                @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * S_flux_value
-                @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * expected_sea_ice_ocean_salt
-                @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * (S_flux_value - expected_sea_ice_ocean_salt)
+                @test salinity_budget_surface[1, 1, 1] ≈ S_flux_value + Sᵒᶜ * net_freshwater_volume_flux
+                @test mass_budget_surface[1, 1, 1] == 0
+
+                expected_net_freshwater = - ρᵒᶜ * net_freshwater_volume_flux - ρᵒᶜ / Sᵒᶜ * S_flux_value
+                expected_sea_ice_freshwater = - ρᵒᶜ * sea_ice_freshwater_volume_flux - ρᵒᶜ / Sᵒᶜ * expected_sea_ice_ocean_salt
+                expected_atmosphere_freshwater = expected_net_freshwater - expected_sea_ice_freshwater
+                @test net_ocean_freshwater[1, 1, 1] ≈ expected_net_freshwater
+                @test sea_ice_ocean_freshwater[1, 1, 1] ≈ expected_sea_ice_freshwater
+                @test atmosphere_ocean_freshwater[1, 1, 1] ≈ expected_atmosphere_freshwater
                 @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
             end
+        end
+    end
+
+    @testset "Mutable-grid freshwater-content and mass fluxes [$A]" begin
+        mutable_grid = RectilinearGrid(arch;
+                                       size = (4, 5, 2),
+                                       x = (0, 1),
+                                       y = (0, 1),
+                                       z = MutableVerticalDiscretization((-1, 0)),
+                                       topology = (Periodic, Bounded, Bounded))
+
+        ocean = ocean_simulation(mutable_grid;
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 closure = nothing,
+                                 coriolis = nothing)
+        atmosphere = PrescribedAtmosphere(mutable_grid, [0.0])
+        esm = OceanOnlyModel(ocean; atmosphere)
+
+        Sᵒᶜ = 35.0
+        Jˢ_value = 0.4
+        Jʷ_value = 0.007
+        ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+        set!(ocean.model, S=Sᵒᶜ)
+        fill!(Diagnostics.flux_field(ocean.model.tracers.S.boundary_conditions.top.condition), Jˢ_value)
+        fill!(esm.interfaces.net_fluxes.ocean.η, Jʷ_value)
+
+        salinity_surface_flux = Diagnostics.salinity_budget_surface_flux(esm)
+        freshwater_content_flux = net_ocean_freshwater_flux(esm; reference_salinity=Sᵒᶜ)
+        mass_surface_flux = Diagnostics.budget_surface_flux(Val(:mass), esm)
+
+        for flux in (salinity_surface_flux, freshwater_content_flux, mass_surface_flux)
+            compute!(flux)
+        end
+
+        @allowscalar begin
+            @test salinity_surface_flux[1, 1, 1] ≈ Jˢ_value
+            @test freshwater_content_flux[1, 1, 1] ≈ - ρᵒᶜ * Jʷ_value - ρᵒᶜ / Sᵒᶜ * Jˢ_value
+            @test mass_surface_flux[1, 1, 1] ≈ - ρᵒᶜ * Jʷ_value
         end
     end
 
@@ -175,7 +231,7 @@ for arch in test_architectures
 
         set!(ocean.model, v=1, T=1)
 
-        mht = Field(meridional_heat_transport(simulation, MeridionalFluxMethod()))
+        mht = Field(meridional_transport(simulation, :temperature, MeridionalFluxMethod()))
         compute!(mht)
 
         callback_count = length(simulation.callbacks)
@@ -237,7 +293,7 @@ for arch in test_architectures
         end
     end
 
-    @testset "Tripolar tendency-based meridional heat transport [$A]" begin
+    @testset "Tripolar tendency-based meridional transport [$A]" begin
         underlying_grid = TripolarGrid(arch;
                                        size = (32, 16, 2),
                                        z = MutableVerticalDiscretization((-100, 0)))
@@ -246,13 +302,13 @@ for arch in test_architectures
                                                           radius = 15,
                                                           active_cells_map = true)
 
-        destination_grid = LatitudeLongitudeGrid(arch;
+        underlying_grid = LatitudeLongitudeGrid(arch;
                                                   size = (8, 8, 1),
                                                   longitude = (0, 360),
                                                   latitude = (-90, 90),
                                                   z = (-1, 0))
 
-        latlon_grid = analytical_immersed_grid(destination_grid;
+        latlon_grid = analytical_immersed_grid(underlying_grid;
                                                 radius = 15,
                                                 active_cells_map = true)
 
@@ -280,6 +336,32 @@ for arch in test_architectures
                 esm = OceanSeaIceModel(ocean, sea_ice)
 
                 simulation = Simulation(esm; Δt = 10, stop_iteration = 4)
+                standalone_budget = BudgetComputation(:temperature, esm)
+                salinity_budget = BudgetComputation(:salinity, esm)
+                mass_budget = BudgetComputation(:mass, esm)
+
+                @test propertynames(standalone_budget) == (:tracer_name, :heat_content,
+                                                :previous_heat_content,
+                                                :heat_content_tendency,
+                                                :surface_heat_flux,
+                                                :radiative_heat_flux,
+                                                :applied_radiative_heat_flux,
+                                                :residual)
+                @test propertynames(salinity_budget) == (:tracer_name,
+                                                         :salinity_content,
+                                                         :previous_salinity_content,
+                                                         :salinity_content_tendency,
+                                                         :surface_salinity_flux,
+                                                         :residual)
+                @test propertynames(mass_budget) == (:tracer_name, :mass_content,
+                                                     :previous_mass_content,
+                                                     :mass_content_tendency,
+                                                     :surface_mass_flux,
+                                                     :residual)
+                @test salinity_budget.salinity_content isa Field
+                @test salinity_budget.surface_salinity_flux isa Field
+                @test mass_budget.mass_content isa Field
+                @test mass_budget.surface_mass_flux isa Field
                 callback_count = length(simulation.callbacks)
                 @test isempty(temperature_budgets(simulation))
                 @test_throws ArgumentError meridional_heat_transport(simulation, TendencyMethod())
@@ -290,69 +372,104 @@ for arch in test_architectures
                 @test length(simulation.callbacks) == callback_count + 1
 
                 budget = only(temperature_budgets(simulation))
+                @test_throws ArgumentError meridional_transport(budget, TendencyMethod(); destination_grid=latlon_grid)
 
                 ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
                 cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
                 raw_temperature_flux = Diagnostics.flux_field(ocean.model.tracers.T.boundary_conditions.top.condition)
                 sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
 
-                applied_surface_flux = budget.residual - budget.tendency + budget.applied_radiative_heat_flux
+                applied_surface_flux = budget.residual -
+                                       budget.heat_content_tendency +
+                                       budget.applied_radiative_heat_flux
                 regridded_residual = RegriddedOperation(budget.residual, latlon_grid)
 
                 meridional_heat_transport(simulation; destination_grid = latlon_grid)
                 @test length(simulation.callbacks) == callback_count + 1
+                add_callback!(simulation, salinity_budget)
+                add_callback!(simulation, mass_budget)
+                mht = Field(meridional_transport(simulation, :temperature; destination_grid = latlon_grid))
+                salinity_transport = Field(meridional_transport(simulation, :salinity; destination_grid = latlon_grid))
+                mass_transport = Field(meridional_transport(simulation, :mass; destination_grid = latlon_grid))
 
-                mktempdir() do dir
-                    iteration_filename = joinpath(dir, "iteration_mht.jld2")
-                    averaged_filename = joinpath(dir, "averaged_mht.jld2")
-                    outputs = (; mht)
+                dir = mktempdir()
+                iteration_filename = joinpath(dir, "iteration_mt.jld2")
+                averaged_filename = joinpath(dir, "averaged_mt.jld2")
+                outputs = (; mht, salinity_transport, mass_transport)
 
-                    simulation.output_writers[:iteration_mht] = JLD2Writer(simulation.model, outputs;
-                                                                           schedule = IterationInterval(1),
-                                                                           filename = iteration_filename,
-                                                                           overwrite_existing = true)
+                simulation.output_writers[:iteration_mt] = JLD2Writer(simulation.model, outputs;
+                                                                       schedule = IterationInterval(1),
+                                                                       filename = iteration_filename,
+                                                                       overwrite_files = true)
 
-                    simulation.output_writers[:averaged_mht] = JLD2Writer(simulation.model, outputs;
-                                                                          schedule = AveragedTimeInterval(40),
-                                                                          filename = averaged_filename,
-                                                                          overwrite_existing = true)
+                simulation.output_writers[:averaged_mt] = JLD2Writer(simulation.model, outputs;
+                                                                      schedule = AveragedTimeInterval(40),
+                                                                      filename = averaged_filename,
+                                                                      overwrite_files = true)
 
-                    run!(simulation)
+                run!(simulation)
 
-                    iteration_mht = FieldTimeSeries(iteration_filename, "mht")
-                    averaged_mht = FieldTimeSeries(averaged_filename, "mht")
+                iteration_mht = FieldTimeSeries(iteration_filename, "mht")
+                averaged_mht = FieldTimeSeries(averaged_filename, "mht")
+                iteration_mst = FieldTimeSeries(iteration_filename, "salinity_transport")
+                averaged_mst = FieldTimeSeries(averaged_filename, "salinity_transport")
+                iteration_mt = FieldTimeSeries(iteration_filename, "mass_transport")
+                averaged_mt = FieldTimeSeries(averaged_filename, "mass_transport")
 
-                    completed_iterations = findall(t -> 0 < t <= 40, iteration_mht.times)
-                    @test iteration_mht.times[completed_iterations] == [10, 20, 30, 40]
-                    iteration_values = [Array(interior(iteration_mht[n])) for n in completed_iterations]
+                completed_iterations = findall(t -> 0 < t <= 40, iteration_mht.times)
+                @test iteration_mht.times[completed_iterations] == [10, 20, 30, 40]
+                iteration_values_mht = [Array(interior(iteration_mht[n])) for n in completed_iterations]
+                iteration_values_mst = [Array(interior(iteration_mst[n])) for n in completed_iterations]
+                iteration_values_mt = [Array(interior(iteration_mt[n])) for n in completed_iterations]
 
-                    # The final latitude contains the cumulative global heat budget.
-                    # It should be tiny compared with the strongest interior transport.
-                    @test all(values -> all(isfinite, values), iteration_values)
-                    peak_transport = maximum(maximum(abs, values) for values in iteration_values)
-                    @test peak_transport > 1e8
+                # Check that the values are finite
+                @test all(values -> all(isfinite, values), iteration_values_mht)
+                @test all(values -> all(isfinite, values), iteration_values_mst)
+                @test all(values -> all(isfinite, values), iteration_values_mt)
 
-                    closure_tolerance = max(5e9, 5e-6 * peak_transport)
-                    for values in iteration_values
-                        southern_boundary = values[1, 1, 1]
-                        northern_boundary = values[1, size(values, 2), 1]
-                        @test abs(southern_boundary) < closure_tolerance
-                        @test abs(northern_boundary) < closure_tolerance
-                    end
-
-                    # Time-dependent forcing and tracer evolution should produce
-                    # new public MHT fields rather than one repeated cached value.
-                    changes = [maximum(abs, iteration_values[n] - iteration_values[n-1])
-                               for n in 2:length(iteration_values)]
-                    @test any(>(1e8), changes)
-
-                    expected_average = sum(iteration_values) / length(iteration_values)
-                    full_average = findfirst(==(40), averaged_mht.times)
-                    @test full_average !== nothing
-                    averaged_values = Array(interior(averaged_mht[full_average]))
-                    averaging_rtol = 10sqrt(eps(eltype(averaged_values)))
-                    @test all(isapprox.(averaged_values, expected_average; rtol = averaging_rtol))
+                closure_tolerance = 5e9
+                for values in iteration_values_mht
+                    southern_boundary = values[1, 1, 1]
+                    northern_boundary = values[1, size(values, 2), 1]
+                    @test abs(southern_boundary) < closure_tolerance
+                    @test abs(northern_boundary) < closure_tolerance
                 end
+
+                closure_tolerance = 5e5
+                for values in iteration_values_mst
+                    southern_boundary = values[1, 1, 1]
+                    northern_boundary = values[1, size(values, 2), 1]
+                    @test abs(southern_boundary) < closure_tolerance
+                    @test abs(northern_boundary) < closure_tolerance
+                end
+
+                closure_tolerance = 1e7
+                for values in iteration_values_mt
+                    southern_boundary = values[1, 1, 1]
+                    northern_boundary = values[1, size(values, 2), 1]
+                    @test abs(southern_boundary) < closure_tolerance
+                    @test abs(northern_boundary) < closure_tolerance
+                end
+
+
+                # Time-dependent forcing and tracer evolution should produce
+                # new public MHT fields rather than one repeated cached value.
+                changes = [maximum(abs, iteration_values_mht[n] - iteration_values_mht[n-1])
+                           for n in 2:length(iteration_values_mht)]
+                @test any(>(1e8), changes)
+                changes = [maximum(abs, iteration_values_mst[n] - iteration_values_mst[n-1])
+                           for n in 2:length(iteration_values_mst)]
+                @test any(>(1e4), changes)
+                changes = [maximum(abs, iteration_values_mt[n] - iteration_values_mt[n-1])
+                           for n in 2:length(iteration_values_mt)]
+                @test any(>(1e5), changes)
+
+                expected_average = sum(iteration_values_mht) / length(iteration_values_mht)
+                full_average = findfirst(==(40), averaged_mht.times)
+                @test full_average !== nothing
+                averaged_values = Array(interior(averaged_mht[full_average]))
+                averaging_rtol = 10sqrt(eps(eltype(averaged_values)))
+                @test all(isapprox.(averaged_values, expected_average; rtol = averaging_rtol))
             end
         end
     end
