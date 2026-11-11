@@ -273,12 +273,10 @@ function atmosphere_sea_ice_interface(grid,
                                       sea_ice,
                                       ai_flux_formulation,
                                       temperature_formulation,
-                                      velocity_formulation)
+                                      velocity_formulation,
+                                      specific_humidity_formulation)
 
     fluxes = AtmosphereSurfaceFluxes(grid)
-
-    phase = AtmosphericThermodynamics.Ice()
-    specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
 
     formulation = InterfaceFormulation(ai_flux_formulation,
                                        (temperature = temperature_formulation, specific_humidity = specific_humidity_formulation),
@@ -385,6 +383,8 @@ Keyword Arguments
    `InteriorDiffusivity()` assessed from the ocean turbulence closure.
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
+- `atmosphere_sea_ice_interface_specific_humidity`: specific humidity formulation for atmosphere-sea ice interface.
+   Default: `ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice())`.
 - `atmosphere_land_interface_state`: a coupled canopy formulation or a named tuple of temperature and humidity formulations.
 - `ocean_fraction`: fraction of each exchange-grid cell covered by ocean (anything `set!` accepts:
    a `Field`, function, or number), forming the [`SurfacePartition`](@ref) that weights the
@@ -413,6 +413,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
                              atmosphere_sea_ice_interface_temperature = default_ai_temperature(sea_ice),
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
+                             atmosphere_sea_ice_interface_specific_humidity = ImpureSaturationSpecificHumidity(AtmosphericThermodynamics.Ice()),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
                              atmosphere_land_interface_state = default_al_interface_state(land),
                              atmosphere_land_interface = atmosphere_land_interface(exchange_grid, atmosphere, land;
@@ -476,7 +477,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                                 sea_ice,
                                                 atmosphere_sea_ice_fluxes,
                                                 atmosphere_sea_ice_interface_temperature,
-                                                atmosphere_sea_ice_velocity_difference)
+                                                atmosphere_sea_ice_velocity_difference,
+                                                atmosphere_sea_ice_interface_specific_humidity)
 
     # `atmosphere_land_interface` is either user-supplied or built from the four
     # sibling kwargs above by the same-named keyword default.
