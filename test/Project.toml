@@ -42,7 +42,6 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2 (required by OceanBioME 0.21.1)
 LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
 NumericalEarth = {path = ".."}
-SpeedyWeather = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeather"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
 [compat]
