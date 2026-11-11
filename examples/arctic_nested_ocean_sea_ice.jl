@@ -51,8 +51,8 @@ radiation = JRA55PrescribedRadiation(arch; jra55_kw...)
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt = 10minutes, stop_time = 365days * years)
 
-# Adaptive Δt; advection, not rotation, limits the step at 1°
-conjure_time_step_wizard!(simulation; cfl = 0.8, max_change = 1.1)
+# Adaptive Δt. Explicit Coriolis is unstable beyond fΔt ≈ 2 (Δt ≈ 3.8 h at the pole); max_Δt = 3 hours keeps fΔt ≈ 1.6
+conjure_time_step_wizard!(simulation; cfl = 0.8, max_change = 1.1, max_Δt = 3hours)
 
 #####
 ##### Diagnostics and output
