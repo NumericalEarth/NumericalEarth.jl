@@ -51,8 +51,8 @@ radiation = JRA55PrescribedRadiation(arch; jra55_kw...)
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt = 10minutes, stop_time = 365days * years)
 
-# Adaptive Δt at advective CFL 0.7
-conjure_time_step_wizard!(simulation; cfl = 0.7, max_Δt = 90minutes, max_change = 1.1)
+# Adaptive Δt; advection, not rotation, limits the step at 1°
+conjure_time_step_wizard!(simulation; cfl = 0.8, max_change = 1.1)
 
 #####
 ##### Diagnostics and output
