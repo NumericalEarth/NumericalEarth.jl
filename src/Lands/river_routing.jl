@@ -60,7 +60,8 @@ function river_mouth_indices(drainage_direction; maximum_coastal_distance = 100k
     Δφ = minimum(abs, diff(φnodes(cpu_grid, Center())))
 
     mouth = Field{Center, Center, Nothing}(grid, Bool)
-    launch!(architecture(grid), grid, :xy, _mark_river_mouths!,
+    Nx, Ny, _ = size(grid)
+    launch!(architecture(grid), grid, (Nx, Ny), _mark_river_mouths!,
             mouth, drainage_direction, grid, maximum_coastal_distance, Δλ, Δφ)
 
     return outlet_indices_from_mask(Array(interior(mouth))[:, :, 1], grid)
