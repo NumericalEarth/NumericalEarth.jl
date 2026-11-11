@@ -1,7 +1,8 @@
-using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology
-using Oceananigans.Operators: Azᶜᶜᶜ
+using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.DistributedComputations: Distributed, all_reduce, global_size
+using Oceananigans.Grids: inactive_node, longitude_in_same_window, topology, Flat
 using Oceananigans.ImmersedBoundaries: underlying_grid
+using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
@@ -51,25 +52,56 @@ Return `(outlet_i, outlet_j, outlet_λ, outlet_φ)` for the river-mouth cells of
 `discharge` `Field` whose ocean cells are `NaN` (the GloFAS convention). A river
 mouth is a finite (land/river) cell with at least one `NaN` (ocean) horizontal
 neighbor — i.e. the point where the routed river network meets the coast.
+
+A channel running along the coast makes many such cells, each carrying (nearly) the river's whole
+discharge (68 cells of ~23,700 m³/s in the Mississippi delta, a ninefold excess). So a coastal cell
+is a mouth only when no other coastal cell within `channel_radius` degrees carries a larger discharge
+within a factor `similarity` of its own: such a cell is the same channel reaching the coast again.
+A small stream beside a large river keeps its own mouth.
 """
-function coastal_outlet_indices(discharge)
+function coastal_outlet_indices(discharge; similarity = 2, channel_radius = 0.5)
     grid = discharge.grid
     arch = architecture(grid)
 
+    # Half-widths, in cells, of the index window holding every cell within `channel_radius`
+    cpu_grid = on_architecture(CPU(), grid)
+    window_λ = ceil(Int, channel_radius / minimum(abs, diff(λnodes(cpu_grid, Center()))))
+    window_φ = ceil(Int, channel_radius / minimum(abs, diff(φnodes(cpu_grid, Center()))))
+
     outlet = Field{Center, Center, Nothing}(grid, Bool)
-    fill!(outlet, false)
-    launch!(arch, grid, :xy, _mark_coastal_outlets!, outlet, discharge)
+    launch!(arch, grid, :xy, _mark_river_mouths!, outlet, discharge, grid,
+            similarity, channel_radius, window_λ, window_φ)
 
     return outlet_indices_from_mask(Array(interior(outlet))[:, :, 1], grid)
 end
 
-@kernel function _mark_coastal_outlets!(outlet, discharge)
+@inline coastal_cell(i, j, discharge) =
+    @inbounds !isnan(discharge[i, j, 1]) & (isnan(discharge[i-1, j, 1]) | isnan(discharge[i+1, j, 1]) |
+                                            isnan(discharge[i, j-1, 1]) | isnan(discharge[i, j+1, 1]))
+
+@kernel function _mark_river_mouths!(outlet, discharge, grid, similarity, channel_radius, window_λ, window_φ)
     i, j = @index(Global, NTuple)
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    λ = λnode(i, j, 1, grid, Center(), Center(), Center())
+    φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+
     @inbounds begin
-        finite = !isnan(discharge[i, j, 1])
-        ocean_neighbor = isnan(discharge[i-1, j, 1]) | isnan(discharge[i+1, j, 1]) |
-                         isnan(discharge[i, j-1, 1]) | isnan(discharge[i, j+1, 1])
-        outlet[i, j, 1] = finite & ocean_neighbor
+        local_discharge = discharge[i, j, 1]
+        same_channel = false
+
+        for j′ in max(1, j - window_φ):min(Ny, j + window_φ), i′ in max(1, i - window_λ):min(Nx, i + window_λ)
+            nearby_discharge = discharge[i′, j′, 1]
+            nearby = (abs(λnode(i′, j′, 1, grid, Center(), Center(), Center()) - λ) ≤ channel_radius) &
+                     (abs(φnode(i′, j′, 1, grid, Center(), Center(), Center()) - φ) ≤ channel_radius)
+
+            # Equal discharges defer to the lower index, so exactly one of them is kept
+            larger = (nearby_discharge > local_discharge) | ((nearby_discharge == local_discharge) & ((j′, i′) < (j, i)))
+            comparable = nearby_discharge ≤ similarity * local_discharge
+
+            same_channel |= coastal_cell(i′, j′, discharge) & nearby & larger & comparable
+        end
+
+        outlet[i, j, 1] = coastal_cell(i, j, discharge) & !same_channel
     end
 end
 
@@ -97,28 +129,33 @@ end
 
 """
     build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                        maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing)
+                        maximum_search_radius = 5, spread_radius = 1.2, maximum_spread_cells = nothing,
+                        maximum_weighting_depth = 50)
 
 Map each mouth at `(outlet_λ, outlet_φ)` onto the active ocean cells of `target_grid`, returning a [`RiverRouting`](@ref) that deposits
 `outlet_weight[n] * value[outletₙ] / Aᵒᶜᵉᵃⁿ`. The weight is the freshwater density for a volumetric discharge (m³ s⁻¹), the source-cell
-area for a per-area mass flux (kg m⁻² s⁻¹).
+area for a per-area mass flux (kg m⁻² s⁻¹). Within a footprint, each cell takes a share of the discharge proportional to its
+water-column depth capped at `maximum_weighting_depth` (m).
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
                              maximum_search_radius = 5,
                              spread_radius = 1.2,
-                             maximum_spread_cells = nothing)
+                             maximum_spread_cells = nothing,
+                             maximum_weighting_depth = 50)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
     kᴺ = size(target_grid, 3)
 
-    wet_field  = Field{Center, Center, Nothing}(target_grid, Bool)
-    area_field = Field{Center, Center, Nothing}(target_grid)
-    launch!(arch, target_grid, :xy, _compute_wet_mask_and_area!,
-            wet_field, area_field, target_grid, kᴺ)
+    wet_field   = Field{Center, Center, Nothing}(target_grid, Bool)
+    area_field  = Field{Center, Center, Nothing}(target_grid)
+    depth_field = Field{Center, Center, Nothing}(target_grid)
+    launch!(arch, target_grid, :xy, _compute_wet_mask_area_and_depth!,
+            wet_field, area_field, depth_field, target_grid, kᴺ)
 
-    wet  = Array(interior(wet_field))[:, :, 1]
-    area = Array(interior(area_field))[:, :, 1]
+    wet   = Array(interior(wet_field))[:, :, 1]
+    area  = Array(interior(area_field))[:, :, 1]
+    depth = Array(interior(depth_field))[:, :, 1]
 
     # TODO: use `target_grid` once Oceananigans' `on_architecture(CPU(), grid)` returns a `Distributed(CPU())`
     # grid for a distributed `grid`; the serial rebuild keeps `Connected` topologies and cannot fill its halos.
@@ -132,8 +169,9 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     nearest_cells = [nearest_wet_cell(ocean_cells, outlet_λ[n], outlet_φ[n], maximum_degrees) for n in eachindex(outlet_i)]
     owned = mouth_ownership(arch, last.(nearest_cells))
 
-    # Split each mouth's discharge equally over its plume footprint so no single coastal cell receives
-    # a runaway freshwater flux (which drives salinity to zero and crashes the run).
+    # Split each mouth's discharge over its plume footprint so no single coastal cell receives a runaway
+    # freshwater flux (which drives salinity to zero and crashes the run). Shallow cells take a smaller
+    # share because their thinner column dilutes faster for the same flux per unit area.
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
@@ -144,8 +182,10 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
             dropped += 1
             continue
         end
-        w = convert(FT, outlet_weight[n]) / length(targets)
-        for (i★, j★) in targets
+        shares = [min(depth[i★, j★], maximum_weighting_depth) for (i★, j★) in targets]
+        total_share = sum(shares)
+        for ((i★, j★), share) in zip(targets, shares)
+            w = convert(FT, outlet_weight[n] * share / total_share)
             push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
         end
     end
@@ -188,7 +228,7 @@ end
                        maximum_spread_cells = nothing)
 
 Route a component stored as a per-area mass flux (kg m⁻² s⁻¹) on coastal cells — the JRA55-do convention — onto `target_grid`. Mouths are
-the cells positive in any record of `flux_time_series`, weighted by their source-cell area. Remaining keyword arguments
+the cells positive in any record of the first year of `flux_time_series`, weighted by their source-cell area. Remaining keyword arguments
 go to [`build_river_routing`](@ref).
 """
 function build_flux_routing(target_grid, flux_time_series;
@@ -199,9 +239,11 @@ function build_flux_routing(target_grid, flux_time_series;
     source_grid = on_architecture(CPU(), flux_time_series.grid)
     kᴺ = size(source_grid, 3)
 
-    # Every record, so intermittent and seasonally frozen rivers stay in the map.
+    # A full seasonal cycle, so intermittent and seasonally frozen rivers stay in the map.
+    times = flux_time_series.times
+    last_record = findlast(t -> t - first(times) < 365days, times)
     outlet_mask = Array(interior(flux_time_series[1]))[:, :, 1] .> 0
-    for n in 2:length(flux_time_series.times)
+    for n in 2:last_record
         outlet_mask .|= Array(interior(flux_time_series[n]))[:, :, 1] .> 0
     end
 
@@ -212,11 +254,16 @@ function build_flux_routing(target_grid, flux_time_series;
                                maximum_search_radius, spread_radius, maximum_spread_cells)
 end
 
-@kernel function _compute_wet_mask_and_area!(wet, area, grid, kᴺ)
+@kernel function _compute_wet_mask_area_and_depth!(wet, area, depth, grid, kᴺ)
     i, j = @index(Global, NTuple)
+    H = zero(grid)
+    for k in 1:kᴺ
+        H += ifelse(inactive_node(i, j, k, grid, Center(), Center(), Center()), zero(grid), Δzᶜᶜᶜ(i, j, k, grid))
+    end
     @inbounds begin
         wet[i, j, 1] = !inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
         area[i, j, 1] = Azᶜᶜᶜ(i, j, kᴺ, grid)
+        depth[i, j, 1] = H
     end
 end
 

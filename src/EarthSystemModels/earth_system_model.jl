@@ -1,6 +1,7 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.Grids: znode, Center
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
@@ -147,10 +148,14 @@ Return the coupled model's default clock. A `Simulation` atmosphere's clock type
 by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
 atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
 prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
-authoritative model clock rather than the other way around.
+authoritative model clock rather than the other way around. On `ReactantState` the coupled clock of a
+`Simulation` atmosphere is a device clock in every field, as `Clock(grid)` is, so a compiled step can advance it.
 """
-default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
+default_earth_system_clock(atmosphere::Simulation) = zero(component_model(atmosphere).clock)
 default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
+
+# A clock at time zero with the time type of `clock`; NumericalEarthReactantExt extends it for device clocks
+Base.zero(clock::Clock) = Clock{typeof(clock.time)}(time = 0)
 
 """
     materialize_sea_ice(sea_ice, ocean)
@@ -491,26 +496,27 @@ function Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel)
     return NaNChecker((; T_ocean))
 end
 
-@kernel function _above_freezing_ocean_temperature!(T, grid, S, ℵ, liquidus)
+@kernel function _above_freezing_ocean_temperature!(Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
     i, j = @index(Global, NTuple)
     Nz = size(grid, 3)
 
     @inbounds begin
         for k in 1:Nz
-            Tm = melting_temperature(liquidus, S[i, j, k])
-            T[i, j, k] = max(T[i, j, k], Tm)
+            z  = znode(i, j, k, grid, Center(), Center(), Center())
+            Tm = melting_temperature(liquidus, Sᵒᶜ[i, j, k], z)
+            Tᵒᶜ[i, j, k] = max(Tᵒᶜ[i, j, k], Tm)
         end
     end
 end
 
 function above_freezing_ocean_temperature!(ocean, grid, sea_ice)
-    T = ocean_temperature(ocean)
-    S = ocean_salinity(ocean)
-    ℵ = sea_ice_concentration(sea_ice)
+    Tᵒᶜ = ocean_temperature(ocean)
+    Sᵒᶜ = ocean_salinity(ocean)
+    ℵˢⁱ = sea_ice_concentration(sea_ice)
     liquidus = sea_ice.model.phase_transitions.liquidus
 
     arch = architecture(grid)
-    launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, T, grid, S, ℵ, liquidus)
+    launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
 
     return nothing
 end

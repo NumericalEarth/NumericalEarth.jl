@@ -2,12 +2,14 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
+using Oceananigans.Grids: znode
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.Rheologies
 
-@inline kernel_melting_temperature(i, j, k, grid, liquidus, S) = @inbounds melting_temperature(liquidus, S[i, j, k])
+@inline kernel_melting_temperature(i, j, k, grid, liquidus, S) =
+    @inbounds melting_temperature(liquidus, S[i, j, k], znode(i, j, k, grid, Center(), Center(), Center()))
 
 @testset "Time stepping test" begin
     for arch in test_architectures
