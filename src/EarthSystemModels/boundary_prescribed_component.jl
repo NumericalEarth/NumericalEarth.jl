@@ -60,3 +60,12 @@ function Base.show(io::IO, component::BoundaryPrescribedComponent)
         print(io, '\n', prefix, side, ": ", summary(strips[side]))
     end
 end
+
+Oceananigans.prognostic_state(component::BoundaryPrescribedComponent) = (; clock = prognostic_state(component.clock))
+
+function Oceananigans.restore_prognostic_state!(component::BoundaryPrescribedComponent, state)
+    restore_prognostic_state!(component.clock, state.clock)
+    return component
+end
+
+Oceananigans.restore_prognostic_state!(component::BoundaryPrescribedComponent, ::Nothing) = component

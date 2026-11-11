@@ -52,13 +52,19 @@ NestedModel(parent, child::AbstractModel, exchanger=nothing) =
 # prognostics on the parent grid as needed. Default no-op so a bare `NestedModel(parent, child)` — or
 # one whose parent needs no state transform — just forwards.
 exchange_state!(exchanger, time) = nothing
+exchange_state!(exchanger, start_time, end_time) = exchange_state!(exchanger, end_time)
 exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_state!(exchanger, time), exchangers)
+exchange_state!(exchangers::NamedTuple, start_time, end_time) =
+    foreach(exchanger -> exchange_state!(exchanger, start_time, end_time), exchangers)
 
 # Model-protocol dispatches, forwarded explicitly to the child's model.
 fields(nm::NestedModel)            = fields(component_model(nm.child))
 prognostic_fields(nm::NestedModel) = prognostic_fields(component_model(nm.child))
 architecture(nm::NestedModel)      = architecture(component_model(nm.child))
 iteration(nm::NestedModel)         = nm.clock.iteration
+
+Oceananigans.Diagnostics.default_nan_checker(nm::NestedModel) =
+    Oceananigans.Diagnostics.default_nan_checker(component_model(nm.child))
 
 Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) =
     Oceananigans.Advection.cell_advection_timescale(component_model(nm.child))
@@ -75,12 +81,14 @@ end
 # Setting the initial state targets the child's prognostics.
 set!(nm::NestedModel, args...; kwargs...) = set!(component_model(nm.child), args...; kwargs...)
 
-# Refresh the exchanger at the exchange time, so the parent data the child interpolates over the interval
-# is resident before the child steps.
+# Refresh the exchanger over the exchange interval, so the parent data the child interpolates is resident
+# before the child steps.
 function time_step!(nm::NestedModel, Δt; callbacks=())
+    isempty(callbacks) || throw(ArgumentError("NestedModel does not run model callbacks; add them to the child Simulation instead."))
+    start_time = nm.clock.time
     tick!(nm.clock, Δt)
     advance_parent!(nm.parent, nm.clock)
-    exchange_state!(nm.exchanger, nm.clock.time)
+    exchange_state!(nm.exchanger, start_time, nm.clock.time)
     step_until!(nm.child, nm.clock.time)
     return nothing
 end
@@ -125,9 +133,19 @@ function copy_clock!(clock, source)
     return nothing
 end
 
-# Checkpointing: only the child has prognostic state.
-prognostic_state(nm::NestedModel) = prognostic_state(component_model(nm.child))
-restore_prognostic_state!(nm::NestedModel, state) = restore_prognostic_state!(component_model(nm.child), state)
+prognostic_state(nm::NestedModel) = (clock  = prognostic_state(nm.clock),
+                                     parent = prognostic_state(nm.parent),
+                                     child  = prognostic_state(nm.child))
+
+function restore_prognostic_state!(nm::NestedModel, state)
+    restore_prognostic_state!(nm.clock, state.clock)
+    restore_prognostic_state!(nm.parent, state.parent)
+    restore_prognostic_state!(nm.child, state.child)
+    exchange_state!(nm.exchanger, nm.clock.time)
+    return nm
+end
+
+restore_prognostic_state!(nm::NestedModel, ::Nothing) = nm
 Base.summary(nm::NestedModel) = string("NestedModel(", summary(nm.parent), " → ", summary(component_model(nm.child)), ")")
 
 function Base.show(io::IO, nm::NestedModel)

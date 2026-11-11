@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: NestedModel, ParentSnapshots, exchange_state!, parent_boundary_conditions, nested_atmosphere_model
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
@@ -270,36 +270,48 @@ end
         bc_types  = (T = ValueBoundaryCondition,))
 end
 
-# A live model parent (rather than a PrescribedAtmosphere or FieldTimeSeries) drives the child
-# through `Interpolated` BCs, including a Center `ValueBoundaryCondition`. On GPU the source
-# field `Adapt`s to a bare data array inside the halo-fill kernel.
-@testset "NestedSimulation: prognostic (live AbstractField) parent on $(arch)" for arch in test_architectures
+# A live parent drives the child through `ParentSnapshots`, including a Center `ValueBoundaryCondition`.
+@testset "NestedSimulation: live parent through ParentSnapshots on $(arch)" for arch in test_architectures
     parent_grid = RectilinearGrid(arch; size = (16, 16, 4),
                                   x = (-1.5, 1.5), y = (-1.5, 1.5), z = (-0.2, 1.2),
                                   topology = (Bounded, Bounded, Bounded))
     parent = NonhydrostaticModel(parent_grid; tracers = :c)
     set!(parent, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
+    snapshots = ParentSnapshots((u = parent.velocities.u, v = parent.velocities.v, c = parent.tracers.c), 0)
 
     child_grid = RectilinearGrid(arch; size = (8, 8, 4),
                                  x = (-1, 1), y = (-1, 1), z = (0, 1),
                                  topology = (Bounded, Bounded, Bounded))
     bcs = parent_boundary_conditions(child_grid;
-                                     variables = (u = parent.velocities.u,   # NormalFlow (Face)
-                                                  v = parent.velocities.v,
-                                                  c = parent.tracers.c),      # Value (Center) — the kind that broke
+                                     variables = snapshots.windows,
                                      sides     = (:west, :east, :south, :north),
                                      bc_types  = (c = ValueBoundaryCondition,))
     child = NonhydrostaticModel(child_grid; tracers = :c, boundary_conditions = bcs)
     set!(child, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
 
-    nested = NestedSimulation(Simulation(parent; Δt = 0.001, verbose = false), child;
-                              Δt = 0.001, stop_iteration = 3, verbose = false)
+    nest = NestedModel(Simulation(parent; Δt = 0.001, verbose = false), child, snapshots)
+    nested = Simulation(nest; Δt = 0.002, stop_iteration = 3, verbose = false)
     run!(nested)
 
-    @test child.clock.iteration == 3
-    @test parent.clock.time ≈ child.clock.time
+    @test parent.clock.time ≈ child.clock.time ≈ 0.006
+    @test snapshots.windows.c.times ≈ range(0.004, 0.006; length = 2)
     @test all(isfinite, Array(interior(child.velocities.u)))
     @test all(isfinite, Array(interior(child.tracers.c)))
+end
+
+@testset "ParentSnapshots interpolate between exchange times" begin
+    grid = RectilinearGrid(size = (2, 2, 2), extent = (1, 1, 1))
+    c = CenterField(grid)
+    set!(c, 1)
+    snapshots = ParentSnapshots((; c), 0)
+    @test interior(snapshots.windows.c[Time(0.5)]) == interior(c)
+
+    set!(c, 3)
+    exchange_state!(snapshots, 2)
+    @test all(interior(snapshots.windows.c[Time(1)]) .≈ 2)
+
+    exchange_state!(snapshots, 2)    # the same time refreshes without shifting
+    @test all(interior(snapshots.windows.c[1]) .≈ 1)
 end
 
 # A "rolling FieldTimeSeries" drives a child from a live parent field: a 2-slot FTS whose slots
@@ -814,9 +826,9 @@ end
     @test prog.ρᵈ.backend.start == 1
     @test all(isfinite, Array(interior(prog.ρθ[1])))
 
-    # Cross to a later interval ⇒ the window cycles forward (start = clamp(n₁-1, 1, N-2)).
-    exchange(exchanger, 2.5)                                    # bracket n₁ = 3 ⇒ start = 2 (levels 2, 3, 4)
-    @test prog.ρᵈ.backend.start == 2
+    # Cross to a later interval ⇒ the window cycles forward (start = clamp(n₁, 1, N-2)).
+    exchange(exchanger, 2.5)                                    # bracket n₁ = 3 ⇒ start = 3 (levels 3, 4, 5)
+    @test prog.ρᵈ.backend.start == 3
     @test all(isfinite, Array(interior(prog.ρθ[3])))
     θ = Array(interior(prog.ρθ[3])) ./ Array(interior(prog.ρᵈ[3]))
     @test all(250 .< θ .< 400)                                 # physical potential temperature
@@ -824,6 +836,11 @@ end
     # Cycle back toward the 1st interval.
     exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1
     @test prog.ρᵈ.backend.start == 1
+
+    # An exchange interval holds levels from the bracket of its start to the level above its end.
+    exchange(exchanger, 1.5, 2.5)                               # levels 2, 3, 4
+    @test prog.ρᵈ.backend.start == 2
+    @test_throws ArgumentError exchange(exchanger, 0.5, 2.5)    # needs levels 1 to 4
 
     # reconstruct_parent_state reads the parent's FULL-memory fields, not the windowed levels: with the
     # window parked forward, a reconstruction at t = 0 still recovers the parent's t = 0 state
@@ -902,7 +919,7 @@ end
     prog      = exchanger.prognostic
     exchange  = NumericalEarth.NestedModels.exchange_state!
 
-    exchange(exchanger, 2.1) # start = 2, resident time indices are 2, 3, 4.
+    exchange(exchanger, 1.1) # start = 2, resident time indices are 2, 3, 4.
     fts = prog.ρθ
     @test fts.backend.start == 2
     @test length(fts.backend) == 3
@@ -974,10 +991,11 @@ end
     indices = ((1, 1, 1), (2, 2, 2), (8, 8, 4))
 
     for step_end_time in (0.5, 1.1, 2.1, 3.1, 4.1, 5.1)
-        exchange(moving, step_end_time)
-        exchange(full, step_end_time)
+        step_start_time = max(0, step_end_time - 0.2)
+        exchange(moving, step_start_time, step_end_time)
+        exchange(full, step_start_time, step_end_time)
 
-        for query_time in (max(0, step_end_time - 0.2), step_end_time)
+        for query_time in (step_start_time, step_end_time)
             for name in field_names
                 moving_fts = getproperty(moving.prognostic, name)
                 full_fts = getproperty(full.prognostic, name)
@@ -1023,9 +1041,9 @@ end
     θin = Array(interior(prog.ρθ[Time(0.5)])) ./ Array(interior(prog.ρᵈ[Time(0.5)]))
     @test all(isapprox.(θin, θtrue(0.5); rtol = 1e-4))
 
-    # Crossing the node at t = 2: the window advances to start = 2 (times [1, 2, 3]), so the child's
-    # start-of-step query at t = 1.9 still falls inside the resident levels.
-    exchange(exchanger, 2.1)
+    # A step from t = 1.9 to 2.1 crosses the node at t = 2: the window advances to start = 2 (times
+    # [1, 2, 3]), so the child's start-of-step query at t = 1.9 still falls inside the resident levels.
+    exchange(exchanger, 1.9, 2.1)
     @test prog.ρᵈ.backend.start == 2
 
     ρθq = Array(interior(prog.ρθ[Time(1.9)]))
@@ -1290,4 +1308,28 @@ end
     run!(simulation)
 
     @test nested.parent.model.clock.time == nested.child.model.clock.time == 1
+end
+
+@testset "NestedSimulation: picks up from a checkpoint" begin
+    dir = mktempdir()
+    function checkpointed_simulation(stop_time)
+        simulation = Simulation(exchange_test_nest(parent_Δt = 0.5, child_Δt = 0.25); Δt = 1.0, stop_time, verbose = false)
+        simulation.output_writers[:checkpointer] = Checkpointer(simulation.model; schedule = IterationInterval(1), dir, prefix = "nested")
+        return simulation
+    end
+
+    run!(checkpointed_simulation(2))
+    simulation = checkpointed_simulation(3)
+    run!(simulation; pickup = true)
+
+    nested = simulation.model
+    @test nested.clock.iteration == 3
+    @test nested.parent.model.clock.time == nested.child.model.clock.time == 3
+    @test nested.child.model.clock.iteration == 12
+end
+
+@testset "NestedModel: rejects model callbacks on the outer Simulation" begin
+    nested = exchange_test_nest(parent_Δt = 1.0, child_Δt = 1.0)
+    callback = Callback(model -> nothing, IterationInterval(1); callsite = Oceananigans.TendencyCallsite())
+    @test_throws ArgumentError time_step!(nested, 1.0; callbacks = (callback,))
 end
