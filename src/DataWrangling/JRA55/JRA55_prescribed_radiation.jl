@@ -2,7 +2,7 @@ JRA55PrescribedRadiation(arch::Distributed; kw...) =
     JRA55PrescribedRadiation(child_architecture(arch); kw...)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 JRA55 downwelling radiation. Remaining keyword arguments go to [`prescribed_radiation`](@ref).
 """

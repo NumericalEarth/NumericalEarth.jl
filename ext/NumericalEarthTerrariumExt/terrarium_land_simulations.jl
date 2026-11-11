@@ -16,7 +16,7 @@ function NumericalEarth.Lands.land_model(
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Build a Terrarium `LandModel` on `grid` in the deferred-flux configuration (surface
 turbulent fluxes computed by NumericalEarth), initialize it, and wrap it in an Oceananigans

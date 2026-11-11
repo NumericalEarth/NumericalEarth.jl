@@ -48,7 +48,8 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES, MethodSignatures
+using DocStringExtensions: TYPEDEF
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.AbstractOperations: KernelFunctionOperation

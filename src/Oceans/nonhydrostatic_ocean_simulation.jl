@@ -1,7 +1,7 @@
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct and return a nonhydrostatic ocean simulation suitable for Large Eddy
 Simulation (LES). Called by `ocean_simulation(grid; model=:nonhydrostatic, ...)`.

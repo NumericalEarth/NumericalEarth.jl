@@ -91,7 +91,7 @@ Base.summary(energy::ForceRestoreEnergy) =
            ", deep_time_scale=", prettysummary(energy.deep_time_scale), ")")
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Pure slab energy balance — the `τ → ∞` limit of [`ForceRestoreEnergy`](@ref),
 with no deep restoring term. Returns a `ForceRestoreEnergy` configured so the

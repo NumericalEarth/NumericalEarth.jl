@@ -1,5 +1,5 @@
 using Adapt: Adapt
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.BoundaryConditions: fill_halo_regions!
@@ -50,7 +50,7 @@ struct PressureLevelVerticalDiscretization{G, Geo, S} <: AbstractVerticalCoordin
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Build a discretization backed by per-column `geopotential` (m²/s²). `znode`
 divides by `gravitational_acceleration` at read time.

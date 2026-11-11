@@ -1,4 +1,4 @@
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Oceananigans.Utils: prettysummary
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -90,7 +90,7 @@ end
     vsgs²(sv.convective, u★, b★, h_bℓ) + vsgs²(sv.mesoscale, u★, b★, h_bℓ)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return the mesoscale subgrid velocity [m/s] for grid spacing `Δx` [m] following
 [Mahrt and Sun (1995)](https://doi.org/10.1175/1520-0493(1995)123<3032:TSVSIT>2.0.CO;2),
@@ -124,7 +124,7 @@ function Base.show(io::IO, fluxes::SimilarityTheoryFluxes)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 `SimilarityTheoryFluxes` contains parameters and settings to calculate
 air-interface turbulent fluxes using Monin--Obukhov similarity theory.
@@ -853,7 +853,7 @@ Base.summary(::LinearStableStabilityFunction{FT}) where FT = "LinearStableStabil
 Base.show(io::IO, ::LinearStableStabilityFunction{FT}) where FT = print(io, "LinearStableStabilityFunction{$FT}")
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 NCAR/Large-Yeager (2004) stability functions combining:
 - Unstable: Paulson (1970) with γ = 16

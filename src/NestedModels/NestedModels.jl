@@ -23,7 +23,7 @@ function total_density end
 # (method in the Breeze extension).
 function reconstruct_parent_state end
 
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using Oceananigans
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: AbstractGrid

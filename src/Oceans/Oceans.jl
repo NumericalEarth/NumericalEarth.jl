@@ -4,7 +4,7 @@ export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, Prescribed
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -52,7 +52,7 @@ struct Default{V}
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Either return `default.value`, an `alternative_default`, or an `override`.
 

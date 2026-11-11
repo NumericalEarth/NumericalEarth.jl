@@ -3,7 +3,7 @@ using Oceananigans.OutputReaders
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a [`PrescribedAtmosphere`](@ref) representing ECCO state estimate data.
 The atmospheric data will be held in `FieldTimeSeries` objects containing

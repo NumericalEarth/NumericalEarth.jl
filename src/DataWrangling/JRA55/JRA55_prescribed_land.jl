@@ -1,7 +1,7 @@
 using ...Lands: PrescribedLand, build_flux_routing, routable_grid
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a [`PrescribedLand`](@ref) holding the JRA55-do river runoff and iceberg calving fluxes, routed
 onto the coastline of the target ocean `grid` by [`build_flux_routing`](@ref).

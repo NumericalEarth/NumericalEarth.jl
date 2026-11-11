@@ -2,7 +2,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a [`PrescribedLand`](@ref) that forces the ocean with GloFAS river
 discharge routed onto the coastline of `grid` (the target ocean grid).

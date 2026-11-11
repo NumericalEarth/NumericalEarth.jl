@@ -53,7 +53,7 @@ Adapt.adapt_structure(to, α::SeaIceAlbedo) =
                       Adapt.adapt(to, α.surface_temperature))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a CCSM3 sea ice albedo parameterization. Requires references to the sea ice
 model's ice thickness, snow thickness, and surface temperature fields.

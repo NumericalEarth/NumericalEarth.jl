@@ -2,7 +2,7 @@ module SeaIces
 
 export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress
 
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis

@@ -51,7 +51,7 @@ function correct_tripolar_bcs(grid::TripolarGridOfSomeKind, bcs)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
 The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,

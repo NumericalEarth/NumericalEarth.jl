@@ -62,7 +62,7 @@ end
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return the formulation for computing specific humidity at an interface. `saturation_enhancement` multiplies the
 saturation vapor pressure by the enhancement factor of moist air, for example `GillSaturationEnhancement()`;

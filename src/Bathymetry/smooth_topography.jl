@@ -1,4 +1,4 @@
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 
 # Clamp to the interior across a physical (Closed) boundary.
 @inline _previous_smoothing_index(i, ::Sides{Closed}) = max(1, i - 1)

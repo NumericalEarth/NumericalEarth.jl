@@ -39,7 +39,7 @@ function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTupl
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
 [`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring

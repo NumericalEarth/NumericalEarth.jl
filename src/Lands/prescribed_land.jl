@@ -28,7 +28,7 @@ function Base.show(io::IO, pl::PrescribedLand)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a `PrescribedLand` from a `NamedTuple` of `FieldTimeSeries` freshwater fluxes (e.g. rivers, icebergs).
 

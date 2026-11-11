@@ -6,7 +6,7 @@ struct LatitudeDependentAlbedo{FT}
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Constructs a `LatitudeDependentAlbedo` object. The albedo of the ocean surface is assumed to be a function of the latitude,
 obeying the following formula [large2009global](@citep):

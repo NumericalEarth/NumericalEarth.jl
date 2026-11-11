@@ -1,6 +1,6 @@
 module NumericalEarthSpeedyWeatherExt
 
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using GPUArraysCore: @allowscalar
 using KernelAbstractions: KernelAbstractions, @index, @kernel
 using Oceananigans: Oceananigans

@@ -8,7 +8,7 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
     JRA55PrescribedAtmosphere(child_architecture(arch); kw...)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
 `FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterized by JRA55 metadata so that the JRA55-specific

@@ -48,7 +48,7 @@ struct IceBathHeatFlux{FT, U}
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct an `IceBathHeatFlux` with the specified parameters.
 
@@ -132,7 +132,7 @@ Adapt.adapt_structure(to, f::ThreeEquationHeatFlux) =
                           Adapt.adapt(to, f.friction_velocity))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a `ThreeEquationHeatFlux` with the specified parameters.
 

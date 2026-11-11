@@ -17,7 +17,7 @@ Base.summary(bbox::BoundingBox) = string("BoundingBox(",
                                          latitude_summary(bbox.latitude), ")")
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere.
 A non-`nothing` `z = (z_bottom, z_top)` restricts both the download (for backends
@@ -28,7 +28,7 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
 side by `padding` (degrees), a number or a `(longitude, latitude)` pair. For a
@@ -163,7 +163,7 @@ longitude_interfaces(md::Metadata) = longitude_interfaces(md.dataset)
 latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Metadata holding a specific dataset information.
 
@@ -270,7 +270,7 @@ function Base.size(metadata::Metadata)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 A specialized constructor for a [`Metadata`](@ref) object with a single date, representative of a snapshot in time.
 """
@@ -396,7 +396,7 @@ struct MetadataSet{V, D, R, N, F}
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
 `region`, and `dir` — differing only in variable name.
@@ -606,7 +606,7 @@ function Fields.set!(fields::NamedTuple, mset::MetadataSet)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Route variables from `mset` to `set!(model; kwargs...)`, translating verbose
 dataset names to short model field-names via [`variable_glossary`](@ref).
@@ -691,7 +691,7 @@ function Downloads.download(mset::MetadataSet; kwargs...)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Extract the time values from the given `metadata`, calculate the time difference
 from the `start_time`, and return an array of time differences in seconds.

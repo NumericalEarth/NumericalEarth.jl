@@ -2,7 +2,7 @@ module WorldCover
 
 export ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
 
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 using Oceananigans: Center, location
 using Oceananigans.Architectures: architecture, child_architecture
@@ -295,7 +295,7 @@ function aggregate_blockwise(pixels::AbstractMatrix, factor::Integer, reduction)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Reduce the fine `pixels` raster onto the coarse grid by an INTEGER `factor`,
 returning `(; landcover_class, vegetation_fraction, class_fractions)`: the

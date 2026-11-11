@@ -48,7 +48,7 @@ end
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a `PrescribedRadiation` component from `FieldTimeSeries` of
 downwelling shortwave and longwave radiation. Grid + times are inferred from
@@ -92,7 +92,7 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a `PrescribedRadiation` with zero downwelling shortwave and longwave
 fields on `grid`. Useful for emission-only mode (the surface radiates ϵσT⁴ but
@@ -116,7 +116,7 @@ end
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Set the prescribed downwelling shortwave and longwave magnitudes (positive downward, W m⁻²),
 then refresh the interpolated state. Omitted keywords are left untouched. A

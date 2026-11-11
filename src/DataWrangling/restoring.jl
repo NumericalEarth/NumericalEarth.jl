@@ -121,7 +121,7 @@ default_time_indices_in_memory(metadata) = min(2, length(metadata))
 default_time_indices_in_memory(::Metadatum) = 1
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a forcing term that restores to data from a dataset. The restoring is applied
 as a forcing on the right hand side of the evolution equations, calculated as:
@@ -347,7 +347,7 @@ struct LinearlyTaperedPolarMask{N, S, Z}
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Build a mask that is linearly tapered in latitude between the northern and southern edges.
 The mask is constant in depth between the z and equals zero everywhere else.

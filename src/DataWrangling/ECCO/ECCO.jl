@@ -9,7 +9,7 @@ export retrieve_data
 
 using Adapt: Adapt
 using Dates: Dates, DateTime, Day, Month
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
@@ -216,7 +216,7 @@ const ECCOMetadatum   = Metadatum{<:ECCODataset}
 DataWrangling.higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 An alias to construct a [`Metadatum`](@ref) of `ECCO4Monthly()`.
 """

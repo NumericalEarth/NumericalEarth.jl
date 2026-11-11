@@ -94,7 +94,7 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
 lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
@@ -114,7 +114,7 @@ function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
@@ -217,7 +217,7 @@ function retrieve_data(metadata::Metadatum)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
@@ -368,7 +368,7 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
@@ -517,7 +517,7 @@ lower_bound(metadata, name) = -1f5
 higher_bound(metadata, name) = 1f5
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 A boolean field where `true` represents a missing value in the dataset_field.
 """
@@ -550,7 +550,7 @@ end
 #####
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
 verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.

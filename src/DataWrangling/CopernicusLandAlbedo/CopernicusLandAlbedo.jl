@@ -3,7 +3,7 @@ module CopernicusLandAlbedo
 export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 
 using Dates: Dates, DateTime, Day, Month, year, month, daysinmonth
-using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
 using Oceananigans: Center
@@ -383,7 +383,7 @@ end
 #####
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 For each calendar month in `months`, download every ten-day albedo file of
 `dataset.years` falling in that month, average the black-sky and white-sky

@@ -366,7 +366,7 @@ function remove_minor_orca_basins(bottom_height, major_basins)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,

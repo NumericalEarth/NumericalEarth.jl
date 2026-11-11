@@ -2,7 +2,7 @@ ERA5PrescribedRadiation(arch::Distributed; kw...) =
     ERA5PrescribedRadiation(child_architecture(arch); kw...)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 ERA5 downwelling radiation, suitable for regional hindcast forcing. ERA5 stores these as energy
 accumulated over the previous hour (J m⁻²); the load-time `conversion_units` divides by the accumulation

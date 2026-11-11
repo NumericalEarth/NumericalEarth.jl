@@ -1,4 +1,4 @@
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
@@ -205,7 +205,7 @@ default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct and return an ocean simulation tailored to `grid`. The `model` keyword
 selects the underlying Oceananigans model formulation:
@@ -273,7 +273,7 @@ function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct and return a hydrostatic ocean simulation tailored to `grid`. Called
 by `ocean_simulation(grid; model=:hydrostatic, ...)`.

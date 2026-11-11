@@ -54,8 +54,9 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 
 ### Docstrings
 
-- Use `$(TYPEDSIGNATURES)` from DocStringExtensions.jl (never write explicit signatures);
-  use `$(MethodSignatures(defaults = true))` for methods with default argument values
+- Use `$(TYPEDSIGNATURES)` or `$(SIGNATURES)` (never write explicit signatures), imported from
+  `NumericalEarth`, not DocStringExtensions: they show default values with DocStringExtensions v0.10
+  and plain signatures with v0.9
 - **ALWAYS `jldoctest` blocks, NEVER plain `julia` blocks** — doctests are tested; plain blocks rot
 - Include expected output after `# output`; prefer `show` methods over boolean comparisons
 - **Citations**: Use inline `[Author (year)](@cite Key)` syntax woven into prose

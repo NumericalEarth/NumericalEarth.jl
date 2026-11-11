@@ -7,7 +7,7 @@ export GloFASReanalysis
 export GloFASPrescribedLand
 
 using Dates: Dates, DateTime, Day
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum,

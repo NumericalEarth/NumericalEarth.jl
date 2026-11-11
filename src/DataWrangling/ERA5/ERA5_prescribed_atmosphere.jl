@@ -74,7 +74,7 @@ function Oceananigans.Fields.set!(Jʳⁿ::RainFTS, backend = Jʳⁿ.backend)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
 Eastward/northward 10 m winds, 2 m temperature, and the `pressure` variable are loaded directly; specific humidity is
@@ -168,7 +168,7 @@ function pressure_level_field(grid, dataset, architecture)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over `bounding_box` at the
 requested `dates` — a range or vector of dates, or a `(start_date, end_date)` tuple that expands to the dataset's native

@@ -12,7 +12,7 @@
 # scalars where NormalFlowBC writes asymmetrically into the interior.
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Build a `NamedTuple` of `FieldBoundaryConditions` driving the child's lateral
 boundaries directly from a parent's `FieldTimeSeries`.

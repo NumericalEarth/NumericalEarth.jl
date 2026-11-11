@@ -1,7 +1,7 @@
 module NumericalEarthBreezeExt
 
 using Breeze: Breeze
-using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture

@@ -2,7 +2,7 @@ using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_st
                      default_water_emissivity
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a [`PrescribedRadiation`](@ref) backed by ECCO downwelling shortwave
 and longwave fields.

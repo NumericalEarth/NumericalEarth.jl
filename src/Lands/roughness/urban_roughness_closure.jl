@@ -118,7 +118,7 @@ struct VariableHeight{FT} <: AbstractHeightDistribution
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a [`VariableHeight`](@ref) distribution. All four defaults are the Method 1
 regressions of [Kanda et al. (2013)](@cite Kanda2013).
@@ -310,7 +310,7 @@ struct MorphometricRoughness{FT, E, H} <: AbstractUrbanRoughness
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a [`MorphometricRoughness`](@ref) closure.
 

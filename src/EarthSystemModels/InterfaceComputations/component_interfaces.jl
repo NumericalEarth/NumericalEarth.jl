@@ -361,7 +361,7 @@ function default_ao_specific_humidity(ocean)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct component interfaces for atmosphere-ocean-sea ice coupling.
 

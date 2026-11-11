@@ -1,7 +1,7 @@
 module NumericalEarthCDSAPIExt
 
 using CDSAPI: CDSAPI
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Downloads: Downloads
 
 using Dates: Dates

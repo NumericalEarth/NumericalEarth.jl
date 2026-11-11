@@ -43,7 +43,7 @@ end
 Base.show(io::IO, p::ConstitutiveParameters) = print(io, summary(p))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a set of parameters that define the density of moist air,
 
@@ -92,7 +92,7 @@ end
 Base.show(io::IO, p::HeatCapacityParameters) = print(io, summary(p))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Isobaric heat capacities.
 """

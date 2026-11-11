@@ -168,7 +168,7 @@ grid-allocated diagnostic fields (e.g. `FreezingLimitedOceanTemperature`) overlo
 materialize_sea_ice!(sea_ice, ocean) = sea_ice
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a coupled earth system model. Components are passed in struct order
 (top to bottom): radiation, atmosphere, land, sea_ice, ocean. Pass `nothing`
@@ -294,7 +294,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Keyword-only constructor for `EarthSystemModel`. Equivalent to the positional
 form, but lets you pass only the components you actually have:
@@ -352,7 +352,7 @@ function invalid_component(constructor, position, expected, received)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct an ocean-only model without a sea ice component.
 This is a convenience constructor for [`EarthSystemModel`](@ref) that sets `sea_ice`
@@ -393,7 +393,7 @@ function OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothi
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a coupled ocean--sea ice model.
 
@@ -454,7 +454,7 @@ function AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Construct a coupled atmosphere--land model.
 Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and

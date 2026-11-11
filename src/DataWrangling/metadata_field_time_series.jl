@@ -1,5 +1,5 @@
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Create a FieldTimeSeries from a dataset that corresponds to `metadata`.
 

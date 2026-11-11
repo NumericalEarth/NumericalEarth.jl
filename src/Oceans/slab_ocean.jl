@@ -12,7 +12,7 @@ struct SlabOcean{FT, G, Clk, T, F, H, ρ, C}
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 A slab ocean component for `EarthSystemModel`. Represents the ocean as a single
 well-mixed layer of fixed depth, with temperature evolving in response to

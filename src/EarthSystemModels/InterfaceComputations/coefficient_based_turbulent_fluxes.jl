@@ -168,7 +168,7 @@ convert_transfer_coefficients(FT, c::SimilarityScales) = SimilarityScales(conver
                                                                           convert_if_number(FT, c.water_vapor))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return the structure for computing turbulent fluxes using bulk transfer coefficients.
 Used in bulk flux calculations to determine the exchange of momentum, heat, and moisture

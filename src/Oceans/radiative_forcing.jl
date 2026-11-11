@@ -1,5 +1,5 @@
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Oceananigans.OutputReaders: update_field_time_series!
 
 
@@ -107,7 +107,7 @@ Adapt.adapt_structure(to, R::TwoColorRadiation) =
                       adapt(to, R.surface_flux))
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return `TwoColorRadiation` that computes the radiative flux divergence associated with
 a two-color radiation flux that decays according to Beer's law,

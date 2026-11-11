@@ -1,7 +1,7 @@
 module InterfaceComputations
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES, MethodSignatures
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture

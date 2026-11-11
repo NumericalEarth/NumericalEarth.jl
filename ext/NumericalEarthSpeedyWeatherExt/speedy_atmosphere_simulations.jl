@@ -51,7 +51,7 @@ function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
 end
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
 Output is written when `output_interval` is provided. `time_stepping` controls

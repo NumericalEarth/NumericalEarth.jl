@@ -184,7 +184,7 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = no
 EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmos, clock)
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
@@ -267,7 +267,7 @@ Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) =
 #####
 
 """
-$(MethodSignatures(defaults = true))
+$(SIGNATURES)
 
 Set the prescribed atmospheric velocities (`u`, `v`), air temperature (`T`),
 specific humidity (`q`), and surface pressure (`p`), then refresh

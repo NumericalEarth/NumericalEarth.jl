@@ -1,6 +1,6 @@
 module NumericalEarthTerrariumExt
 
-using DocStringExtensions: MethodSignatures
+using NumericalEarth: SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Simulation, Center, architecture
 using Oceananigans.Fields: Field, ZeroField
