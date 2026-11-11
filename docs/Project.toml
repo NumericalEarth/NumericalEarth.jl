@@ -37,7 +37,6 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2
-LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
 NumericalEarth = {path = ".."}
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
