@@ -61,7 +61,7 @@ using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounde
 using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!, clock_convert, kernel_time_type
-using Oceananigans.Units: Time
+using Oceananigans.Units: Time, days
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using Base: ForwardOrdering
 
