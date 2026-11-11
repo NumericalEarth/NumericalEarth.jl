@@ -109,6 +109,15 @@ function coupled_land_model(arch, FT = Float64; time = nothing, kw...)
     return model
 end
 
+function tiled_land_model(arch, FT = Float64; vegetated, cover_fraction, interface_kw = (;), kw...)
+    grid, atmosphere, land, radiation = coupled_land_components(arch, FT; kw...)
+    tiled = TiledLandInterface(grid, atmosphere, land; vegetated, cover_fraction, interface_kw...)
+    model = AtmosphereLandModel(atmosphere, land; radiation, atmosphere_land_interface = tiled)
+    update_state!(model.land)
+    update_state!(model)
+    return model
+end
+
 function test_setting_from_metadata(arch, dataset, start_date, inpainting;
                                     loc = (Center, Center, Center),
                                     varnames = (:temperature, :salinity),

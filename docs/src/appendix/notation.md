@@ -44,6 +44,7 @@ In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `�
 | ``\tau`` | `τ` | `\tau` | Kinematic momentum flux (m² s⁻²) |
 | ``\mathcal{L}`` | `ℒ` | `\scrL` | Latent heat (J kg⁻¹) |
 | ``M`` | `M` | | Layer-integrated mass per area (kg m⁻²) |
+| ``\aleph`` | `ℵ` | `\aleph` | Area fraction: the fraction of an enclosing surface covered by the labeled component (–) |
 | ``P`` | `P` | | Precipitation (liquid water) mass flux reaching a surface (kg m⁻² s⁻¹) |
 
 Note: ``\tau^x`` (`τˣ`) is the _kinematic_ momentum flux (stress divided
@@ -165,6 +166,7 @@ component-superscript rule above.
 | ``Λ^{\mathrm{grnd}}`` | `ground_heat_flux` | ground conductance | Ground↔bulk conduction coefficient ``Λ^{\mathrm{grnd}} = κ^T/ℓ^T`` of a `SoilConductiveFlux` (W m⁻² K⁻¹) |
 | ``-\Pi^{fc}`` | `field_capacity_head` | field-capacity suction head | Suction (negative pressure head) at which transpiration becomes unstressed (``β = 1``), for `PlantAvailableWaterStress` (m) |
 | ``-\Pi^{wp}`` | `wilting_point_head` | wilting-point suction head | Suction (negative pressure head) at which transpiration ceases (``β = 0``), for `PlantAvailableWaterStress` (m) |
+| ``f`` | `cover_fraction` | vegetated cover fraction | Vegetated fraction of a cell: the area weight of the vegetated tile of a `TiledLandInterface`, and the cover an `InterceptingHydrology` store occupies (–) |
 | ``w^{\mathrm{ucan}}`` | `undercanopy_transfer_velocity` | undercanopy transfer velocity | Ground↔canopy-air transfer velocity of a `CanopyInterface`: the flux per unit difference across the path, ``J = \rho^{\mathrm{at}} w^{\mathrm{ucan}} (q^{\mathrm{grnd}} - q^{\mathrm{acan}})``, as ``u_\star \Xi_q`` is for the canopy-air↔atmosphere exchange. A bulk transfer coefficient times a wind speed, not a diffusivity (m s⁻¹) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
@@ -234,7 +236,7 @@ Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 ### Canopy and canopy air space
 
 Symbols introduced by [`CanopyConductanceHumidity`](@ref), [`CanopyInterface`](@ref),
-and [`InterceptingHydrology`](@ref).
+[`InterceptingHydrology`](@ref), and [`TiledLandInterface`](@ref).
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
@@ -265,7 +267,7 @@ and [`InterceptingHydrology`](@ref).
 | ``\alpha^{\mathrm{leaf}}``, ``\alpha^{\mathrm{grnd}}`` | `leaf_albedo`, `ground_albedo` | albedos | Shortwave albedo of the canopy and of the ground below it (–) |
 | ``r^{\mathrm{soi}}`` | – | ground surface resistance | Moist-soil evaporation resistance of an [`ExponentialSoilResistance`](@ref) (s m⁻¹) |
 | ``r^{\mathrm{grnd}}``, ``C^{\mathrm{grnd}}`` | `transfer_coefficient` | ground-surface resistance, transfer coefficient | Bulk ground evaporation resistance of a [`GroundSurfaceResistance`](@ref) (s m⁻¹) and its transfer coefficient (–) |
-| ``M^{\mathrm{cnpy}}``, ``M^{\mathrm{cnpy}+}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``M^{\mathrm{cnpy}+} = c \lambda^{\mathrm{leaf}}``, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
+| ``M^{\mathrm{cnpy}}``, ``M^{\mathrm{cnpy}+}`` | `canopy_water_storage` | canopy water store | Intercepted water on the foliage and its capacity ``M^{\mathrm{cnpy}+} = c \lambda^{\mathrm{leaf}}``, both per unit vegetated area, with ``c`` the capacity per unit leaf area (`capacity_per_leaf_area`) (kg m⁻²) |
 | ``f^{\mathrm{int}}`` | – | interception fraction | Caught fraction of rain, ``1 - e^{-K \Omega \lambda^{\mathrm{leaf}}}`` (–) |
 | ``P^{\mathrm{int}}``, ``P^{\mathrm{thru}}`` | `Pⁱⁿᵗ`, `throughfall` | intercepted rain, throughfall | Rain caught by the canopy, ``f^{\mathrm{int}} P^l``, and the liquid water reaching the soil beneath it (kg m⁻² s⁻¹) |
 | ``J^{\mathrm{drip}}``, ``J^{\mathrm{dfct}}`` | `Jᵈʳⁱᵖ`, `Jᵈᶠᶜᵗ` | canopy drip, evaporation deficit | Water draining from a full canopy store, and wet-canopy evaporation the store could not supply, over one step (kg m⁻² s⁻¹) |
@@ -274,6 +276,21 @@ and [`InterceptingHydrology`](@ref).
 | ``J^{\mathrm{wet}}``, ``\mathcal{Q}^{v\,\mathrm{wet}}`` | – | wet-canopy evaporation | Evaporation of intercepted water (kg m⁻² s⁻¹) and its latent heat (W m⁻²) |
 | ``\Delta U`` | – | surface wind speed | Wind speed relative to the surface at the surface-layer reference height (m s⁻¹) |
 | ``R^v`` | – | vapor gas constant | Specific gas constant of water vapor (J kg⁻¹ K⁻¹) |
+
+## Area fractions
+
+An area fraction ``\aleph`` carries the superscript of the component that covers the area,
+and is always a fraction of the *enclosing* surface, not of the whole cell. The ocean
+fraction partitions a cell into ocean and land, and the sea ice concentration further
+partitions the ocean, so the cell is split into open ocean ``\aleph^{\mathrm{oc}} (1 - \aleph^{\mathrm{si}})``,
+sea ice ``\aleph^{\mathrm{oc}} \aleph^{\mathrm{si}}``, and land ``1 - \aleph^{\mathrm{oc}}``.
+Following the component-superscript rule, a component's own code uses the bare ``\aleph``:
+ClimaSeaIce's `ice_concentration` is set with `set!(sea_ice.model, ℵ = ...)`.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``\aleph^{\mathrm{oc}}`` | `ℵᵒᶜ` | ocean fraction | Fraction of a cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \aleph^{\mathrm{oc}}`` (–) |
+| ``\aleph^{\mathrm{si}}`` | `ℵˢⁱ` | sea ice concentration | Fraction of the ocean covered by sea ice (–) |
 
 ## Ocean state variables
 
@@ -292,7 +309,6 @@ and [`InterceptingHydrology`](@ref).
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``h^{\mathrm{si}}`` | `hˢⁱ` | ice thickness | Sea ice thickness (m) |
-| ``\aleph`` | `ℵ` | ice concentration | Areal fraction of ice cover (–) |
 | ``S^{\mathrm{si}}`` | `Sˢⁱ` | ice salinity | Sea ice bulk salinity (g kg⁻¹) |
 
 ## Radiation properties
@@ -396,7 +412,6 @@ superscript band.
 | ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
 | ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
 | ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
-| ``\th`` | `þ` | ocean fraction | Areal fraction of a surface cell covered by ocean (`ocean_fraction`); the land fraction is ``1 - \th`` (–) |
 
 ## Net ocean fluxes
 
@@ -449,7 +464,7 @@ where applicable.
 | `ρτˣ` | `surface_downward_eastward_stress` |
 | `ρτʸ` | `surface_downward_northward_stress` |
 | `hˢⁱ` | `sea_ice_thickness` |
-| `ℵ` | `sea_ice_area_fraction` |
+| `ℵˢⁱ` | `sea_ice_area_fraction` |
 
 ## Typing Unicode symbols in Julia
 
@@ -467,8 +482,7 @@ Most symbols can be entered in the Julia REPL and in editors with Julia support 
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
 | `α` | `\alpha` | Alpha (albedo) |
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
-| `ℵ` | `\aleph` | Aleph (ice concentration) |
-| `þ` | `\th` | Thorn (ocean fraction) |
+| `ℵ` | `\aleph` | Aleph (area fraction) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
 | `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |

@@ -1,4 +1,5 @@
-using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_indices
+using Oceananigans.DistributedComputations: Distributed
+using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_index, time_indices
 
 import Oceananigans.OutputReaders: new_backend
 import Oceananigans.Fields: set!
@@ -85,9 +86,17 @@ const DatasetFieldTimeSeries{N} = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:Data
 # as ECCO4 / EN4 / WOA monthly climatologies. Datasets whose files hold
 # multiple time instances (e.g. JRA55) dispatch on a more specific backend
 # signature keyed off the metadata's dataset type.
+window_paths(backend, indices) = filter(isfile, unique(metadata_path(backend.metadata[n]) for n in indices))
+
 function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     inpainting = backend.inpainting
     cache_data = cache_inpainted_data(backend)
+
+    # Cold reads from a parallel file system are latency-bound: pull the window's files
+    # into the page cache concurrently before reading them one by one.
+    Threads.@threads for path in window_paths(backend, time_indices(fts))
+        read(path)
+    end
 
     for t in time_indices(fts)
         metadatum = @inbounds backend.metadata[t]
@@ -95,6 +104,63 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     end
 
     fill_halo_regions!(fts)
+
+    # The next window starts at this window's last record. Pull its files into the page cache
+    # in the background, while the model steps through this window.
+    Nt = length(backend.metadata)
+    Nm = length(time_indices(fts))
+    if Nm < Nt
+        next_window = (mod1(last(time_indices(fts)) + m, Nt) for m in 0:Nm-1)
+        Threads.@spawn foreach(read, window_paths(backend, next_window))
+    end
+
+    return nothing
+end
+
+"""
+    PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
+
+In-memory backend for a dataset `FieldTimeSeries` whose next sliding window is loaded on a background task.
+The `pending` task fills `buffer`, a `FieldTimeSeries` with a `DatasetBackend`, and reloading the window that
+`buffer` holds costs one copy.
+"""
+struct PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
+    start :: Int
+    length :: Int
+    metadata :: M
+    buffer :: F
+    pending :: Task
+end
+
+function PrefetchingBackend(buffer)
+    architecture(buffer) isa Distributed && throw(ArgumentError("prefetch = true needs a series on a non-distributed grid"))
+    return PrefetchingBackend(buffer.backend.start, buffer.backend.length, buffer.backend.metadata,
+                              buffer, Threads.@spawn set!(buffer))
+end
+
+Base.summary(backend::PrefetchingBackend) = string("PrefetchingBackend(", backend.start, ", ", backend.length, ")")
+
+new_backend(b::PrefetchingBackend, start, length) = PrefetchingBackend(start, length, b.metadata, b.buffer, b.pending)
+
+Adapt.adapt_structure(to, b::PrefetchingBackend) = Adapt.adapt(to, new_backend(b.buffer.backend, b.start, b.length))
+
+const PrefetchingFieldTimeSeries = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:PrefetchingBackend}
+
+function set!(fts::PrefetchingFieldTimeSeries, backend=fts.backend)
+    buffer = backend.buffer
+    wait(backend.pending)
+
+    if buffer.backend.start != backend.start
+        buffer.backend = new_backend(buffer.backend, backend.start, backend.length)
+        set!(buffer)
+    end
+
+    copyto!(parent(fts.data), parent(buffer.data))
+
+    # The next reload starts at this window's last record
+    next_start = time_index(backend, fts.time_indexing, length(fts.times), backend.length)
+    buffer.backend = new_backend(buffer.backend, next_start, backend.length)
+    fts.backend = PrefetchingBackend(backend.start, backend.length, backend.metadata, buffer, Threads.@spawn set!(buffer))
 
     return nothing
 end

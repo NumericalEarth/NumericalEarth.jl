@@ -49,7 +49,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
 
             @info "Testing Cyclical time_indices for JRA55 data on $A..."
             Nb = 4
-            netcdf_JRA55_fts = FieldTimeSeries(Metadata(test_name; dataset=JRA55.RepeatYearJRA55()), arch;
+            netcdf_JRA55_fts = FieldTimeSeries(Metadata(test_name; dataset=JRA55.RepeatYearJRA55(), dates=fixture_dates(test_name)), arch;
                                                time_indices_in_memory=Nb)
 
             Nt = length(netcdf_JRA55_fts.times)

@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
-using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache
+using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache, vertical_size
 using NumericalEarth.DataWrangling: native_times, averaging_window, window_center,
                                     window_span, uncovered_time_gaps, validate_time_coverage
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
@@ -148,6 +148,14 @@ end
     @test first(seam_λ) == -110.0f0
     @test last(seam_λ) == 30.0f0
     @test topology(seam_grid)[1] == Bounded
+end
+
+@testset "vertical_size follows explicit z-interface vectors" begin
+    # A z-restricted download yields an explicit interface vector; the grid's Nz
+    # must follow that vector rather than the dataset's hard-coded full-column Nz.
+    @test vertical_size([-1000.0, -500.0, -100.0, 0.0], 50) == 3
+    # A regular (tuple) z keeps the dataset's full-column Nz.
+    @test vertical_size((-1000.0, 0.0), 50) == 50
 end
 
 @testset "BoundingBox and boundary strips take per-axis padding" begin
@@ -318,7 +326,7 @@ end
 @testset "ERA5 accumulation windows" begin
     # ERA5 accumulations and mean rates cover the hour ending at the stamp, so their windows
     # run backwards from it and their nodes sit half an hour before it.
-    for name in (:total_precipitation, :convective_precipitation, :evaporation, :mean_evaporation_rate,
+    for name in (:total_precipitation, :convective_precipitation, :snowfall, :evaporation, :mean_evaporation_rate,
                  :downwelling_shortwave_radiation, :downwelling_longwave_radiation,
                  :mean_surface_momentum_flux_x, :mean_surface_momentum_flux_y,
                  :mean_surface_sensible_heat_flux, :mean_surface_latent_heat_flux)
@@ -444,4 +452,21 @@ end
     @test DataWrangling.nan_convert_missing(Float32, 1.0, missing) === 1f0
     @test DataWrangling.nan_convert_missing(Float32, 1.0, -999) === 1f0
     @test DataWrangling.nan_convert_missing(Float32, Inf, -999) === Inf32
+end
+
+@testset "set_region_data! from a slice with missing values" begin
+    slice = convert(Array{Union{Missing, Float32}}, ones(Float32, 4, 4, 2))
+    slice[2, 3, 1] = missing
+
+    # On the CPU the slice stays as it is; the region kernel turns `missing` into NaN
+    @test on_architecture(CPU(), slice) === slice
+    reshaped = reshape(view(slice, :, :, :), 4, 4, 2)
+    @test isequal(on_architecture(CPU(), reshaped), reshaped)
+
+    grid = LatitudeLongitudeGrid(CPU(); size = (4, 4, 2), longitude = (0, 4), latitude = (0, 4), z = (0, 1))
+    field = CenterField(grid)
+    DataWrangling.set_region_data!(field, slice, nothing, nothing, nothing; mangling = nothing, conversion = nothing,
+                                   region = DataWrangling.BoundingBoxOffset(0, 0))
+    @test isnan(interior(field)[2, 3, 1])
+    @test count(isnan, interior(field)) == 1
 end
