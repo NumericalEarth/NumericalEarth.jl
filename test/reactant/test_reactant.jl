@@ -152,7 +152,7 @@ end
     step! = @compile raise_first = true raise = true time_step!(nested, 1.0)
     step!(nested, 1.0)
     step!(nested, 1.0)
-    @test Reactant.to_number(nested.child.clock.time) == 2
+    @test Reactant.to_number(nested.child.model.clock.time) == 2
     @test Reactant.to_number(parent.clock.time) == 2
 
     clock = NumericalEarth.EarthSystemModels.default_clock(ReactantState(), Float32)

@@ -284,28 +284,33 @@ function parent_prognostic(exchangers::NamedTuple)
     return NamedTuple{names}(map(exchanger -> exchanger.prognostic[name], exchangers) for name in names)
 end
 
-# Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
-# the derived prognostics only when the bracket moves (`force` fills it once at construction).
-function exchange_state!(ex::StateExchanger, time; force=false)
+# Advance the derived resident window (and the parent's own FTS windows) to hold every level the child
+# interpolates between `start_time` and `end_time`, recomputing the derived prognostics only when the
+# window moves (`force` fills it once at construction).
+exchange_state!(ex::StateExchanger, time; force=false) = exchange_state!(ex, time, time; force)
+
+function exchange_state!(ex::StateExchanger, start_time, end_time; force=false)
     parent = ex.parent
     p = ex.prognostic
 
-    # Position the 3-level window one level BELOW the bracket of `time` (= t + Δt from `time_step!`): the
-    # step's start t can sit in the previous interval [n₁-1, n₁] while `time` sits in [n₁, n₁+1], so a
-    # window spanning [n₁-1, n₁, n₁+1] keeps EVERY sub-stage query resident across a node crossing.
-    # A 2-level window cannot span the crossing — its start-side query returns a stale/wrong boundary target
-    # (the hourly-seam kick that tips the child at every ERA5 crossing).
-    # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
-    # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
     # Host copy of the times: a single time stays a device array (only 2+ evenly spaced times become a range)
     times = on_architecture(CPU(), p.ρᵈ.times)
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, time)
+    _, n_start, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, start_time)
+    _, n_end, _   = interpolating_time_indices(p.ρᵈ.time_indexing, times, end_time)
     N = length(times)
     window = length(p.ρᵈ.backend)
-    start = window >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - window + 1))
+
+    # A full window never moves. A streaming window starts at the bracket of `start_time` and must reach
+    # the level above the bracket of `end_time`.
+    window >= N || n_end - n_start + 2 <= window ||
+        throw(ArgumentError("the exchange interval [$start_time, $end_time] spans more parent levels than " *
+                            "the $window held in memory; increase `time_indices_in_memory` or shorten the " *
+                            "exchange interval."))
+
+    start = window >= N ? 1 : clamp(n_start, 1, max(1, N - window + 1))
 
     # Hold the child window's levels `start:start+window-1` in the parent's own (possibly limited-memory)
-    # FTS windows; they also bracket the parent's clock, which trails `time` by at most one interval.
+    # FTS windows; they also bracket the parent's clock, which sits at `end_time`.
     for fts in extract_field_time_series(parent)
         update_field_time_series!(fts, start, start + window - 1)
     end
