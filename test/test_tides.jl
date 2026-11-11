@@ -93,7 +93,7 @@ end
                                      longitude = (-74, -72),
                                      latitude = (34, 36),
                                      z = (-100, 0),
-                                     topology = (Bounded, Bounded, Bounded))
+                                     topology = (Open, Open, Bounded))
 
         tide = tidal_boundary_conditions(grid, harmonics, TPXO10Atlas(); dir)
 
