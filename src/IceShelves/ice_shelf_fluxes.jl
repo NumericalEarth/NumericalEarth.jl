@@ -38,15 +38,15 @@ function compute_ice_shelf_fluxes!(interface::IceShelfOceanInterface, model)
     launch!(arch, grid, :xy, _compute_ice_shelf_fluxes!,
             interface.fluxes, interface.temperature, interface.salinity,
             interface.friction_velocity, interface.k_draft, interface.ice_concentration, grid,
-            interface.flux_formulation, ice_shelf_liquidus(interface, model),
-            Tᵒᶜ, Sᵒᶜ, U², interface.properties)
+            interface.flux_formulation, interface.melt_physics, ice_shelf_liquidus(interface, model),
+            Tᵒᶜ, Sᵒᶜ, U², interface.properties, model.coriolis)
 
     return nothing
 end
 
 @kernel function _compute_ice_shelf_fluxes!(fluxes, T★, S★, u★_field, k_draft, ℵ, grid,
-                                            flux_formulation, liquidus,
-                                            Tᵒᶜ, Sᵒᶜ, U², properties)
+                                            flux_formulation, melt_physics, liquidus,
+                                            Tᵒᶜ, Sᵒᶜ, U², properties, coriolis)
     i, j = @index(Global, NTuple)
 
     FT = eltype(grid)
@@ -72,9 +72,10 @@ end
 
         u★ = ice_shelf_friction_velocity(flux_formulation.friction_velocity, i, j, kd, grid, U², H_TBL)
 
-        ocean_state = (; T = Tᵈ, S = Sᵈ)
+        f = interface_coriolis_parameter(melt_physics.transfer_coefficients, i, j, kd, grid, coriolis)
+        ocean_state = (; T = Tᵈ, S = Sᵈ, f)
         ice_state = (; S = Sˢⁱ, h = zero(FT), hc = zero(FT), ℵ = @inbounds(ℵ[i, j, 1]), T = zero(FT))
-        𝒬, q, Tᵦ, Sᵦ = ice_ocean_interface_fluxes(nothing, i, j, flux_formulation, ocean_state, ice_state,
+        𝒬, q, Tᵦ, Sᵦ = ice_ocean_interface_fluxes(melt_physics, i, j, flux_formulation, ocean_state, ice_state,
                                                  liquidus, zᵈ, properties, ℰ, u★)
 
         Jʷ = q / ρᵒᶜ
@@ -91,3 +92,7 @@ end
         u★_field[i, j, 1] = u★
     end
 end
+
+@inline interface_coriolis_parameter(transfer_coefficients, i, j, k, grid, coriolis) = zero(grid)
+@inline interface_coriolis_parameter(::RotatingBoundaryLayerTransfer, i, j, k, grid, coriolis) = convert(eltype(grid), fᶜᶜᵃ(i, j, k, grid, coriolis))
+@inline interface_coriolis_parameter(::RotatingBoundaryLayerTransfer, i, j, k, grid, ::Nothing) = zero(grid)
