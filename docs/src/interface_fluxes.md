@@ -314,8 +314,10 @@ its temperature and specific humidity as `scalar_layer_height`, which defaults t
 similarity profile is evaluated at the height of its own variable, so for ERA5, whose winds are at
 ``10 \, \mathrm{m}`` and whose temperature and dewpoint are at ``2 \, \mathrm{m}``, the momentum
 profile is taken at ``h = 10 \, \mathrm{m}`` and the temperature and humidity profiles at
-``h = 2 \, \mathrm{m}``. `CoefficientBasedFluxes` take every variable at one height and reject
-an atmosphere whose two heights differ.
+``h = 2 \, \mathrm{m}``. `LargeYeagerTransferCoefficients` do the same: the drag coefficient is shifted
+from 10 m to the wind height and the heat and moisture coefficients to the height of the
+temperature and humidity. Other `CoefficientBasedFluxes` take every variable at one height and
+reject an atmosphere whose two heights differ.
 
 To compute fluxes with NumericalEarth, we build an `EarthSystemModel` with an atmosphere and ocean state
 concocted such that we can evaluate fluxes over a range of relative atmosphere and oceanic conditions.

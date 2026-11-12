@@ -277,9 +277,30 @@ end
     return Cd, Ch, Cq
 end
 
-# NCAR transfer coefficients: full L&Y stability correction (eqs. 6c-6d, 10a-10c)
+# The coefficients for winds at height `Δh` and temperature and humidity at `Δhᶿ`. Only Large & Yeager's
+# depend on the heights (`validate_layer_heights` rejects two heights for the others).
+@inline coefficients_at_heights(coeffs, ΔU, Tₛ, qₛ, Δh, Δhᶿ, approximate_interface_state, atmosphere_properties) =
+    evaluate_coefficients(coeffs, ΔU, Tₛ, qₛ, Δh, approximate_interface_state, atmosphere_properties)
+
+@inline coefficients_at_heights(ly::LargeYeagerTransferCoefficients, ΔU, Tₛ, qₛ, Δh, Δhᶿ,
+                                approximate_interface_state, atmosphere_properties) =
+    evaluate_coefficients(ly, ΔU, Tₛ, qₛ, Δh, Δhᶿ, approximate_interface_state, atmosphere_properties)
+
+@inline evaluate_coefficients(ly::LargeYeagerTransferCoefficients, ΔU, Tₛ, qₛ, Δh,
+                              approximate_interface_state, atmosphere_properties) =
+    evaluate_coefficients(ly, ΔU, Tₛ, qₛ, Δh, Δh, approximate_interface_state, atmosphere_properties)
+
+# NCAR transfer coefficients: full L&Y stability correction (eqs. 6c-6d, 10a-10c), for winds at height `Δh` and
+# temperature and humidity at `Δhᶿ`. The drag coefficient is the wind height's; the heat and moisture coefficients
+# relate the fluxes to the wind at `Δh` and the temperature and humidity differences at `Δhᶿ`:
+#
+#     Cₕ = √C_d ϰ / (log(Δhᶿ / ℓθ₀) - ψₕ(Δhᶿ / L★))
+#        = Cₕᴺ √(C_d / C_dᴺ) / (1 + Cₕᴺ (log(Δhᶿ / h₀) - ψₕ(Δhᶿ / L★)) / (ϰ √C_dᴺ)),
+#
+# with the 10 m neutral Stanton number Cₕᴺ = √C_dᴺ ϰ / log(h₀ / ℓθ₀), which is L&Y eq. 10c with the scalar
+# height in the profile, and equivalent to their shift of the temperature and humidity to 10 m (L&Y 2004, sec. 2.1).
 @inline function evaluate_coefficients(ly::LargeYeagerTransferCoefficients,
-                                       ΔU, Tₛ, qₛ, Δh,
+                                       ΔU, Tₛ, qₛ, Δh, Δhᶿ,
                                        approximate_interface_state,
                                        atmosphere_properties)
 
@@ -301,10 +322,11 @@ end
     b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
     L★ = ifelse(b★ == 0, convert(FT, Inf), u★^2 / (κ * b★))
     ζ  = Δh / L★
+    ζᶿ = Δhᶿ / L★
 
-    # Stability functions
+    # Stability functions, for the winds at their height and the temperature and humidity at theirs
     ψₘ = stability_profile(ly.stability_functions.momentum, ζ)
-    ψₕ = stability_profile(ly.stability_functions.temperature, ζ)
+    ψₕ = stability_profile(ly.stability_functions.temperature, ζᶿ)
 
     # Neutral 10-m wind speed
     Cdp  = ifelse(u★ == 0, neutral_drag(ΔU), u★^2 / ΔU^2)
@@ -319,12 +341,13 @@ end
     ChN = sqrt(CdN) / 1000 * ifelse(stable, ly.stable_heat_transfer_coefficient, ly.unstable_heat_transfer_coefficient)
     CqN = sqrt(CdN) / 1000 * ly.moisture_transfer_coefficient
 
-    # Stability corrections (L&Y eq. 10a-10c)
+    # Stability and height corrections (L&Y eq. 10a-10c)
     χs = log(Δh / h₀)
+    χᶿ = log(Δhᶿ / h₀)
     ξₘ = sqrt(CdN) / κ * (χs - ψₘ)
     Cd = CdN / (1 + ξₘ)^2
 
-    ξₕ = (χs - ψₕ) / (κ * sqrt(CdN))
+    ξₕ = (χᶿ - ψₕ) / (κ * sqrt(CdN))
     ratio = sqrt(Cd) / sqrt(CdN)
 
     Ch = ChN * ratio / (1 + ChN * ξₕ)
@@ -339,15 +362,20 @@ end
 
 validate_layer_heights(flux_formulation, zᵃᵗ, zᶿ) = nothing
 
-function validate_layer_heights(::CoefficientBasedFluxes, zᵃᵗ, zᶿ)
-    zᶿ === zᵃᵗ || zᶿ == zᵃᵗ ||
-        throw(ArgumentError("CoefficientBasedFluxes take the temperature and humidity at the velocity height, " *
-                            "but the atmosphere's scalar_layer_height differs from its surface_layer_height"))
+# Whether the transfer coefficients can take the temperature and humidity at a height of their own
+separate_scalar_height(transfer_coefficients) = false
+separate_scalar_height(::LargeYeagerTransferCoefficients) = true
+
+function validate_layer_heights(fluxes::CoefficientBasedFluxes, zᵃᵗ, zᶿ)
+    separate_scalar_height(fluxes.transfer_coefficients) || zᶿ === zᵃᵗ || zᶿ == zᵃᵗ ||
+        throw(ArgumentError("These transfer coefficients take the temperature and humidity at the velocity height, " *
+                            "but the atmosphere's scalar_layer_height differs from its surface_layer_height " *
+                            "(LargeYeagerTransferCoefficients take each at its own height)"))
     return nothing
 end
 
-# The transfer coefficients take every variable at the velocity height `Δh`, so
-# `validate_layer_heights` rejects a temperature and humidity height `Δhᶿ` that differs.
+# Large & Yeager's coefficients take the winds at `Δh` and the temperature and humidity at `Δhᶿ`; the others
+# take every variable at `Δh`, so `validate_layer_heights` rejects a `Δhᶿ` that differs.
 @inline function iterate_interface_fluxes(flux_formulation::CoefficientBasedFluxes,
                                           Tₛ, qₛ, Δθ, Δq, Δh, Δhᶿ,
                                           approximate_interface_state,
@@ -362,10 +390,10 @@ end
     Umin = minimum_wind_speed(flux_formulation.transfer_coefficients)
     ΔU   = max(sqrt(Δu^2 + Δv^2), Umin)
 
-    Cd, Ch, Cq = evaluate_coefficients(flux_formulation.transfer_coefficients,
-                                       ΔU, Tₛ, qₛ, Δh,
-                                       approximate_interface_state,
-                                       atmosphere_properties)
+    Cd, Ch, Cq = coefficients_at_heights(flux_formulation.transfer_coefficients,
+                                         ΔU, Tₛ, qₛ, Δh, Δhᶿ,
+                                         approximate_interface_state,
+                                         atmosphere_properties)
 
     u★ = sqrt(Cd) * ΔU
     θ★ = ifelse(Cd == 0, zero(Δθ), Ch / sqrt(Cd) * Δθ)

@@ -68,7 +68,7 @@ end
 end
 
 # Single-column coupled model whose atmosphere-ocean fluxes use `flux_formulation`.
-function coefficient_based_fluxes(arch, flux_formulation)
+function coefficient_based_fluxes(arch, flux_formulation; scalar_layer_height = nothing)
     grid = LatitudeLongitudeGrid(arch;
                                  size = 1,
                                  latitude = 10,
@@ -83,6 +83,18 @@ function coefficient_based_fluxes(arch, flux_formulation)
                              bottom_drag_coefficient = 0)
 
     atmosphere = synthetic_prescribed_atmosphere(arch)
+
+    # the same atmosphere with its temperature and humidity at a height of their own
+    if !isnothing(scalar_layer_height)
+        atmosphere = PrescribedAtmosphere(atmosphere.grid, atmosphere.times;
+                                          velocities = atmosphere.velocities,
+                                          temperature = atmosphere.temperature,
+                                          specific_humidity = atmosphere.specific_humidity,
+                                          pressure = atmosphere.pressure,
+                                          precipitation_flux = atmosphere.precipitation_flux,
+                                          scalar_layer_height)
+    end
+
     interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=flux_formulation)
 
     set!(ocean.model, T=15, S=35)
@@ -109,5 +121,27 @@ end
             @test isfinite(fluxes.water_vapor[1, 1, 1])
             @test fluxes.friction_velocity[1, 1, 1] > 0
         end
+    end
+end
+
+@testset "CoefficientBasedFluxes with the temperature and humidity at 2 m" begin
+    for arch in test_architectures
+        ly() = CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                      solver_stop_criteria = FixedIterations(5))
+
+        # Large & Yeager take the winds at 10 m and the temperature and humidity at 2 m
+        one_height  = coefficient_based_fluxes(arch, ly())
+        two_heights = coefficient_based_fluxes(arch, ly(); scalar_layer_height = 2)
+
+        CUDA.@allowscalar begin
+            @test isfinite(two_heights.sensible_heat[1, 1, 1])
+            @test isfinite(two_heights.latent_heat[1, 1, 1])
+            @test two_heights.sensible_heat[1, 1, 1] != one_height.sensible_heat[1, 1, 1]
+            @test two_heights.latent_heat[1, 1, 1] != one_height.latent_heat[1, 1, 1]
+        end
+
+        # fixed coefficients cannot move the temperature and humidity to the wind height
+        constant = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3))
+        @test_throws ArgumentError coefficient_based_fluxes(arch, constant; scalar_layer_height = 2)
     end
 end
