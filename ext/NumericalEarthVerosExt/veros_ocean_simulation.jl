@@ -1,7 +1,7 @@
 using Oceananigans.Grids: Grids, topology
 using Oceananigans.Fields: set!
 using NumericalEarth: NumericalEarth
-using NumericalEarth.EarthSystemModels: EarthSystemModel, ocean_salinity
+using NumericalEarth.EarthSystemModels: EarthSystemModel
 
 const veros_version = "1.6.2"
 const veros_requirements_url = "https://raw.githubusercontent.com/team-ocean/veros/v$(veros_version)/requirements.txt"
@@ -9,9 +9,10 @@ const veros_requirements_url = "https://raw.githubusercontent.com/team-ocean/ver
 """
     install_veros()
 
-Install the Veros ocean model Marine CLI using CondaPkg.
+Install the Veros ocean model Marine CLI and its JAX backend using CondaPkg.
 Returns a NamedTuple containing package information if successful.
 Also patches Veros's signal handling to work with PythonCall.
+Installing can replace the Python of the running session, so restart Julia before using Veros.
 """
 function install_veros()
     # Veros' setup.py rewrites every `==` pin in its requirements.txt into a `<=` cap,
@@ -27,7 +28,7 @@ function install_veros()
         CondaPkg.add(package_name; version="<=" * pinned_version, channel="conda-forge", resolve=false)
     end
 
-    CondaPkg.add_pip("veros", version="==" * veros_version)
+    CondaPkg.add_pip("veros", version="==" * veros_version, extras=["jax"])
     cli = CondaPkg.which("veros")
 
     # Patch signal handling as early as possible
@@ -94,65 +95,33 @@ function patch_veros_signal_handling()
     """, Main)
 end
 
-struct VerosOceanSimulation{S}
-    setup :: S
+struct VerosOceanSimulation{S, G, E, F}
+    setup         :: S
+    grid          :: G
+    surface_state :: E
+    net_fluxes    :: F
 end
 
-Oceananigans.initialize!(::VerosOceanSimulation{Py}) = nothing
-Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
+Oceananigans.initialize!(::VerosOceanSimulation) = nothing
 
 function Oceananigans.TimeSteppers.time_step!(ocean::VerosOceanSimulation, Δt)
-    # Align the timesteps
     set!(ocean, "dt_tracer", Δt; path=:settings)
     set!(ocean, "dt_mom",    Δt; path=:settings)
-
-    # Time-step
     ocean.setup.step(ocean.setup.state)
+    NumericalEarth.EarthSystemModels.update_surface_state!(ocean.surface_state, ocean)
+    return nothing
 end
 
-Base.eltype(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = Float64
-Oceananigans.Architectures.architecture(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = CPU()
+Base.eltype(::VerosOceanSimulation) = Float64
 
 NumericalEarth.EarthSystemModels.reference_density(ocean::VerosOceanSimulation) = pyconvert(eltype(ocean), ocean.setup.state.settings.rho_0)
-NumericalEarth.EarthSystemModels.heat_capacity(ocean::VerosOceanSimulation) = convert(eltype(ocean), 3995)
+NumericalEarth.EarthSystemModels.heat_capacity(ocean::VerosOceanSimulation) = convert(eltype(ocean), 3991.86795711963)
 
-function NumericalEarth.EarthSystemModels.ocean_surface_velocities(ocean::VerosOceanSimulation)
-    u = PyArray(ocean.setup.state.variables.u)
-    v = PyArray(ocean.setup.state.variables.v)
-    Nxu, Nyu, Nzu = size(u)
-    Nxv, Nyv, Nzv = size(v)
-    grid = surface_grid(ocean)
-    TX, TY, _  = topology(grid)
-    i_indices  = TX == Periodic ? UnitRange(3, Nxu-2) : UnitRange(2, Nxu-2)
-
-    u_view = view(u, i_indices, 3:Nyu-2, Nzu, 1)
-    v_view = view(v, 3:Nxv-2,   2:Nyv-2, Nzv, 1)
-
-    return u_view, v_view
-end
-
-function NumericalEarth.EarthSystemModels.ocean_surface_salinity(ocean::VerosOceanSimulation)
-    S = ocean_salinity(ocean)
-    Nx, Ny, Nz = size(S)
-    return view(S, :, :, Nz)
-end
-
-# Veros hardcodes 2 halos in the x and y direction,
-# and each prognostic variable is 4 dimensional, where the first three dimensions
-# are x, y, z, and the last index differentiate between variable, tendency at n and tendency at n-1
-function NumericalEarth.EarthSystemModels.ocean_temperature(ocean::VerosOceanSimulation)
-    T = PyArray(ocean.setup.state.variables.temp)
-    Nx, Ny, Nz = size(T)
-    return view(T, 3:Nx-2, 3:Ny-2, 1:Nz, 1)
-end
-
-# Veros hardcodes 2 halos in the x and y direction,
-# and each prognostic variable is 4 dimensional, where the first three dimensions
-# are x, y, z, and the last index differentiate between variable, tendency at n and tendency at n-1
-function NumericalEarth.EarthSystemModels.ocean_salinity(ocean::VerosOceanSimulation)
-    S = PyArray(ocean.setup.state.variables.salt)
-    Nx, Ny, Nz = size(S)
-    return view(S, 3:Nx-2, 3:Ny-2, 1:Nz, 1)
+# Prognostic variables carry three time levels in their last dimension, and `tau` rotates through them every step.
+function current_time_level(ocean::VerosOceanSimulation, name)
+    variables = ocean.setup.state.variables
+    τ = pyconvert(Int, variables.tau.item()) + 1
+    return selectdim(PyArray(getproperty(variables, name)), 4, τ)
 end
 
 function remove_outputs(setup::Symbol)
@@ -163,116 +132,124 @@ function remove_outputs(setup::Symbol)
     return nothing
 end
 
-const CCField2D = Field{<:Center, <:Center, <:Nothing}
-const FCField2D = Field{<:Face,   <:Center, <:Nothing}
-const CFField2D = Field{<:Center, <:Face,   <:Nothing}
-
-function Oceananigans.Fields.set!(field::CCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
-    array = PyArray(pyarray)
-    Nx, Ny, Nz = size(array)
-    set!(field, view(array, 3:Nx-2, 3:Ny-2, k, 1))
-    return field
-end
-
-function Oceananigans.Fields.set!(field::FCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
-    array = PyArray(pyarray)
-    Nx, Ny, Nz = size(array)
-    TX, TY, _  = topology(field.grid)
-    i_indices  = TX == Periodic ? UnitRange(3, Nx-2) : UnitRange(2, Nx-2)
-    set!(field, view(array, i_indices, 3:Ny-2, k, 1))
-    return field
-end
-
-function Oceananigans.Fields.set!(field::CFField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
-    array = PyArray(pyarray)
-    Nx, Ny, Nz = size(array)
-    set!(field, view(array, 3:Nx-2, 2:Ny-2, k, 1))
-    return field
-end
-
 """
-    VerosOceanSimulation(setup, setup_name::Symbol)
+    VerosOceanSimulation(setup, setup_name::Symbol; backend)
 
 Creates and initializes a preconfigured Veros ocean simulation using the
-specified setup module and setup name.
+specified setup module and setup name. The setup's `set_forcing` is replaced
+so that the surface fluxes of the coupled model force the ocean.
 
 Arguments
 ==========
 - `setup::AbstractString`: The name of the Veros setup module to import (e.g., `"global_4deg"`).
 - `setup_name::Symbol`: The name of the setup class or function within the module to instantiate (e.g., `:GlobalFourDegreeSetup`).
+
+Keyword Arguments
+=================
+- `backend`: Veros's array backend, `"numpy"` or `"jax"`. Default: `VEROS_BACKEND` if set, otherwise `"numpy"`.
 """
-function VerosOceanSimulation(setup::String, setup_name::Symbol)
+function VerosOceanSimulation(setup::String, setup_name::Symbol; backend=get(ENV, "VEROS_BACKEND", "numpy"))
     # Patch signal handling BEFORE importing any Veros modules
     # Veros may set up signal handlers during module import
     patch_veros_signal_handling()
 
+    # Veros refuses any assignment to its settings once its core modules are loaded, even of the same value
+    runtime_settings = pyimport("veros").runtime_settings
+    pyconvert(String, runtime_settings.backend) == backend || (runtime_settings.backend = backend)
+
     setups = pyimport("veros.setups." * setup)
     ocean  = @eval $setups.$setup_name()
-
-    # Patch again before setup() in case Veros imports more modules
-    patch_veros_signal_handling()
 
     # Remove any existing output files to avoid "file exists" errors from Veros diagnostics
     remove_outputs(Symbol(setup))
 
-    # instantiate the setup
-    ocean.setup()
-
     return VerosOceanSimulation(ocean)
+end
+
+function VerosOceanSimulation(setup::Py)
+    patch_veros_signal_handling()
+    setup.setup()
+
+    # The only forcing left to Veros is the surface TKE input, which follows from the coupled wind stress.
+    pyexec("""
+    def set_tke_forcing(state):
+        from veros.core.operators import numpy as npx, update, at
+
+        vs = state.variables
+        settings = state.settings
+
+        if settings.enable_tke:
+            vs.forc_tke_surface = update(
+                vs.forc_tke_surface,
+                at[1:-1, 1:-1],
+                npx.sqrt(
+                    (0.5 * (vs.surface_taux[1:-1, 1:-1] + vs.surface_taux[:-2, 1:-1]) / settings.rho_0) ** 2
+                    + (0.5 * (vs.surface_tauy[1:-1, 1:-1] + vs.surface_tauy[1:-1, :-2]) / settings.rho_0) ** 2
+                ) ** 1.5,
+            )
+
+    setup.set_forcing = set_tke_forcing
+    """, Main, (; setup))
+
+    grid = surface_grid(setup)
+
+    surface_state = (; u = Field{Face, Center, Nothing}(grid),
+                       v = Field{Center, Face, Nothing}(grid),
+                       T = Field{Center, Center, Nothing}(grid),
+                       S = Field{Center, Center, Nothing}(grid))
+
+    net_fluxes = (; u = Field{Face, Center, Nothing}(grid),
+                    v = Field{Center, Face, Nothing}(grid),
+                    T = Field{Center, Center, Nothing}(grid),
+                    S = Field{Center, Center, Nothing}(grid),
+                    η = Field{Center, Center, Nothing}(grid),
+                    freshwater_heat_content = Field{Center, Center, Nothing}(grid),
+                    u_coefficient = Field{Face, Center, Nothing}(grid),
+                    v_coefficient = Field{Center, Face, Nothing}(grid))
+
+    return VerosOceanSimulation(setup, grid, surface_state, net_fluxes)
 end
 
 # We assume that if we pass a python object, this is a veros simulation
-function NumericalEarth.Oceans.ocean_simulation(ocean::Py)
-    # Patch Veros's signal handling before initializing
-    patch_veros_signal_handling()
+NumericalEarth.Oceans.ocean_simulation(ocean::Py) = VerosOceanSimulation(ocean)
 
-    # instantiate the setup
-    ocean.setup()
+Grids.grid(ocean::VerosOceanSimulation) = ocean.grid
 
-    return VerosOceanSimulation(ocean)
-end
+function surface_grid(setup)
+    variables = setup.state.variables
+    settings = setup.state.settings
 
-Grids.grid(ocean::VerosOceanSimulation) = surface_grid(ocean)
+    xf = Array(PyArray(variables.xu))[2:end-2]
+    yf = Array(PyArray(variables.yu))[2:end-2]
+    xc = Array(PyArray(variables.xt))[3:end-2]
+    yc = Array(PyArray(variables.yt))[3:end-2]
 
-"""
-    surface_grid(ocean::VerosOceanSimulation)
+    # The western face sits in the halo, which holds the wrapped longitude in a periodic domain.
+    xf[1] = 2xc[1] - xf[2]
+    yf[1] = 2yc[1] - yf[2]
 
-Constructs a `LatitudeLongitudeGrid` representing the surface grid of the given `VerosOceanSimulation` object.
-Notes: Veros always uses a LatitudeLongitudeGrid with 2 halos in both the latitude and longitude directions.
-Both latitude and longitude can be either stretched or uniform, depending on the setup, and while the meridional
-direction (latitude) is always Bounded, the zonal direction (longitude) can be either Periodic or Bounded.
-
-Arguments
-==========
-- `ocean::VerosOceanSimulation`: The ocean simulation object containing the grid state variables.
-"""
-function surface_grid(ocean::VerosOceanSimulation)
-
-    xf = Array(PyArray(ocean.setup.state.variables.xu))
-    yf = Array(PyArray(ocean.setup.state.variables.yu))
-
-    xc = Array(PyArray(ocean.setup.state.variables.xt))
-    yc = Array(PyArray(ocean.setup.state.variables.yt))
-
-    xf = xf[2:end-2]
-    yf = yf[2:end-2]
-
-    xc = xc[3:end-2]
-    yc = yc[3:end-2]
-
-    xf[1] = xf[2] - 2xc[1]
-    yf[1] = sign(yf[2]) * (yf[2] - 2yc[1])
-
-    TX = if xf[1] == 0 && xf[end] == 360
-        Periodic
-    else
-        Bounded
-    end
-
+    Δzᴺ = PyArray(variables.dzt)[end]
+    TX = pyconvert(Bool, settings.enable_cyclic_x) ? Periodic : Bounded
     Nx = length(xc)
     Ny = length(yc)
 
-    return LatitudeLongitudeGrid(size=(Nx, Ny), longitude=xf, latitude=yf, topology=(TX, Bounded, Flat), halo=(2, 2))
+    # TODO: fix in Oceananigans; its metrics on a stretched longitude end one point short of ClimaSeaIce's rheology in the halos
+    Δλ = diff(xf)
+    longitude = all(≈(first(Δλ)), Δλ) ? (first(xf), last(xf)) : xf
+
+    grid = LatitudeLongitudeGrid(size = (Nx, Ny, 1),
+                                 longitude = longitude,
+                                 latitude = yf,
+                                 z = (-Δzᴺ, 0),
+                                 topology = (TX, Bounded, Bounded),
+                                 halo = (7, 7, 1),
+                                 radius = pyconvert(Float64, settings.radius))
+
+    maskT = PyArray(variables.maskT)
+    surface_mask = view(maskT, 3:Nx+2, 3:Ny+2, size(maskT, 3))
+    bottom_height = ifelse.(surface_mask .> 0, -2Δzᴺ, 0)
+
+    return ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 end
 
 """
