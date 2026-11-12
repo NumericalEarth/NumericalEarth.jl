@@ -103,7 +103,6 @@ struct VerosOceanSimulation{S, G, E, F}
 end
 
 Oceananigans.initialize!(::VerosOceanSimulation) = nothing
-Oceananigans.Diagnostics.default_nan_checker(::EarthSystemModel{<:Any, <:Any, <:Any, <:Any, <:VerosOceanSimulation}) = nothing
 
 function Oceananigans.TimeSteppers.time_step!(ocean::VerosOceanSimulation, Δt)
     set!(ocean, "dt_tracer", Δt; path=:settings)
