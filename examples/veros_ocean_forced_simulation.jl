@@ -4,7 +4,7 @@
 # near-global ocean simulation at 4-degree resolution using the Veros ocean model on its
 # JAX backend. The ocean is forced by the JRA55 reanalysis data
 #
-# For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
+# For this example, we need Oceananigans, NumericalEarth, and
 # CairoMakie to visualize the simulation.
 
 using NumericalEarth
