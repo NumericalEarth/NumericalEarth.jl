@@ -1,7 +1,4 @@
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
-const COL  = NumericalEarth.DataWrangling.Column
-const LIN  = NumericalEarth.DataWrangling.Linear
-const NR   = NumericalEarth.DataWrangling.Nearest
 
 """
 $(TYPEDSIGNATURES)

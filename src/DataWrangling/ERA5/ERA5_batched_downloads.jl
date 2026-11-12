@@ -44,6 +44,18 @@ function group_by_calendar_month(datetimes)
                 for k in keys)
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+The file serving `name` at `date` for a download into `dir`: with `skip_existing`, the cached
+file that holds it if there is one; otherwise the file the download writes.
+"""
+function era5_download_path(dataset, name, date; region, dir, skip_existing)
+    metadatum = Metadatum(name; dataset, date, region, dir)
+    skip_existing && return metadata_path(metadatum)
+    return joinpath(dir, metadatum.filename)
+end
+
 fields_per_datetime(dataset::ERA5Dataset)               = 1
 fields_per_datetime(dataset::ERA5PressureLevelsDataset) = length(dataset.pressure_levels)
 
