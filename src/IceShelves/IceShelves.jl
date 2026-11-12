@@ -5,6 +5,7 @@ export IceShelfOceanInterface,
        VelocityBasedFrictionVelocity,
        compute_ice_shelf_fluxes!,
        ice_shelf_boundary_conditions,
+       ice_shelf_boundary_layer_closure,
        ice_shelf_tracer_forcing
 
 using Oceananigans: Oceananigans
@@ -37,5 +38,6 @@ include("ice_shelf_ocean_interface.jl")
 include("ice_shelf_fluxes.jl")
 include("ice_shelf_boundary_conditions.jl")
 include("ice_shelf_tracer_forcing.jl")
+include("ice_shelf_boundary_layer_mixing.jl")
 
 end # module IceShelves
