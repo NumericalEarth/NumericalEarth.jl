@@ -4,7 +4,8 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
-using Oceananigans.Grids: Sides, Closed, CenterFolded, FaceFolded, generate_coordinate, longitude_in_same_window
+using Oceananigans.Grids: Sides, Closed, CenterFolded, FaceFolded, generate_coordinate, longitude_in_same_window,
+                          validate_dimension_specification
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
@@ -410,7 +411,7 @@ Keyword Arguments
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
-- `Nz`: Number of vertical levels (only used when `z` is a 2-tuple). Default: `50`.
+- `Nz`: Number of vertical levels. Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
 - `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
@@ -419,6 +420,8 @@ Keyword Arguments
 - `major_basins`: Number of independent connected ocean basins to retain via
                   [`remove_minor_basins!`](@ref). Basins are removed from smallest to largest;
                   `major_basins = 1` keeps only the largest. Default: `Inf` (keep all basins).
+- `minimum_depth`: Minimum depth [m] of the wet columns, defined as a positive value; shallower wet columns are
+                   deepened to it. Default: 0.
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
@@ -434,6 +437,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   with_bathymetry = true,
                   active_cells_map = true,
                   major_basins = Inf,
+                  minimum_depth = 0,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
                   dir = default_download_directory(dataset))
 
@@ -478,6 +482,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     Hx, Hy, Hz = halo
 
     topo = (Periodic, fold_topology, Bounded)
+    z = validate_dimension_specification(Bounded, z, :z, Nz, FT)
     Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),
@@ -542,6 +547,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     bottom_field = Field{Center, Center, Nothing}(underlying_grid)
     set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid, arch, FT, major_basins))
+    launch!(arch, underlying_grid, :xy, _enforce_minimum_depth!, bottom_field, minimum_depth)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
 end

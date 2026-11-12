@@ -603,14 +603,14 @@ Adapt.@adapt_structure SoilConductiveFlux
     return Tⁱⁿ⁺
 end
 
-# Bare ice: R = hᵢ / kᵢ
+# Bare ice
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
                                           Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     R  = thermal_resistance(st.internal_flux, Ψᵢ.hi)
     return conductive_flux_balance_temperature(st, R, Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
-# Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
+# Snow + ice
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
                                           Ψⁱⁿ, interface_formulation, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     R  = thermal_resistance(st.internal_flux, Ψᵢ.hi, Ψᵢ.hs)
