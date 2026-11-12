@@ -119,12 +119,17 @@ jobs:
 
           using CUDA
           CUDA.precompile_runtime()
-      - name: Install Veros in docs CondaPkg environment
+      - name: Install Veros and ACE in docs CondaPkg environment
         run: |
           julia --project=docs --color=yes -e '
               using NumericalEarth, CondaPkg, PythonCall
-              VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+              VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt)
               VerosModule.install_veros()
+          '
+          julia --project=docs --color=yes -e '
+              using NumericalEarth, CondaPkg, PythonCall
+              ACEModule = Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt)
+              ACEModule.install_ace()
           '
       - name: Build documentation
         env:

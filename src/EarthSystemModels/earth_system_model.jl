@@ -146,6 +146,12 @@ $(TYPEDSIGNATURES)
 
 Return the radiation component of an `atmosphere` that computes its own radiation, and `nothing`
 for any other atmosphere. It is the radiation of an [`EarthSystemModel`](@ref) given none.
+
+Keyword arguments
+=================
+
+- `ocean_surface`: `SurfaceRadiationProperties` of the ocean. Default: albedo 0.05, `default_water_emissivity`.
+- `sea_ice_surface`: `SurfaceRadiationProperties` of the sea ice. Default: albedo 0.7, emissivity 1.
 """
 atmosphere_radiation(atmosphere; kw...) = nothing
 

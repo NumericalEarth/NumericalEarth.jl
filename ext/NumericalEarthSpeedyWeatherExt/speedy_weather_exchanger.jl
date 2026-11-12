@@ -1,8 +1,5 @@
 using Oceananigans.Architectures: architecture
-using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Fields: compute!
-using Oceananigans.Grids: inactive_node
-using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, regrid_surface_field!
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, exchange_over_water, regrid_over_water!
 
 # The fluxes go straight to SpeedyWeather's prognostic ocean in `update_net_fluxes!`
 NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(::SpeedySimulation) = nothing
@@ -35,19 +32,9 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     end
 
     exchanger = invoke(ComponentExchanger, Tuple{Any, Any}, atmosphere, exchange_grid; correction)
-
-    wet_mask = Field(KernelFunctionOperation{Center, Center, Nothing}(wet_cell, exchange_grid))
-    compute!(wet_mask)
-    wet_field = Field{Center, Center, Nothing}(exchange_grid)
     wet_fraction = similar(atmosphere.variables.prognostic.ocean.sea_surface_temperature.data)
-    regrid_surface_field!(wet_fraction, exchanger.regridder.exchange.to_component, wet_mask)
-
-    regridder = merge(exchanger.regridder, (; wet_mask, wet_field, wet_fraction))
-
-    return ComponentExchanger(exchanger.state, regridder, exchanger.correction)
+    return exchange_over_water(exchanger, exchange_grid, wet_fraction)
 end
-
-@inline wet_cell(i, j, k, grid) = !inactive_node(i, j, size(grid, 3), grid, Center(), Center(), Center())
 
 function NumericalEarth.EarthSystemModels.update_surface_state!(state, atmos::SpeedySimulation)
     surface_layer   = atmos.model.spectral_grid.nlayers
@@ -67,14 +54,6 @@ function NumericalEarth.EarthSystemModels.update_surface_state!(state, atmos::Sp
     haskey(parameterizations, :snow_rate) && (state.Jˢⁿ .= parameterizations.snow_rate.data)
 
     return nothing
-end
-
-# The area average over the water below each atmospheric cell, the per-unit-ocean value that SpeedyWeather reads
-function regrid_over_water!(destination, regridder, field)
-    parent(regridder.wet_field) .= parent(regridder.wet_mask) .* parent(field)
-    regrid_surface_field!(destination, regridder.exchange.to_component, regridder.wet_field)
-    destination .= ifelse.(regridder.wet_fraction .> 0, destination ./ regridder.wet_fraction, destination)
-    return destination
 end
 
 function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::SpeedySimulation)

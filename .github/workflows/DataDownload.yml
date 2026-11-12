@@ -98,7 +98,7 @@ jobs:
           fi
           echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       # From the root project `PythonCall` is a weakdep, so CondaPkg installs no Python and
-      # `NumericalEarthVerosExt` fails to precompile; `test` has it as a direct dep.
+      # `NumericalEarthPythonCallExt` fails to precompile; `test` has it as a direct dep.
       - name: Instantiate test environment
         timeout-minutes: 60
         shell: bash

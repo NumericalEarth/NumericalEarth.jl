@@ -153,6 +153,7 @@ export
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
+    ACE2ERA5,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
@@ -296,6 +297,7 @@ using .DataWrangling.EN4
 using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
+using .DataWrangling.ACE
 using .DataWrangling.GloFAS
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
