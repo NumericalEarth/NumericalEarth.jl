@@ -22,13 +22,13 @@ using Printf
 # time in the workflow. For a fresh local environment, run
 #
 # ```julia
-# VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+# VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt)
 # VerosModule.install_veros()
 # ```
 #
 # once and restart Julia before executing this example.
 
-VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt)
 
 VerosModule.remove_outputs(:global_4deg)
 

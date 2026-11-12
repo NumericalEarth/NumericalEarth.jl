@@ -71,10 +71,10 @@ NumericalEarthCopernicusMarineExt = "CopernicusMarine"
 NumericalEarthMakieExt = "Makie"
 NumericalEarthNaturalEarthExt = ["NaturalEarth", "GeoInterface"]
 NumericalEarthOceanBioMEExt = "OceanBioME"
+NumericalEarthPythonCallExt = ["PythonCall", "CondaPkg"]
 NumericalEarthReactantExt = "Reactant"
 NumericalEarthSpeedyWeatherExt = "SpeedyWeather"
 NumericalEarthTerrariumExt = "Terrarium"
-NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 NumericalEarthZarrExt = "Zarr"
 

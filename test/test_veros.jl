@@ -7,7 +7,7 @@ using Oceananigans.Fields: interior
 using PythonCall, CondaPkg
 
 @testset "Veros ocean model interface" begin
-    VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+    VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt)
     @test !isnothing(VerosModule)
 
     ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)

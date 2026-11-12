@@ -41,7 +41,8 @@ remote_data_tests = ["test_bathymetry",
                      "test_dataset_region",
                      "test_diagnostics_1",
                      "test_mangling",
-                     "test_veros"]
+                     "test_veros",
+                     "test_ace"]
 
 if filter_tests!(testsuite, args)
     # Network probes run only from the DataDownload workflow, which names them explicitly
@@ -61,6 +62,7 @@ if filter_tests!(testsuite, args)
         # Remove CPU-only tests when testing on GPUs
         delete!(testsuite, "test_speedy_coupling")
         delete!(testsuite, "test_veros")
+        delete!(testsuite, "test_ace")
     else
         # Remove the slowest tests from CPU CI to keep total runtime
         # manageable; GPU CI still runs them. See issue #193.
@@ -92,8 +94,13 @@ end
 
 # Installing Veros can replace Python, so it runs before any test process starts one
 if haskey(testsuite, "test_veros")
-    install_veros = "using NumericalEarth, CondaPkg, PythonCall; Base.get_extension(NumericalEarth, :NumericalEarthVerosExt).install_veros()"
+    install_veros = "using NumericalEarth, CondaPkg, PythonCall; Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt).install_veros()"
     run(`$(Base.julia_cmd()) --project=$(Base.active_project()) -e $install_veros`)
+end
+
+if haskey(testsuite, "test_ace")
+    install_ace = "using NumericalEarth, CondaPkg, PythonCall; Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt).install_ace()"
+    run(`$(Base.julia_cmd()) --project=$(Base.active_project()) -e $install_ace`)
 end
 
 runtests(NumericalEarth, args; testsuite)

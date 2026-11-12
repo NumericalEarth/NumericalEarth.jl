@@ -434,6 +434,7 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("ACE/ACE.jl")
 include("GloFAS/GloFAS.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
@@ -458,6 +459,7 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .ACE
 using .GloFAS
 using .OpenLandMap
 using .IBCSO

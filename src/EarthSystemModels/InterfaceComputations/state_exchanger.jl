@@ -1,4 +1,6 @@
-using Oceananigans.Grids: AbstractGrid, nodes
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Fields: compute!
+using Oceananigans.Grids: AbstractGrid, inactive_node, nodes
 using Oceananigans.ImmersedBoundaries: underlying_grid
 using Oceananigans.Operators: extrinsic_vector, intrinsic_vector
 using Oceananigans.Utils: launch!, unparameterized_type
@@ -191,3 +193,22 @@ end
 # fallback
 Oceananigans.initialize!(::Nothing, grid, component) = nothing
 Oceananigans.initialize!(exchanger::ComponentExchanger, grid, component) = nothing
+
+@inline wet_cell(i, j, k, grid) = !inactive_node(i, j, size(grid, 3), grid, Center(), Center(), Center())
+
+function exchange_over_water(exchanger, exchange_grid, wet_fraction)
+    wet_mask = Field(KernelFunctionOperation{Center, Center, Nothing}(wet_cell, exchange_grid))
+    compute!(wet_mask)
+    wet_field = Field{Center, Center, Nothing}(exchange_grid)
+    regrid_surface_field!(wet_fraction, exchanger.regridder.exchange.to_component, wet_mask)
+    regridder = merge(exchanger.regridder, (; wet_mask, wet_field, wet_fraction))
+    return ComponentExchanger(exchanger.state, regridder, exchanger.correction)
+end
+
+# The area average over the water below each component cell
+function regrid_over_water!(destination, regridder, field)
+    parent(regridder.wet_field) .= parent(regridder.wet_mask) .* parent(field)
+    regrid_surface_field!(destination, regridder.exchange.to_component, regridder.wet_field)
+    destination .= ifelse.(regridder.wet_fraction .> 0, destination ./ regridder.wet_fraction, destination)
+    return destination
+end

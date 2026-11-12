@@ -46,6 +46,7 @@ examples = [
     # Near-global is the heaviest example (¼°, ~35M cells) and stays disabled.
     # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
     Example("Global climate simulation", "global_climate_simulation"; build_always=false, gpu=true),
+    Example("Ocean and sea ice under the Ai2 Climate Emulator", "ace_coupled_simulation"; build_always=false, gpu=true),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation"; build_always=false, gpu=false),
     Example("Breeze over four oceans", "breeze_over_four_oceans"; build_always=false, gpu=false),
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data"; build_always=true, gpu=false),
@@ -124,9 +125,9 @@ filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examp
 modules = Module[]
 NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : NumericalEarth.NumericalEarthBreezeExt
 NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
-NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
+NumericalEarthPythonCallExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthPythonCallExt) : NumericalEarth.NumericalEarthPythonCallExt
 
-for m in [NumericalEarth, NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt]
+for m in [NumericalEarth, NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthPythonCallExt]
     if !isnothing(m)
         push!(modules, m)
     end
@@ -163,7 +164,7 @@ end
 
 function write_api_md(filename; public)
     modules = get_submodules(NumericalEarth)
-    append!(modules, [NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt])
+    append!(modules, [NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthPythonCallExt])
     io = IOBuffer()
 
     title = public ? "Public API" : "Private API"
