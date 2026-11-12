@@ -6,7 +6,8 @@
 $(TYPEDSIGNATURES)
 
 Atmospheric state at cell `(i, j)`: the surface-layer velocities, temperature, pressure and specific
-humidity, with the elevation `z` at which they are taken and the boundary-layer height `h_bℓ`.
+humidity, with the elevation `z` of the velocities, the elevation `zᶿ` of the temperature and specific
+humidity, and the boundary-layer height `h_bℓ`.
 """
 @inline function local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
     @inbounds begin
@@ -18,6 +19,7 @@ humidity, with the elevation `z` at which they are taken and the boundary-layer 
     end
 
     return (z = state2dindex(atmosphere_properties.surface_layer_height, i, j),
+            zᶿ = state2dindex(atmosphere_properties.scalar_layer_height, i, j),
             u = uᵃᵗ,
             v = vᵃᵗ,
             T = Tᵃᵗ,

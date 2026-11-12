@@ -348,8 +348,8 @@ function surface_atmosphere_temperature(Ψₐ, ℙₐ)
     g  = ℙₐ.gravitational_acceleration
     Tᵃᵗ = Ψₐ.T
     qᵃᵗ = Ψₐ.q
-    zᵃᵗ = Ψₐ.z
-    Δh = zᵃᵗ # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
+    zᶿ = Ψₐ.zᶿ # height of the temperature
+    Δh = zᶿ # Assumption! The surface is at z = 0 -> Δh = zᶿ - 0
     cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
     return Tᵃᵗ + g * Δh / cᵃᵗ
 end

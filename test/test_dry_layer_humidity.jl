@@ -14,13 +14,14 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 function make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
     FT = Float64
     ℂ  = AtmosphereThermodynamicsParameters(FT)
-    Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
+    Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, zᶿ = 10.0, h_bℓ = 1000.0)
     Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★),
                                InterfaceVelocities(0.0, 0.0),
                                Tⁱⁿ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,))
     Ψᵢ = (T = Tˡᵃ,)
     ℙₐ = (thermodynamics_parameters = ℂ,
           surface_layer_height = 10.0,
+          scalar_layer_height = 10.0,
           gravitational_acceleration = 9.81)
     return ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ
 end

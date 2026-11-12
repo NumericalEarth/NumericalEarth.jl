@@ -18,6 +18,9 @@ EarthSystemModels.surface_layer_height(nm::NestedModel) =
 EarthSystemModels.surface_layer_height(nm::NestedModel, exchange_grid) =
     EarthSystemModels.surface_layer_height(nm.child, exchange_grid)
 
+EarthSystemModels.scalar_layer_height(nm::NestedModel, exchange_grid) =
+    EarthSystemModels.scalar_layer_height(nm.child, exchange_grid)
+
 EarthSystemModels.boundary_layer_height(nm::NestedModel) =
     EarthSystemModels.boundary_layer_height(nm.child)
 
@@ -42,6 +45,9 @@ EarthSystemModels.surface_layer_height(sim::NestedModelSimulation) =
 
 EarthSystemModels.surface_layer_height(sim::NestedModelSimulation, exchange_grid) =
     EarthSystemModels.surface_layer_height(component_model(sim), exchange_grid)
+
+EarthSystemModels.scalar_layer_height(sim::NestedModelSimulation, exchange_grid) =
+    EarthSystemModels.scalar_layer_height(component_model(sim), exchange_grid)
 
 EarthSystemModels.boundary_layer_height(sim::NestedModelSimulation) =
     EarthSystemModels.boundary_layer_height(component_model(sim))

@@ -8,6 +8,7 @@ atmosphere_sea_ice_data(coupled_model) = merge(atmosphere_sea_ice_fields(coupled
 
 atmosphere_sea_ice_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                                                   surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
+                                                  scalar_layer_height = coupled_model.interfaces.properties.scalar_layer_height,
                                                   gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
 atmosphere_sea_ice_radiation_state(coupled_model) = begin

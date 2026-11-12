@@ -315,7 +315,7 @@ end
 validate_flux_formulation(flux_formulation, grid) = nothing
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
-                                  Tₛ, qₛ, Δθ, Δq, Δh,
+                                  Tₛ, qₛ, Δθ, Δq, Δh, Δhᶿ,
                                   approximate_interface_state,
                                   atmosphere_state,
                                   interface_properties,
@@ -362,15 +362,17 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     # Tall roughness elements displace the similarity profiles upward by `d`.
     d = flux_formulation.zero_plane_displacement
     Δhᵈ = Δh - d
+    Δhᶿᵈ = Δhᶿ - d
 
-    # Transfer coefficients at height `h`
+    # Transfer coefficients at the height of each variable: the velocities at `Δh`,
+    # the temperature and specific humidity at `Δhᶿ`
     ϰ = flux_formulation.von_karman_constant
     L★ = monin_obukhov_length(u★, b★, ϰ)
     form = flux_formulation.similarity_form
 
     χu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
+    χθ = ϰ / similarity_profile(form, ψθ, Δhᶿᵈ, ℓθ₀, L★)
+    χq = ϰ / similarity_profile(form, ψq, Δhᶿᵈ, ℓq₀, L★)
 
     # Recompute
     u★ = χu * U

@@ -337,8 +337,19 @@ end
 ##### Iteration
 #####
 
+validate_layer_heights(flux_formulation, zᵃᵗ, zᶿ) = nothing
+
+function validate_layer_heights(::CoefficientBasedFluxes, zᵃᵗ, zᶿ)
+    zᶿ === zᵃᵗ || zᶿ == zᵃᵗ ||
+        throw(ArgumentError("CoefficientBasedFluxes take the temperature and humidity at the velocity height, " *
+                            "but the atmosphere's scalar_layer_height differs from its surface_layer_height"))
+    return nothing
+end
+
+# The transfer coefficients take every variable at the velocity height `Δh`, so
+# `validate_layer_heights` rejects a temperature and humidity height `Δhᶿ` that differs.
 @inline function iterate_interface_fluxes(flux_formulation::CoefficientBasedFluxes,
-                                          Tₛ, qₛ, Δθ, Δq, Δh,
+                                          Tₛ, qₛ, Δθ, Δq, Δh, Δhᶿ,
                                           approximate_interface_state,
                                           atmosphere_state,
                                           interface_properties,

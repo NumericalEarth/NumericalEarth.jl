@@ -104,9 +104,10 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
     θᵃᵗ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
     Δθ = θᵃᵗ - Tₛ
     Δh = atmosphere_state.z # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
+    Δhᶿ = atmosphere_state.zᶿ # height of the temperature and specific humidity
 
     u★, θ★, q★ = iterate_interface_fluxes(flux_formulation,
-                                          Tₛ, qₛ, Δθ, Δq, Δh,
+                                          Tₛ, qₛ, Δθ, Δq, Δh, Δhᶿ,
                                           approximate_interface_state,
                                           atmosphere_state,
                                           interface_properties,

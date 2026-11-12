@@ -494,13 +494,18 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     # atmospheres; a per-column 2-D field for grid-aware atmospheres (Breeze). The
     # boundary-layer height is *not* cached here: it evolves with the closure and is
     # refreshed every step in the flux builders.
+    # The temperature and humidity may sit at their own height (2 m for ERA5).
     zᵃᵗ = surface_layer_height(atmosphere, exchange_grid)
+    zᶿ = scalar_layer_height(atmosphere, exchange_grid)
 
     for interface in (ao_interface, ai_interface, al_interface)
-        isnothing(interface) || validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+        isnothing(interface) && continue
+        validate_zero_plane_displacement(interface.flux_formulation, zᵃᵗ)
+        validate_zero_plane_displacement(interface.flux_formulation, zᶿ)
+        validate_layer_heights(interface.flux_formulation, zᵃᵗ, zᶿ)
     end
 
-    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ),
+    properties = merge((; gravitational_acceleration, surface_layer_height = zᵃᵗ, scalar_layer_height = zᶿ),
                           biogeochemical_interface(exchanger, ocean; biogeochemistry_interface_kwargs...))
 
     return ComponentInterfaces(ao_interface,

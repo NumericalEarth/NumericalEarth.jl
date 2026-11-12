@@ -88,6 +88,7 @@ end
                              time_indices_in_memory = 24,
                              time_indexing = Cyclical(),
                              surface_layer_height = 10,    # meters
+                             scalar_layer_height = 2,      # meters
                              boundary_layer_height = 512,  # meters
                              thermodynamics_parameters = nothing,
                              region = nothing,
@@ -100,6 +101,9 @@ derived from the 2 m dewpoint and that pressure (`qᵛ = qᵛ⁺(Tᵈ, p)`) one 
 are converted from hourly-accumulated depths (m of water equivalent) to mass fluxes (kg m⁻² s⁻¹) at load time; snowfall is
 the `PrescribedPrecipitationFlux`'s snow and, since ERA5's total precipitation includes it, the rain is
 `max(total precipitation - snowfall, 0)`, also derived one in-memory window at a time.
+
+`surface_layer_height` is the height of the winds and `scalar_layer_height` that of the temperature and specific
+humidity, so the interface fluxes take ERA5's 10 m winds and 2 m temperature and dewpoint at the heights they are given.
 
 `region` (a `BoundingBox`) restricts the download and the native grid to a sub-domain; the coupled model interpolates the
 native-resolution atmosphere onto the exchange grid. Pass `thermodynamics_parameters` to share a specific thermodynamics with
@@ -117,6 +121,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                   time_indices_in_memory = 24,
                                   time_indexing = Cyclical(),
                                   surface_layer_height = 10,
+                                  scalar_layer_height = 2,
                                   boundary_layer_height = 512,
                                   thermodynamics_parameters = nothing,
                                   region = nothing,
@@ -171,6 +176,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                             precipitation_flux,
                                             thermodynamics_parameters = ℂ,
                                             surface_layer_height  = convert(FT, surface_layer_height),
+                                            scalar_layer_height   = convert(FT, scalar_layer_height),
                                             boundary_layer_height = convert(FT, boundary_layer_height),
                                             tracers)
 end

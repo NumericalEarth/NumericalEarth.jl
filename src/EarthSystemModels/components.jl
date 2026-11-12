@@ -119,6 +119,12 @@ boundary_layer_height(::Nothing) = 0
 # materialize a 2-D field on the exchange grid.
 surface_layer_height(atmosphere, exchange_grid) = surface_layer_height(atmosphere)
 
+# Height of the atmospheric temperature and specific humidity, which may differ from
+# the height of the winds (ERA5 has 2 m temperature and humidity and 10 m winds).
+# Atmospheres that do not say otherwise carry all three at the surface-layer height.
+function scalar_layer_height end
+scalar_layer_height(atmosphere, exchange_grid) = surface_layer_height(atmosphere, exchange_grid)
+
 #####
 ##### Functions extended by all component models
 #####

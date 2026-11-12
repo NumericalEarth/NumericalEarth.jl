@@ -577,7 +577,7 @@ end
                                gravitational_acceleration = 9.81)
 
     solved_friction_velocity(fluxes) =
-        iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh,
+        iterate_interface_fluxes(fluxes, 290.0, 0.01, -2.0, 0.001, Δh, Δh,
                                  approximate_state, atmosphere_state,
                                  interface_properties, atmosphere_properties)[1]
 

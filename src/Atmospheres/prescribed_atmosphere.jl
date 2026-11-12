@@ -16,6 +16,7 @@ mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <
     thermodynamics_parameters :: TP
     times :: TI
     surface_layer_height :: FT
+    scalar_layer_height :: FT
     boundary_layer_height :: FT
 end
 
@@ -45,6 +46,7 @@ function Base.show(io::IO, atmos::PrescribedAtmosphere)
     print(io, summary(atmos), " on ", grid_name(atmos.grid), ":", '\n')
     print(io, "├── times: ", prettysummary(atmos.times), '\n')
     print(io, "├── surface_layer_height: ", prettysummary(atmos.surface_layer_height), '\n')
+    print(io, "├── scalar_layer_height: ", prettysummary(atmos.scalar_layer_height), '\n')
     print(io, "└── boundary_layer_height: ", prettysummary(atmos.boundary_layer_height))
 end
 
@@ -172,6 +174,8 @@ end
 @inline EarthSystemModels.thermodynamics_parameters(atmos::Nothing) = nothing
 @inline EarthSystemModels.thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
 @inline EarthSystemModels.surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
+@inline EarthSystemModels.scalar_layer_height(atmos::PrescribedAtmosphere) = atmos.scalar_layer_height
+@inline EarthSystemModels.scalar_layer_height(atmos::PrescribedAtmosphere, exchange_grid) = atmos.scalar_layer_height
 @inline EarthSystemModels.boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
 
 # No need to compute anything here...
@@ -184,6 +188,7 @@ EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemM
                          source = nothing,
                          clock = Clock{Float64}(time = 0),
                          surface_layer_height = 10, # meters
+                         scalar_layer_height = surface_layer_height, # meters
                          boundary_layer_height = 512, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
                          velocities              = default_atmosphere_velocities(grid, times),
@@ -211,6 +216,11 @@ default fields are inferred from the grid's vertical size: `Nz == 1` builds a su
 (ocean / sea-ice coupling), `Nz > 1` a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
 Pass any field explicitly to override; pass `precipitation_flux = nothing` to omit it.
 
+`surface_layer_height` is the height of the `velocities` above the surface and `scalar_layer_height`
+the height of the `temperature` and `specific_humidity` (both in meters). They differ for data such as
+ERA5, whose winds are at 10 m and whose temperature and humidity are at 2 m; the interface fluxes
+evaluate each similarity profile at the height of its variable.
+
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
     component (see [`Radiations.PrescribedRadiation`](@ref NumericalEarth.Radiations.PrescribedRadiation),
@@ -220,6 +230,7 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                               source = nothing,
                               clock = Clock{Float64}(time = 0),
                               surface_layer_height = 10,
+                              scalar_layer_height = surface_layer_height,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
                               velocities              = default_atmosphere_velocities(grid, times),
@@ -248,6 +259,7 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                                  thermodynamics_parameters,
                                  times,
                                  convert(FT, surface_layer_height),
+                                 convert(FT, scalar_layer_height),
                                  convert(FT, boundary_layer_height))
     update_state!(atmos)
 

@@ -7,6 +7,7 @@ atmosphere_ocean_data(coupled_model) = merge(atmosphere_ocean_fields(coupled_mod
 
 atmosphere_ocean_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                                                 surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
+                                                scalar_layer_height = coupled_model.interfaces.properties.scalar_layer_height,
                                                 gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
 atmosphere_ocean_radiation_state(coupled_model) = begin

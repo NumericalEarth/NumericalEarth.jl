@@ -87,7 +87,7 @@ value(operation) = column(compute!(Field(operation)))
         atmosphere_properties = (; thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT),
                                    gravitational_acceleration = FT(9.81))
 
-        argument_types = (typeof(fluxes), FT, FT, FT, FT, FT,
+        argument_types = (typeof(fluxes), FT, FT, FT, FT, FT, FT,
                           typeof(approximate_state), typeof(atmosphere_state),
                           typeof(interface_properties), typeof(atmosphere_properties))
 

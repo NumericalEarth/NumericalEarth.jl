@@ -67,6 +67,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     interface_properties = atmosphere_land_interface.properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
+                             scalar_layer_height = coupled_model.interfaces.properties.scalar_layer_height,
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
     # Land surface state from the exchanger. `interface_energy_state` /

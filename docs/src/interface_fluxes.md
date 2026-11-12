@@ -308,6 +308,15 @@ at which the atmospheric velocity is computed to form the relative velocity ``Δ
 Most observational campaigns use ``h = 10 \, \mathrm{m}`` and most drag coefficients reported in the
 literature pertain to ``h=10 \, \mathrm{m}``.
 
+The temperature and specific humidity need not be given at the height of the winds. A
+`PrescribedAtmosphere` carries the height of its winds as `surface_layer_height` and the height of
+its temperature and specific humidity as `scalar_layer_height`, which defaults to the former. Each
+similarity profile is evaluated at the height of its own variable, so for ERA5, whose winds are at
+``10 \, \mathrm{m}`` and whose temperature and dewpoint are at ``2 \, \mathrm{m}``, the momentum
+profile is taken at ``h = 10 \, \mathrm{m}`` and the temperature and humidity profiles at
+``h = 2 \, \mathrm{m}``. `CoefficientBasedFluxes` take every variable at one height and reject
+an atmosphere whose two heights differ.
+
 To compute fluxes with NumericalEarth, we build an `EarthSystemModel` with an atmosphere and ocean state
 concocted such that we can evaluate fluxes over a range of relative atmosphere and oceanic conditions.
 For this we use a ``200 × 200`` horizontal grid and start with atmospheric winds that vary from
