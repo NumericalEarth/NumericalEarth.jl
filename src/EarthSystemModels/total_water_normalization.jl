@@ -17,6 +17,13 @@ cannot close its surface water budget, because precipitation and runoff are pres
 the model state, so most OMIP-2 models remove the net imbalance at every step [Tsujino et al. (2020)](@cite tsujino2020evaluation).
 The free surface absorbs the excess, spread uniformly over the wet area, and the temperature and salinity of each
 column are rescaled by the same factor so that their content is unchanged.
+
+References
+==========
+
+- Tsujino, H., et al. (2020). Evaluation of global ocean–sea-ice model simulations
+  based on the experimental protocols of the Ocean Model Intercomparison Project phase 2 (OMIP-2).
+  *Geoscientific Model Development*, 13, 3643–3708.
 """
 struct TotalWaterNormalization{H, O, I, N, A, FT}
     surface_height :: H
