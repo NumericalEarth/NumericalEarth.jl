@@ -1,11 +1,12 @@
 using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
+using Oceananigans.BuoyancyFormulations: LinearEquationOfState
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node, topology
-using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: maybe_extend_halos
+using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveVerticallyImplicitDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
@@ -313,7 +314,6 @@ consistent defaults for advection, closures, the equation of state, surface flux
 barotropic pressure–gradient forcing, boundary conditions, and optional biogeochemistry.
 It then wraps the model into an Oceananigans's `Simulation` with the specified timestepping options.
 
-
 ## Behavior and automatic configuration
 
 ### Coriolis
@@ -388,7 +388,8 @@ override the defaults on a per-field basis.
 - `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
-- `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `radiative_forcing`: Additional temperature forcing; merged into `forcing`. A `CATKEVerticalDiffusivity` accounts for
+  it in its convective scales.
 - `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
@@ -609,8 +610,10 @@ Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
 #####
 
 EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
+EarthSystemModels.reference_density(eos::LinearEquationOfState{FT}) where FT = FT(1026)
 EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
 EarthSystemModels.reference_density(ocean::OceananigansModelSimulations) = EarthSystemModels.reference_density(ocean.model.buoyancy.formulation)
+
 
 EarthSystemModels.heat_capacity(ocean::OceananigansModelSimulations) = heat_capacity(ocean.model.buoyancy.formulation)
 EarthSystemModels.heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
@@ -619,6 +622,7 @@ function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT
     cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
     return convert(FT, cₚ⁰)
 end
+EarthSystemModels.heat_capacity(::LinearEquationOfState{FT}) where FT = FT(3991.86795711963)
 
 # setup helpers
 biogeochemistry_surface_exchanged_tracers(biogeochemistry) = tuple()

@@ -12,8 +12,8 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemp
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
-ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
-ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
+ocean_reference_density(ocean::Simulation) = reference_density(ocean)
+ocean_reference_density(::Nothing) = 1026.0
 
 # typed so that no `Int` zero enters the Float sea-ice kernels
 ocean_surface_height(ocean::Simulation, grid) = ocean.model.free_surface.displacement
@@ -31,12 +31,12 @@ function sea_ice_velocity_boundary_conditions(grid, lateral_boundary_condition)
     return (; u, v)
 end
 
-function default_snow_thermodynamics(grid)
+function default_snow_thermodynamics(grid; itd_shape = nothing)
     FT = eltype(grid)
     snow_conductivity = FT(0.31)
     snow_surface_temperature = Field{Center, Center, Nothing}(grid)
     top_heat_boundary_condition = PrescribedTemperature(snow_surface_temperature.data)
-    return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, top_heat_boundary_condition)
+    return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, itd_shape, top_heat_boundary_condition)
 end
 
 # Sea-ice velocities flip sign across the tripolar fold
@@ -212,13 +212,14 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
+                          ocean_reference_density = ocean_reference_density(ocean),
                           solver = SplitExplicitSolver(grid; substeps=150),
                           with_ocean_surface_tilt = true)
 
     SSU, SSV = surface_layer_velocities(ocean, sea_ice_ocean_drag_reference_depth)
     FT = eltype(grid)
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
-    ρₑ = ocean_reference_density(ocean, FT)
+    ρₑ = convert(FT, ocean_reference_density)
 
     τo = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
 
