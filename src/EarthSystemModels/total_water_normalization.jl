@@ -115,6 +115,8 @@ function (normalization::TotalWaterNormalization)(simulation)
     launch!(architecture(grid), grid, KernelParameters(1:Nx, 1:Ny), _correct_sea_level!,
             ocean.free_surface.displacement, ocean.tracers.T, ocean.tracers.S, grid, normalization.correction, Nz + 1)
 
+    fill_halo_regions!((ocean.free_surface.displacement, ocean.tracers.T, ocean.tracers.S))
+
     update_zstar_scaling!(grid, ocean.free_surface.displacement)
 
     return nothing
