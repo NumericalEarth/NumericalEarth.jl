@@ -1,6 +1,7 @@
 using Oceananigans.AbstractOperations: Integral
 using Oceananigans.Fields: Field, ConstantField, compute!, interior, set!
 using Oceananigans.Grids: Center, static_column_depthᶜᶜᵃ
+using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: update_zstar_scaling!
 using Oceananigans.Utils: KernelParameters
 
@@ -33,8 +34,12 @@ end
 @inline constant_value(ρ) = ρ
 @inline constant_value(ρ::ConstantField) = ρ.constant
 
-function TotalWaterNormalization(coupled_model)
-    grid = coupled_model.ocean.model.grid
+TotalWaterNormalization(coupled_model) = TotalWaterNormalization(coupled_model, coupled_model.ocean.model.grid)
+
+TotalWaterNormalization(coupled_model, grid) =
+    throw(ArgumentError("TotalWaterNormalization requires an ocean grid with a MutableVerticalDiscretization"))
+
+function TotalWaterNormalization(coupled_model, grid::MutableGridOfSomeKind)
     FT = eltype(grid)
     sea_ice = coupled_model.sea_ice.model
     ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
