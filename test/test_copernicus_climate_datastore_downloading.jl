@@ -4,7 +4,7 @@ include("download_utils.jl")
 using CopernicusClimateDataStore
 using Dates
 using NumericalEarth.DataWrangling: metadata_path, BoundingBox
-using NumericalEarth.DataWrangling.ERA5: ERA5HourlyLand, ERA5YearlySingleLevel, ERA5MonthlySingleLevel
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlyLand, ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel
 
 # Requires CDS API credentials in ~/.cdsapirc or the CDSAPI_URL/CDSAPI_KEY
 # environment variables (see https://cds.climate.copernicus.eu/how-to-api).
@@ -18,6 +18,27 @@ const era5_region = BoundingBox(longitude=(12, 13), latitude=(41, 42))
 # (which includes Tyrrhenian coastline) isn't safe for a strict all-isfinite check. Use a
 # small landlocked inland region instead (Umbria, Italy — no coast, avoids Lake Trasimeno).
 const era5_land_region = BoundingBox(longitude=(12.5, 13.0), latitude=(42.8, 43.2))
+
+@testset "ERA5 hourly batched multi-variable download" begin
+    # Instantaneous and accumulated variables in one request come back as a zip of two NetCDF
+    # files (one per step type); every variable must survive the split into per-datetime files.
+    dataset = ERA5HourlySingleLevel()
+    variables = [:temperature, :surface_pressure, :total_precipitation, :downwelling_shortwave_radiation]
+    dates = [DateTime(2020, 6, 15, 12), DateTime(2020, 6, 15, 13)]
+
+    mktempdir() do dir
+        paths = download(variables, Metadata(first(variables); dataset, dates, region=era5_region, dir))
+
+        @test length(paths) == length(variables) * length(dates)
+        @test all(isfile, paths)
+
+        for variable in variables, date in dates
+            metadatum = Metadatum(variable; dataset, region=era5_region, date, dir)
+            ψ = Field(metadatum, CPU())
+            @allowscalar @test all(isfinite, interior(ψ))
+        end
+    end
+end
 
 @testset "ERA5-Land live download" begin
     dataset = ERA5HourlyLand()

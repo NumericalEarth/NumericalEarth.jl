@@ -1,4 +1,12 @@
 #####
+##### ERA5 downloads from the Copernicus Climate Data Store
+#####
+##### Every entry point takes `client` (a `CDSAPIClient()` or `CopernicusClimateDataStoreClient()`,
+##### defaulting to `default_cds_client()`) and `retrieve`, the `(product, request, path)` function
+##### that client fetches with. The requests, batching, and splitting below do not depend on the client.
+#####
+
+#####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
 #####
 
@@ -71,11 +79,13 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Download ERA5 data for a single date/time using the CDSAPI package.
+Download ERA5 data for a single date/time from the Copernicus Climate Data Store.
 
 # Keyword Arguments
 - `skip_existing`: Skip download if the file already exists (default: `true`).
-- `retrieve`: the function `(product, request, path)` that fetches the request (default: `CDSAPI.retrieve`).
+- `client`: the CDS client, `CDSAPIClient()` or `CopernicusClimateDataStoreClient()`
+  (default: [`default_cds_client()`](@ref NumericalEarth.DataWrangling.default_cds_client)).
+- `retrieve`: the function `(product, request, path)` that fetches the request (default: `client`'s).
 
 # Environment Setup
 Before downloading, you must:
@@ -85,10 +95,10 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function Downloads.download(meta::ERA5Metadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
+function Downloads.download(meta::ERA5Metadatum; skip_existing = true,
+                            client = default_cds_client(), retrieve = cds_retrieve(client))
     output_path = metadata_path(meta)
 
-    # Skip download if file already exists
     skip_existing && isfile(output_path) && return output_path
 
     mkpath(dirname(output_path))
@@ -102,11 +112,10 @@ end
 
 #####
 ##### Multi-date download — batches by calendar month, capped by CDS cost
-##### (batching and NetCDF splitting machinery shared with the other backends
-##### in `src/DataWrangling/ERA5/ERA5_batched_downloads.jl`)
 #####
 
-function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, retrieve=CDSAPI.retrieve)
+function Downloads.download(metadata::ERA5Metadata; skip_existing = true, cleanup = true,
+                            client = default_cds_client(), retrieve = cds_retrieve(client))
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     batches = batch_datetimes_for_cds(dates, metadata.dataset, 1)
 
@@ -139,9 +148,7 @@ Returned NamedTuple fields:
   triples consumed by `split_era5_nc_by_datetime`.
 """
 function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
-    meta_filename = NumericalEarth.DataWrangling.metadata_filename
-
-    dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
+    dt_path_pairs = [(dt, joinpath(dir, metadata_filename(dataset, name, dt, region)))
                      for dt in dates]
 
     pending = if skip_existing
@@ -166,13 +173,14 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
 
     tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
     nc_varname = nc_varnames(dataset)[name]
-    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
+    nc_triples = [(nc_varname, dt, filepath) for (dt, filepath) in pending]
 
     return (; dt_path_pairs, pending, request, tmp_path, nc_triples)
 end
 
 function download_era5_month(name, dataset, dates;
-                             region, dir, skip_existing, cleanup, retrieve = CDSAPI.retrieve)
+                             region, dir, skip_existing, cleanup,
+                             retrieve = cds_retrieve(default_cds_client()))
 
     plan = plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     isempty(plan.pending) && return map(dt_path -> dt_path[2], plan.dt_path_pairs)
@@ -191,7 +199,7 @@ function download_era5_month(name, dataset, dates;
 end
 
 #####
-##### Multi-variable ERA5 pressure-level download
+##### Multi-variable ERA5 download
 #####
 
 """
@@ -233,7 +241,8 @@ $(TYPEDSIGNATURES)
 Download multiple ERA5 pressure-level variables for a single date in one CDS API request.
 The multi-variable NetCDF is split into individual per-variable files.
 """
-function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true, retrieve=CDSAPI.retrieve)
+function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing = true,
+                            client = default_cds_client(), retrieve = cds_retrieve(client))
     name_path_pairs = []
     for name in names
         metadatum = Metadatum(name;
@@ -253,7 +262,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
 
     isempty(pending) && return map(name_path -> name_path[2], name_path_pairs)
 
-    pending_names = [name for (name, _) in pending]
+    pending_names = [varname for (varname, _) in pending]
     request = build_era5_request(pending_names, meta.dataset, meta.dates; region=meta.region)
 
     date  = meta.dates
@@ -265,7 +274,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
     mkpath(meta.dir)
     tmp_path = joinpath(meta.dir, "_tmp_multi_$(year)$(month)$(day)T$(hour[1:2]).nc")
 
-    nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
+    nc_name_path_pairs = [(nc_varnames(meta.dataset)[varname], filepath) for (varname, filepath) in pending]
 
     @root begin
         retrieve_with_retries(cds_product(meta.dataset), request, tmp_path; retrieve)
@@ -301,7 +310,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
+Download one or more ERA5 variables for multiple datetimes, batching by calendar month.
 """
 function Downloads.download(names::Vector{Symbol},
                             dataset::ERA5Dataset,
@@ -310,7 +319,8 @@ function Downloads.download(names::Vector{Symbol},
                             dir = default_download_directory(dataset),
                             skip_existing = true,
                             cleanup = true,
-                            retrieve = CDSAPI.retrieve)
+                            client = default_cds_client(),
+                            retrieve = cds_retrieve(client))
 
     batches = batch_datetimes_for_cds(datetimes, dataset, length(names))
 
@@ -349,10 +359,8 @@ Returned NamedTuple fields:
   triples consumed by `split_era5_nc_by_datetime`.
 """
 function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_existing)
-    meta_filename = NumericalEarth.DataWrangling.metadata_filename
-
-    name_dt_paths = [(name, dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
-                     for name in names for dt in dates]
+    name_dt_paths = [(varname, dt, joinpath(dir, metadata_filename(dataset, varname, dt, region)))
+                     for varname in names for dt in dates]
 
     pending = if skip_existing
         filter(name_dt_path -> !isfile(name_dt_path[3]), name_dt_paths)
@@ -376,14 +384,15 @@ function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_exist
     day   = lpad(string(Dates.day(dt0)),   2, '0')
 
     tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
-    nc_triples = [(nc_varnames(dataset)[name], dt, path)
-                  for (name, dt, path) in pending]
+    nc_triples = [(nc_varnames(dataset)[varname], dt, filepath)
+                  for (varname, dt, filepath) in pending]
 
     return (; name_dt_paths, pending, request, tmp_path, nc_triples)
 end
 
 function download_era5_multivar_month(names, dataset, dates;
-                                      region, dir, skip_existing, cleanup, retrieve = CDSAPI.retrieve)
+                                      region, dir, skip_existing, cleanup,
+                                      retrieve = cds_retrieve(default_cds_client()))
 
     plan = plan_era5_multivar_month(names, dataset, dates; region, dir, skip_existing)
     isempty(plan.pending) && return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
@@ -402,6 +411,37 @@ function download_era5_multivar_month(names, dataset, dates;
 end
 
 #####
+##### Yearly and monthly products: one file per year or month rather than per hourly step,
+##### fetched through CopernicusClimateDataStore's `yearly` / `monthly` entry points.
+#####
+
+const NativeGranularityERA5Dataset = Union{ERA5YearlySingleLevel,
+                                           ERA5MonthlySingleLevel,
+                                           ERA5MonthlyPressureLevels}
+
+"""
+$(TYPEDSIGNATURES)
+
+Download the yearly or monthly ERA5 file containing `meta` with `client`, which must be
+`CopernicusClimateDataStoreClient()` (the default when CopernicusClimateDataStore is loaded).
+"""
+function Downloads.download(meta::Metadatum{<:NativeGranularityERA5Dataset}; client = default_cds_client(), kwargs...)
+    return download_native_granularity_era5(client, meta; kwargs...)
+end
+
+function Downloads.download(metadata::Metadata{<:NativeGranularityERA5Dataset}; kwargs...)
+    return [Downloads.download(metadatum; kwargs...) for metadatum in metadata]
+end
+
+function Downloads.download(mset::MetadataSet{<:NativeGranularityERA5Dataset}; kwargs...)
+    return reduce(vcat, [Downloads.download(metadata; kwargs...) for metadata in mset]; init=String[])
+end
+
+download_native_granularity_era5(client, meta; kwargs...) =
+    throw(ArgumentError("Downloading $(nameof(typeof(meta.dataset))) is implemented only for " *
+                        "`CopernicusClimateDataStoreClient()`; load CopernicusClimateDataStore."))
+
+#####
 ##### Area/bounding box utilities
 #####
 
@@ -416,19 +456,19 @@ era5_request_area(region, dataset, name) = build_era5_area(region)
 # covers the grid the data is interpolated onto — otherwise downscaling leaves
 # NaNs at the domain edges. Over-fetching is harmless: `restrict` selects the
 # exact cells from the larger file.
-function era5_request_area(bbox::BBOX, dataset, name)
+function era5_request_area(bbox::BoundingBox, dataset, name)
     (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
     Nx, Ny, _ = size(dataset, name)
     Δλ = 360 / Nx
     Δφ = 180 / Ny
     lon = bbox.longitude
     lat = bbox.latitude
-    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
-                  latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
+    padded = BoundingBox(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+                         latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
     return build_era5_area(padded)
 end
 
-function build_era5_area(bbox::BBOX)
+function build_era5_area(bbox::BoundingBox)
     lon = bbox.longitude
     lat = bbox.latitude
 
@@ -445,7 +485,7 @@ function build_era5_area(bbox::BBOX)
 end
 
 # Column with Nearest interpolation: tight box; CDS returns the nearest cell.
-function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:NR})
+function build_era5_area(col::Column{<:Any, <:Any, <:Any, <:Nearest})
     lon, lat = col.longitude, col.latitude
     ε = 1e-3
     return [lat + ε, lon - ε, lat - ε, lon + ε]  # [N, W, S, E]
@@ -453,7 +493,7 @@ end
 
 # Column with Linear interpolation: pad by slightly more than ERA5's native
 # 0.25° spacing so the file contains the 2x2 stencil bilinear interp needs.
-function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:LIN})
+function build_era5_area(col::Column{<:Any, <:Any, <:Any, <:DataWrangling.Linear})
     lon, lat = col.longitude, col.latitude
     ε = 0.3
     return [lat + ε, lon - ε, lat - ε, lon + ε]

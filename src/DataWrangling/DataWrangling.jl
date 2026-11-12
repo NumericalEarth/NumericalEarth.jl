@@ -17,10 +17,12 @@ export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
 export native_grid
+export CDSAPIClient, CopernicusClimateDataStoreClient
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fractions, valid_area_mean!
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -341,6 +343,7 @@ include("time_average.jl")
 include("restoring.jl")
 include("earthdata.jl")
 include("figshare.jl")
+include("cds_clients.jl")
 
 function metadata_time_step end
 function metadata_epoch end
