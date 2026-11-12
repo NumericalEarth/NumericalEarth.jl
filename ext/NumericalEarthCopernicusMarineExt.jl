@@ -1,7 +1,6 @@
 module NumericalEarthCopernicusMarineExt
 
 using CopernicusMarine: CopernicusMarine
-using Dates: DateTime
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 using NumericalEarth: NumericalEarth

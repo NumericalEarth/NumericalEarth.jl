@@ -1,6 +1,6 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
-using NumericalEarth
+using NumericalEarth: NumericalEarth
 using CopernicusClimateDataStore: CopernicusClimateDataStore
 using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
@@ -13,7 +13,7 @@ using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_f
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
                                          ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
-                                         ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
+                                         ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
                                          ERA5Land_dataset_variable_names,

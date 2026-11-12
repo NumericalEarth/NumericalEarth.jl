@@ -1,12 +1,10 @@
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
-using Oceananigans.Fields: ZeroField
 
-using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition,
-                  OxygenGasExchangeBoundaryCondition
+using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition, OxygenGasExchangeBoundaryCondition
 
-using OceanBioME.Models.GasExchangeModel: PartiallySolubleGas, OxygenSolubility, GarciaGordonOxygenSaturation,
-                                          CarbonDioxideAirConcentration, MolPerKgPerAtmToMMolPerCubicMPerMicroAtm, ATM
 using OceanBioME.Models.CarbonChemistryModel: CarbonChemistry, FF
+using OceanBioME.Models.GasExchangeModel: GarciaGordonOxygenSaturation, CarbonDioxideAirConcentration,
+                                          MolPerKgPerAtmToMMolPerCubicMPerMicroAtm, ATM
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
 import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
