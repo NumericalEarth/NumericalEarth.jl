@@ -45,7 +45,7 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, ocea
     j_faces = (1:ny-1) .+ Hy .- 1
 
     # The ice-ocean drag is Fₑ + λ uᵒ, with both terms explicit in Veros
-    u, v = ocean.surface_state
+    (; u, v) = ocean.surface_state
     τˣ = view(parent(fluxes.u), i_faces, j_centers, 1) .+ view(parent(fluxes.u_coefficient), i_faces, j_centers, 1) .* view(parent(u), i_faces, j_centers, 1)
     τʸ = view(parent(fluxes.v), i_centers, j_faces, 1) .+ view(parent(fluxes.v_coefficient), i_centers, j_faces, 1) .* view(parent(v), i_centers, j_faces, 1)
 
