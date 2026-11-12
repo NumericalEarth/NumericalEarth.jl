@@ -1,7 +1,6 @@
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
 
-using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition, OxygenGasExchangeBoundaryCondition
-
+using OceanBioME: CarbonDioxideGasExchangeBoundaryCondition, OxygenGasExchangeBoundaryCondition, DiscreteBiogeochemistry
 using OceanBioME.Models.CarbonChemistryModel: CarbonChemistry, FF
 using OceanBioME.Models.GasExchangeModel: GarciaGordonOxygenSaturation, CarbonDioxideAirConcentration,
                                           MolPerKgPerAtmToMMolPerCubicMPerMicroAtm, ATM
@@ -9,16 +8,15 @@ using OceanBioME.Models.GasExchangeModel: GarciaGordonOxygenSaturation, CarbonDi
 using NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
 using NumericalEarth.Oceans: biogeochemistry_surface_exchanged_tracers
 
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::Oxygen) = (:O₂, )
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{1}) = (:DIC, )
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N = carbon_replicate_names(Val(N))
 NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
     (biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.nutrients)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.plankton)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.detritus)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.oxygen)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.inorganic_carbon)...)
-
-NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::Oxygen) = (:O₂, )
-NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{1}) = (:DIC, )
-NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N = carbon_replicate_names(Val(N))
 
 @inline carbon_replicate_names(::Val{N}) where N = ntuple(n -> Symbol(:DIC, n), Val(N))
 
