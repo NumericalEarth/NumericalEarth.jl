@@ -304,12 +304,24 @@ Returns `(T★, S★, q)` where q is the melt rate (positive for melting).
     # Get conductive flux parameters - dispatches on flux type
     κ, Tˢⁱ = conductive_flux_parameters(flux, ice_state, ℰ)
 
-    λ₁ = - liquidus.salinity_slope
-    λ₂ =   liquidus.freshwater_melting_temperature
-
     # Transfer coefficients
     η = ρᵒᶜ * cᵒᶜ * αₕ * u★ / ℰ  # turbulent heat
     γ = ρᵒᶜ * αₛ * u★           # turbulent salt
+
+    return interface_conditions(η, γ, κ, Tˢⁱ, Tᵒᶜ, Sᵒᶜ, Sˢⁱ, liquidus)
+end
+
+"""
+    interface_conditions(η, γ, κ, Tˢⁱ, Tᵒᶜ, Sᵒᶜ, Sˢⁱ, liquidus::LinearLiquidus)
+
+Solve ``η (Tᵒᶜ - T★) + κ (Tˢⁱ - T★) = q``, ``γ (Sᵒᶜ - S★) = q (S★ - Sˢⁱ)`` and ``T★ = Tₘ(S★)``
+for `(T★, S★, q)`, given the turbulent heat (`η`, kg m⁻² s⁻¹ K⁻¹) and salt (`γ`, kg m⁻² s⁻¹)
+exchange coefficients and the conductive coefficient `κ`.
+"""
+@inline function interface_conditions(η, γ, κ, Tˢⁱ, Tᵒᶜ, Sᵒᶜ, Sˢⁱ, liquidus::LinearLiquidus)
+    λ₁ = - liquidus.salinity_slope
+    λ₂ = liquidus.freshwater_melting_temperature
+
     θ = η + κ                  # total heat
 
     # Quadratic coefficients: a S★² + b S★ + c = 0
