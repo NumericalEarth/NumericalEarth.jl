@@ -475,7 +475,7 @@ end
 # Needs an Oceananigans release with CliMA/Oceananigans.jl#6175
 if isdefined(Oceananigans, :TopLoad)
 
-@testset "No frazil under an ice shelf" begin
+@testset "No sea ice or frazil under an ice shelf" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing frazil masking under an ice shelf on $A"
@@ -510,6 +510,21 @@ if isdefined(Oceananigans, :TopLoad)
         @test all(T[1:2, :, 1:2] .== -2.5)
         @test all(𝒬ᶠʳᶻ[1:2, :] .== 0)
         @test all(𝒬ᶠʳᶻ[3:4, :] .< 0)
+
+        time_step!(coupled_model, 600)
+
+        h = Array(interior(sea_ice.model.ice_thickness, :, :, 1))
+        ℵ = Array(interior(sea_ice.model.ice_concentration, :, :, 1))
+        fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
+
+        @test all(h[1:2, :] .== 0)
+        @test all(ℵ[1:2, :] .== 0)
+        @test all(h[3:4, :] .> 0)
+
+        for name in (:interface_heat, :frazil_heat, :salt, :freshwater)
+            J = Array(interior(getproperty(fluxes, name), :, :, 1))
+            @test all(J[1:2, :] .== 0)
+        end
     end
 end
 
