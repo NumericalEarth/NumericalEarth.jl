@@ -178,6 +178,9 @@ function tiled_native_grid(target, metadata, inpainting, halo)
     return native
 end
 
+# Tiles end in a collective halo fill, which `interpolate_physical!` avoids on distributed grids.
+tiled_native_grid(::DistributedField, metadata, inpainting, halo) = nothing
+
 # A dataset with one vertical level carries a placeholder vertical extent, so only a resolved
 # vertical axis is compared. The 1% slack covers pressure-level data whose per-timestep extent
 # dips just below the temporal mean used for the target grid.

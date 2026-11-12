@@ -5,8 +5,11 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NumericalEarth.DataWrangling: metadata_path, inpainted_metadata_path, NearestNeighborInpainting, BoundingBox
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, all_dates, inpainted_metadata_path, metadata_path, BoundingBox
 using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.OutputReaders: update_field_time_series!
+using Oceananigans.Grids: halo_size, node, MutableVerticalDiscretization
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
@@ -222,6 +225,57 @@ end
         jrange = (ry - 1) * Ny + 1 : ry * Ny
 
         @test Array(interior(local_field)) ≈ serial_interior[irange, jrange, :]
+    end
+end
+
+@testset "Dataset FieldTimeSeries advanced on one rank" begin
+    arch = Distributed(CPU(), partition = Partition(4, 1))
+    grid = LatitudeLongitudeGrid(arch; size = (16, 8, 4), longitude = (0, 80), latitude = (-20, 20), z = (-1000, 0))
+    dates = all_dates(SyntheticOcean(), :temperature)[1:4]
+    metadata = Metadata(:temperature; dataset = SyntheticOcean(), dates)
+    kw = (; time_indices_in_memory = 2, cache_inpainted_data = false)
+
+    # Mid-run, only some ranks may advance a series (eg open-boundary data on boundary ranks)
+    alone = FieldTimeSeries(metadata, grid; kw...)
+    arch.local_rank == 0 && update_field_time_series!(alone, 3)
+    @test all_reduce(min, arch.field_count[], arch) == all_reduce(max, arch.field_count[], arch)
+
+    # The interpolated halo facing a neighbour matches what a halo exchange delivers
+    together = FieldTimeSeries(metadata, grid; kw...)
+    exchanged = CenterField(grid)
+    interior(exchanged) .= interior(together[3])
+    fill_halo_regions!(exchanged)
+    Nx, Ny, Nz = size(grid)
+    east_halo = (Nx+1:Nx+halo_size(grid)[1], 1:Ny, 1:Nz)
+
+    if arch.local_rank == 0
+        @test interior(alone[3]) ≈ interior(exchanged)
+        @test alone[3].data[east_halo...] ≈ exchanged.data[east_halo...]
+    end
+end
+
+@testset "Distributed interpolation onto a mutable grid" begin
+    arch = Distributed(CPU(), partition = Partition(2, 2))
+    grid = LatitudeLongitudeGrid(arch; size = (16, 8, 4), halo = (3, 3, 3), longitude = (0, 80), latitude = (-20, 20),
+                                 z = MutableVerticalDiscretization((-1000, 0)))
+    source_grid = LatitudeLongitudeGrid(CPU(); size = (60, 40, 4), longitude = (-30, 110), latitude = (-40, 40), z = (-1000, 0))
+    source = CenterField(source_grid)
+    set!(source, (λ, φ, z) -> λ + 2φ)
+    fill_halo_regions!(source)
+
+    for loc in ((Face(), Center(), Center()), (Center(), Face(), Center()), (Face(), Face(), Center()))
+        field = Field(loc, grid)
+        NumericalEarth.DataWrangling.interpolate_physical!(field, source)
+
+        Nx, Ny, Nz = size(grid)
+        Hx, Hy, _ = halo_size(grid)
+        expected(is, js) = [node(i, j, 1, grid, loc...)[1] + 2 * node(i, j, 1, grid, loc...)[2] for i in is, j in js]
+
+        @test field.data[1:Nx, 1:Ny, 1] ≈ expected(1:Nx, 1:Ny)
+
+        # Halos facing a neighbour are interpolated, not exchanged
+        arch.local_index[1] == 1 && @test field.data[Nx+1:Nx+Hx, 1:Ny, 1] ≈ expected(Nx+1:Nx+Hx, 1:Ny)
+        arch.local_index[2] == 1 && @test field.data[1:Nx, Ny+1:Ny+Hy, 1] ≈ expected(1:Nx, Ny+1:Ny+Hy)
     end
 end
 

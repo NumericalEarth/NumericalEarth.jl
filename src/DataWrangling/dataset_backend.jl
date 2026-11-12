@@ -1,7 +1,7 @@
-using Oceananigans.DistributedComputations: Distributed
-using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_index, time_indices
+using Oceananigans.DistributedComputations: Distributed, DistributedGrid
+using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, FieldTimeSeries, time_index, time_indices, in_time_range
 
-import Oceananigans.OutputReaders: new_backend
+import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import Oceananigans.Fields: set!
 
 @inline instantiate(T::DataType) = T()
@@ -103,7 +103,7 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
         set!(fts[t], metadatum; inpainting, cache_inpainted_data=cache_data)
     end
 
-    fill_halo_regions!(fts)
+    fill_dataset_halo_regions!(fts)
 
     # The next window starts at this window's last record. Pull its files into the page cache
     # in the background, while the model steps through this window.
@@ -162,5 +162,24 @@ function set!(fts::PrefetchingFieldTimeSeries, backend=fts.backend)
     buffer.backend = new_backend(buffer.backend, next_start, backend.length)
     fts.backend = PrefetchingBackend(backend.start, backend.length, backend.metadata, buffer, Threads.@spawn set!(buffer))
 
+    return nothing
+end
+
+const DistributedDatasetFieldTimeSeries = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend, <:Any, <:Any, <:DistributedGrid}
+
+# Distributed loads interpolate their own halos (see `interpolate_physical!`), and a collective fill
+# would hang ranks that advance different time series, eg open-boundary data on boundary ranks only.
+fill_dataset_halo_regions!(fts) = fill_halo_regions!(fts)
+fill_dataset_halo_regions!(::DistributedDatasetFieldTimeSeries) = nothing
+
+# As Oceananigans' `PartlyInMemoryFTS` method, but leaves the halo fill to `set!`
+function update_field_time_series!(fts::DistributedDatasetFieldTimeSeries, n₁::Int, n₂=n₁)
+    in_time_range(fts, fts.time_indexing, n₁, n₂) && return nothing
+    fts.backend = new_backend(fts.backend, n₁, length(fts.backend))
+    # Slices only fill local halos, so return their MPI tags: ranks that load alone keep later halo exchanges matched
+    arch = architecture(fts.grid)
+    field_count = arch.field_count[]
+    set!(fts)
+    arch.field_count[] = field_count
     return nothing
 end
