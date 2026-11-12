@@ -1,6 +1,7 @@
 using Oceananigans.Grids: Center
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Fields: compute!
+using Oceananigans.Fields: compute!, Field
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
                                specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
@@ -221,6 +222,12 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     al_fluxes = computed_fluxes(interfaces.atmosphere_land_interface)
     ℵᵒᶜ = interfaces.surface_partition.ocean_fraction
     ℵˢⁱ = sea_ice_concentration(coupled_model.sea_ice)
+
+    # The stresses are computed on interior cells and averaged to faces, which reads one halo cell.
+    for fluxes in (ao_fluxes, ai_fluxes, al_fluxes), name in (:x_momentum, :y_momentum)
+        stress = getproperty(fluxes, name)
+        stress isa Field && fill_halo_regions!(stress)
+    end
 
     launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!,
             net, ao_fluxes, ai_fluxes, al_fluxes, ℵᵒᶜ, ℵˢⁱ, grid)
