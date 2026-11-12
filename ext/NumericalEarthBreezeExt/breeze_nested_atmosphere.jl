@@ -147,7 +147,7 @@ end
 # Lateral boundary relaxation toward the strips' derived prognostics, applied over each strip's region by a
 # tendency callback. Momentum and energy relax the specific state weighted by the child's own coupling
 # density; moisture relaxes its density.
-function boundary_relaxation(child, prognostic, rate, mask, width)
+function boundary_relaxation(child, prognostic, rate, mask, width; seeded_names = ())
     child_fields = Oceananigans.prognostic_fields(child)
     moisture_name = moisture_prognostic_name(child.microphysics)
     ρᵈ = continuity_density(child.dynamics)
@@ -163,12 +163,15 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
 
     sides = keys(prognostic.θ)
     regions = boundary_strip_regions(child.grid, width, sides)
-    names = (:ρθ, :ρu, :ρv, moisture_name)
+    names = (:ρθ, :ρu, :ρv, moisture_name, seeded_names...)
+    # Seeded condensate prognostics relax their densities, like the moisture slot.
+    seeded(side) = Tuple(relaxation(child_fields[name], prognostic[name][side]) for name in seeded_names)
     strips = NamedTuple{sides}(
         (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
                                        specific(:ρu, child.velocities.u, VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
                                        specific(:ρv, child.velocities.v, VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
-                                       relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
+                                       relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]),
+                                       seeded(side)...)),
          region = regions[side])
         for side in sides)
 
@@ -240,9 +243,8 @@ end
 # The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
 # microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
 function default_nested_scalar_advection(microphysics, closure = nothing; closure_tracer_maximum = Inf)
-    bounded = WENO(order = 5, bounds = (0, 1))
     moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
-    moist = NamedTuple{moist_names}(map(_ -> bounded, moist_names))
+    moist = NamedTuple{moist_names}(map(bounded_moist_advection, moist_names))
 
     closure_names = closure_required_tracers(closure)
     closure_bounds = promote(0, closure_tracer_maximum)
@@ -250,6 +252,16 @@ function default_nested_scalar_advection(microphysics, closure = nothing; closur
     closure_tracers = NamedTuple{closure_names}(map(_ -> closure_scheme, closure_names))
 
     return merge((ρθ = WENO(order = 5),), moist, closure_tracers)
+end
+
+# Mass densities (`ρq…`) are bounded to [0, 1]. Number and rime-volume densities (`ρn…`, `ρb…`, e.g. P3's
+# `ρnⁱ ~ 10⁶ m⁻³`) are non-negative but not confined below 1, and anything else (P3's vapor excess
+# `ρδqᵛ⁺ˡ`, which may be negative) is unbounded.
+function bounded_moist_advection(name)
+    str = string(name)
+    startswith(str, "ρq") && return WENO(order = 5, bounds = (0, 1))
+    (startswith(str, "ρn") || startswith(str, "ρb")) && return WENO(order = 5, bounds = promote(0, Inf))
+    return WENO(order = 5)
 end
 
 # Blend-zone width in cells from a physical length: a fixed cell count steepens the parent→child
@@ -306,6 +318,15 @@ source via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qʳ`/`qᶜⁱ`/`q
 `nothing` entry — or the whole `parent_condensates` — is treated as absent (⇒ omitted; with all four
 absent, `qᵗ = qᵛ`).
 
+A child whose microphysics carries prognostic condensate (a non-equilibrium scheme such as P3) is seeded
+from those parent species: when `seed_parent_condensate = true` (the default), its condensate prognostics
+are derived from the parent on the parent grid by `parent_condensate_seeding` (default
+`condensate_seeding(microphysics)`, e.g. [`P3CondensateSeeding`](@ref), which documents the diagnosed
+number concentrations), and they enter the initial condition (through `initialize_nested_child!`), the
+lateral boundary values and the lateral boundary relaxation exactly as the moisture prognostic does; the
+exchanged θˡⁱ then removes latent heat for the seeded condensate. `seed_parent_condensate = false` hands
+the child vapor only, as before. Equilibrium (saturation-adjustment) children are unaffected.
+
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
@@ -354,6 +375,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
     microphysics = default_nested_microphysics(),
+    seed_parent_condensate = true,
+    parent_condensate_seeding = seed_parent_condensate ? condensate_seeding(microphysics) : nothing,
     closure = TKEBasedTurbulenceClosure(eltype(child_grid)),
     momentum_advection = WENO(order = 9),
     scalar_advection = default_nested_scalar_advection(microphysics, closure),
@@ -379,12 +402,20 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); `exchange_state!`
     # slides the resident window from the parent each step when it holds fewer levels than the parent's times.
+    seeding = parent_condensate_seeding
+    seeded_names = seeded_prognostic_names(seeding)
+    missing_names = filter(name -> name ∉ prognostic_field_names(microphysics), seeded_names)
+    isempty(missing_names) ||
+        throw(ArgumentError("parent_condensate_seeding fills $missing_names, which $(nameof(typeof(microphysics))) does not carry"))
+
     exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates = parent_condensates,
-                                 moisture_name, time_indices_in_memory)
+                                 moisture_name, time_indices_in_memory, seeding)
     prognostic = parent_prognostic(exchanger)
 
+    # The moisture slot and any seeded condensate densities share boundary values and relaxation.
     ρqᵛᵉ = prognostic.ρqᵛᵉ
-    moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛᵉ))
+    moist_variables = merge(NamedTuple{tuple(moisture_name)}(tuple(ρqᵛᵉ)),
+                            NamedTuple{seeded_names}(Tuple(prognostic[name] for name in seeded_names)))
 
     # Lateral BCs: interpolate the precomputed prognostics at the boundary face. Momentum is prescribed on
     # every side, but the BC *type* is per-side: `NormalFlowBoundaryCondition` on the wall-normal side
@@ -404,7 +435,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
                                      NamedTuple{(energy_key,)}((ValueBoundaryCondition,)))
     momentum_types = (ρu = (west = NormalFlowBoundaryCondition, east = NormalFlowBoundaryCondition, south = ValueBoundaryCondition, north = ValueBoundaryCondition),
                       ρv = (west = ValueBoundaryCondition, east = ValueBoundaryCondition, south = NormalFlowBoundaryCondition, north = NormalFlowBoundaryCondition))
-    moist_types = NamedTuple{tuple(moisture_name)}(tuple(ValueBoundaryCondition))
+    moist_types = NamedTuple{keys(moist_variables)}(map(_ -> ValueBoundaryCondition, keys(moist_variables)))
     bc_types = merge(density_and_energy_types, momentum_types, moist_types)
 
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
@@ -467,7 +498,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         kw...)
 
     child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
-                      (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
+                      (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width; seeded_names),)
 
     return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
 end
@@ -584,6 +615,9 @@ function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Cent
     return field
 end
 
+exchanger_seeding(exchanger::StateExchanger) = exchanger.seeding
+exchanger_seeding(exchangers::NamedTuple) = exchanger_seeding(first(exchangers))
+
 # Initialize the nested child from the parent-derived `prognostic` (by default the exchanger's, the SAME
 # state that drives the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
 # boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
@@ -601,12 +635,20 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
     ρu, ρv = child_momentum(prognostic, child_grid, t₀)
 
-    ρ   = Field(ρᵈ + ρqᵛᵉ)
+    # Seeded condensate densities (none for an equilibrium or unseeded child) are set as densities; their
+    # masses load the total density, from which `set!` backs out the dry density.
+    seeding = exchanger_seeding(nested_model.exchanger)
+    seeded_names = seeded_prognostic_names(seeding)
+    seeded = NamedTuple{seeded_names}(Tuple(interpolate_to_child(prognostic[name], child_grid, t₀)
+                                            for name in seeded_names))
+    seeded_mass = Tuple(seeded[name] for name in seeded_mass_names(seeding))
+
+    ρ   = Field(foldl(+, seeded_mass; init = ρᵈ + ρqᵛᵉ))
     qᵛᵉ = Field(ρqᵛᵉ / ρ)
     θˡⁱ = Field(ρθ / ρᵈ)
 
     moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
-    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
+    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., seeded..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
