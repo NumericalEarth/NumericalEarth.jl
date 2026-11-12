@@ -6,19 +6,19 @@ using OceanBioME.Models.CarbonChemistryModel: CarbonChemistry, FF
 using OceanBioME.Models.GasExchangeModel: GarciaGordonOxygenSaturation, CarbonDioxideAirConcentration,
                                           MolPerKgPerAtmToMMolPerCubicMPerMicroAtm, ATM
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
-import NumericalEarth.Oceans: update_net_ocean_biogeochemical_fluxes!, biogeochemistry_surface_exchanged_tracers
+using NumericalEarth.EarthSystemModels.InterfaceComputations: biogeochemical_interface
+using NumericalEarth.Oceans: biogeochemistry_surface_exchanged_tracers
 
-biogeochemistry_surface_exchanged_tracers(biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}) =
     (biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.nutrients)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.plankton)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.detritus)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.oxygen)...,
      biogeochemistry_surface_exchanged_tracers(biogeochemistry.underlying_biogeochemistry.inorganic_carbon)...)
 
-biogeochemistry_surface_exchanged_tracers(::Oxygen) = (:O₂, )
-biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{1}) = (:DIC, )
-biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N = carbon_replicate_names(Val(N))
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::Oxygen) = (:O₂, )
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{1}) = (:DIC, )
+NumericalEarth.Oceans.biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N = carbon_replicate_names(Val(N))
 
 @inline carbon_replicate_names(::Val{N}) where N = ntuple(n -> Symbol(:DIC, n), Val(N))
 
@@ -27,7 +27,7 @@ biogeochemistry_surface_exchanged_tracers(::AbstractInorganicCarbon{N}) where N 
 # prescribed atmosphere pressure is in Pa, the gas exchange takes atm
 @inline surface_atmospheric_pressure(exchanger) = exchanger.atmosphere.state.p / ATM
 
-biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...) =
+NumericalEarth.EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; kwargs...) =
     merge(
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.nutrients; kwargs...),
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.plankton; kwargs...),
@@ -36,16 +36,16 @@ biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemis
         biogeochemical_interface(exchanger, ocean, biogeochemistry.underlying_biogeochemistry.inorganic_carbon; kwargs...)
     )
 
-biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
+NumericalEarth.EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean, ::Oxygen; kwargs...) =
     (; O₂ = OxygenGasExchangeBoundaryCondition(;
                 wind_speed = surface_wind_speed(exchanger),
                 air_concentration = GarciaGordonOxygenSaturation(; atmospheric_pressure = surface_atmospheric_pressure(exchanger)),
                 kwargs...).condition.func)
 
-biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
+NumericalEarth.EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{1}; kwargs...) =
     (; DIC = carbon_dioxide_exchange(exchanger, :DIC, :Alk; kwargs...))
 
-function biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}; kwargs...) where N
+function NumericalEarth.EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean, ::AbstractInorganicCarbon{N}; kwargs...) where N
     names = carbon_replicate_names(Val(N))
     exchanges = ntuple(n -> carbon_dioxide_exchange(exchanger, Symbol(:DIC, n), Symbol(:Alk, n); kwargs...), Val(N))
     return NamedTuple{names}(exchanges)
@@ -71,7 +71,7 @@ end
 ##### Applying it
 #####
 
-function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}, ocean, grid)
+function NumericalEarth.Oceans.update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}, ocean, grid)
     # we might want to add more stuff like sediments or rivers here in the future
 
     exchangers = gas_transfer_parametrisations(biogeochemistry, coupled_model.interfaces.properties)

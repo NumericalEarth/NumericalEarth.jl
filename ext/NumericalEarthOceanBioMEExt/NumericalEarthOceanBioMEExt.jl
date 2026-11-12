@@ -5,8 +5,9 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: AbstractGrid, Center
 using Oceananigans.Utils: launch!
+using NumericalEarth: NumericalEarth
 
-using OceanBioME: NutrientsPlanktonDetritus, DiscreteBiogeochemistry
+using OceanBioME: OceanBioME, NutrientsPlanktonDetritus, DiscreteBiogeochemistry
 using OceanBioME.Models.NutrientsPlanktonDetritusModels.OxygenModels: Oxygen
 using OceanBioME.Models.NutrientsPlanktonDetritusModels.InorganicCarbonModels: AbstractInorganicCarbon
 using OceanBioME.Light:
