@@ -1,7 +1,6 @@
 module InterfaceComputations
 
 using Adapt: Adapt
-using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, location, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
@@ -72,6 +71,7 @@ export
     # Friction velocity formulations
     MomentumBasedFrictionVelocity
 
+using ...NumericalEarth: NumericalEarth, stateindex, SIGNATURES, TYPEDSIGNATURES
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
@@ -81,8 +81,6 @@ using ..EarthSystemModels: EarthSystemModels,
                            molmass_dryair,
                            surface_layer_height,
                            boundary_layer_height
-
-using ...NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Functions extended by component models

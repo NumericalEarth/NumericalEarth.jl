@@ -2,7 +2,6 @@ module SeaIces
 
 export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress
 
-using NumericalEarth: SIGNATURES
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
@@ -19,6 +18,7 @@ using Oceananigans.Units: minutes
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, default_stop_time
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, ThreeEquationHeatFlux
 

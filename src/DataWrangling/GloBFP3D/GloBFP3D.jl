@@ -10,12 +10,10 @@ using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.Lands: Lands, building_morphometry
-
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
                        BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
-
-using NumericalEarth: SIGNATURES
+using ...Lands: Lands, building_morphometry
 
 import Oceananigans
 

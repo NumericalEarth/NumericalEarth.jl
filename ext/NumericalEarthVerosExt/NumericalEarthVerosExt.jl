@@ -1,13 +1,12 @@
 module NumericalEarthVerosExt
 
 using CondaPkg: CondaPkg
-using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
 using Oceananigans.Fields: Field
 using Oceananigans.Grids: Bounded, Flat, Periodic, Center, Face, LatitudeLongitudeGrid
-using NumericalEarth: NumericalEarth
+using NumericalEarth: NumericalEarth, SIGNATURES
 using PythonCall: Py, PyArray, pyconvert, pyexec, pyimport
 
 include("veros_ocean_simulation.jl")

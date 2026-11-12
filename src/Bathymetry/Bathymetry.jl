@@ -4,7 +4,6 @@ export regrid_bathymetry, regrid_topography, regrid_ocean_fraction, smooth_topog
 export Basin
 export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 
-using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using KernelAbstractions: @kernel, @index
@@ -23,6 +22,7 @@ using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
+using ...NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using ..DataWrangling: Metadatum, native_grid, metadata_path,
                        dataset_variable_name, validate_dataset_coverage,
                        FieldRegridding, load_field_cache, save_field_cache

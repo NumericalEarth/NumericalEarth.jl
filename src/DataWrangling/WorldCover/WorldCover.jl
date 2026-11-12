@@ -2,13 +2,13 @@ module WorldCover
 
 export ESAWorldCover, WorldCoverVersion, WorldCoverV100, WorldCoverV200
 
-using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 using Oceananigans: Center, location
 using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, regrid!
 
+using NumericalEarth: SIGNATURES
 using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                                    metadata_path, BoundingBox, Dataset, majority_class!, class_fractions
 

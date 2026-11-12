@@ -4,11 +4,10 @@ export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
 using Dates: Dates, DateTime, Month
-using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
-using ...NumericalEarth: NumericalEarth
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
                        first_date, metadata_path, metadata_url, download_with_retries, unzip
 

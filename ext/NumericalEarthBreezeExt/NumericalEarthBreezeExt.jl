@@ -1,7 +1,6 @@
 module NumericalEarthBreezeExt
 
 using Breeze: Breeze
-using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
@@ -9,7 +8,7 @@ using Oceananigans.Advection: cell_advection_timescale
 using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: launch!
-using NumericalEarth: NumericalEarth
+using NumericalEarth: NumericalEarth, SIGNATURES, TYPEDSIGNATURES
 using NumericalEarth.EarthSystemModels: sea_ice_concentration
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, computed_fluxes
 

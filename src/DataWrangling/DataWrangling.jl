@@ -40,13 +40,12 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
-using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES, TYPEDSIGNATURES
 
 #####
 ##### Downloading utilities

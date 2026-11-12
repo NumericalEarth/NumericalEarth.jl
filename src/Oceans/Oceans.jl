@@ -4,7 +4,6 @@ export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, Prescribed
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
-using NumericalEarth: SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -35,6 +34,7 @@ using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,

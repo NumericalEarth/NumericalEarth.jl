@@ -23,7 +23,6 @@ function total_density end
 # (method in the Breeze extension).
 function reconstruct_parent_state end
 
-using NumericalEarth: SIGNATURES
 using Oceananigans
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: AbstractGrid
@@ -31,6 +30,7 @@ using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundar
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
                            BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger

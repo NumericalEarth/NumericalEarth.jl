@@ -4,7 +4,6 @@ export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, bulk_dr
        hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
-using NumericalEarth: SIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
@@ -19,7 +18,7 @@ using Oceananigans.Units: Time, meters, second
 using Oceananigans.Utils: Utils, prettysummary, launch!
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
-using ...NumericalEarth: NumericalEarth
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, set_prescribed_field!, molmass_dryair
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger, _compute_fractional_indices!
 

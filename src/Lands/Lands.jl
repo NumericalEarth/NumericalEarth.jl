@@ -49,7 +49,6 @@ abstract type AbstractLand end
 
 using Adapt: Adapt
 using DocStringExtensions: TYPEDEF
-using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -66,9 +65,9 @@ using Oceananigans.Units: Time, days
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using Base: ForwardOrdering
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES, TYPEDSIGNATURES
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations,
                                                  CanopyInterface, EnergyBalanceTemperature,
                                                  ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity,

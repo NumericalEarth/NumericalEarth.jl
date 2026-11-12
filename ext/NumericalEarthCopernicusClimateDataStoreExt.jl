@@ -1,14 +1,13 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
-using NumericalEarth
 using CopernicusClimateDataStore: CopernicusClimateDataStore
-using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
-using Downloads: Downloads
 using Dates: Dates
+using Downloads: Downloads
+using NCDatasets: NCDatasets
 using Oceananigans.DistributedComputations: @root
 
-using NCDatasets: NCDatasets
-
+using NumericalEarth
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,

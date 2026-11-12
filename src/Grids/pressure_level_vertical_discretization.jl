@@ -1,5 +1,4 @@
 using Adapt: Adapt
-using NumericalEarth: SIGNATURES
 using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.BoundaryConditions: fill_halo_regions!
@@ -15,6 +14,8 @@ import Oceananigans.Grids: rnode, rnodes, znodes, generate_coordinate,
                            validate_dimension_specification
 import Oceananigans.Fields: _fractional_indices, fractional_x_index,
                             fractional_y_index, FractionalIndices, fractional_index
+
+using NumericalEarth: SIGNATURES
 
 """
     PressureLevelVerticalDiscretization

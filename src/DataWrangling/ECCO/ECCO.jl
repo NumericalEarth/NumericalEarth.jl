@@ -9,7 +9,6 @@ export retrieve_data
 
 using Adapt: Adapt
 using Dates: Dates, DateTime, Day, Month
-using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
@@ -18,7 +17,7 @@ using Oceananigans.Grids: Face, Center
 using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
 
-using ...NumericalEarth: NumericalEarth
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
