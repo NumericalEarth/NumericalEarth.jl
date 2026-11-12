@@ -248,7 +248,7 @@ end
     end
 
     target_grid = half_land_ocean_grid(arch)
-    geus_land = GEUSPrescribedLand(target_grid; dataset = GEUSIceDischarge(version = 0), dir,
+    geus_land = GEUSPrescribedLand(target_grid; dataset = GEUSSolidIceDischarge(version = 0), dir,
                                    dates = (DateTime(1980, 1, 1), DateTime(1997, 6, 1)))
 
     Q₀, ρ = 555.0, 1000.0

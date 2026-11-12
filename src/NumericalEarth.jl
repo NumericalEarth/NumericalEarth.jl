@@ -86,7 +86,7 @@ export
     GloFASPrescribedLand,
     GloFASReanalysis,
     GEUSPrescribedLand,
-    GEUSIceDischarge,
+    GEUSSolidIceDischarge,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     FreezingLimitedOceanTemperature,

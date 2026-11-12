@@ -1,7 +1,7 @@
 module GEUS
 
 # Datasets
-export GEUSIceDischarge
+export GEUSSolidIceDischarge
 
 # Prescribed components
 export GEUSPrescribedLand
@@ -26,7 +26,7 @@ function __init__()
     return nothing
 end
 
-struct GEUSIceDischarge
+struct GEUSSolidIceDischarge
     version :: Int
 end
 
@@ -35,12 +35,12 @@ $(TYPEDSIGNATURES)
 
 Greenland solid ice discharge across the ~270 flux gates upstream of the marine-terminating glacier
 fronts, from release `version` of the GEUS Dataverse record
-[Mankoff et al. (2020)](@cite Mankoff2020) (doi:10.22008/promice/data/ice_discharge).
+[Mankoff et al. (2020)](@cite Mankoff2020solid) (doi:10.22008/promice/data/ice_discharge).
 The record starts in 1986 and is updated every few weeks, each update a new `version`.
 """
-GEUSIceDischarge(; version = 132) = GEUSIceDischarge(version)
+GEUSSolidIceDischarge(; version = 132) = GEUSSolidIceDischarge(version)
 
-Base.summary(dataset::GEUSIceDischarge) = string("GEUSIceDischarge(version=", dataset.version, ")")
+Base.summary(dataset::GEUSSolidIceDischarge) = string("GEUSSolidIceDischarge(version=", dataset.version, ")")
 
 const GEUS_DATAVERSE = "https://dataverse.geus.dk"
 const GEUS_DISCHARGE_DOI = "doi:10.22008/promice/data/ice_discharge/d/v02"
@@ -55,7 +55,7 @@ $(TYPEDSIGNATURES)
 
 Download `gate.nc` of `dataset`'s release into `dir`, unless it is already there, and return its path.
 """
-function Downloads.download(dataset::GEUSIceDischarge, dir = download_GEUS_cache)
+function Downloads.download(dataset::GEUSSolidIceDischarge, dir = download_GEUS_cache)
     path = joinpath(dir, string("gate_V", dataset.version, ".nc"))
     isfile(path) && return path
 
@@ -97,7 +97,7 @@ end
 $(TYPEDSIGNATURES)
 
 Return a [`PrescribedLand`](@ref) that forces the ocean with the Greenland solid ice discharge of
-[`GEUSIceDischarge`](@ref), as the `icebergs` freshwater component, for the `(start_date, end_date)`
+[`GEUSSolidIceDischarge`](@ref), as the `icebergs` freshwater component, for the `(start_date, end_date)`
 window `dates`. Each flux gate is a mouth routed onto the coastal ocean cells of `grid` like the
 GloFAS rivers (see [`build_river_routing`](@ref)).
 
@@ -113,7 +113,7 @@ Keyword Arguments
 """
 function GEUSPrescribedLand(grid;
                             dates,
-                            dataset = GEUSIceDischarge(),
+                            dataset = GEUSSolidIceDischarge(),
                             dir = download_GEUS_cache,
                             time_indexing = Clamp(),
                             maximum_search_radius = 5,
