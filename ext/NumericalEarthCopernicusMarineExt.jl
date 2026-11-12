@@ -3,6 +3,7 @@ module NumericalEarthCopernicusMarineExt
 using CopernicusMarine: CopernicusMarine
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
+
 using NumericalEarth: NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox, Column, Linear, Nearest, dataset_variable_name
 using NumericalEarth.DataWrangling.GLORYS: GLORYS, GLORYSMetadata, GLORYSMetadatum
