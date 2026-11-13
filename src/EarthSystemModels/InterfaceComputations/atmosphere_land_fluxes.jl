@@ -223,8 +223,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     clock = coupled_model.clock
     atmosphere_fields = exchanger.atmosphere.state
 
-    atmosphere_data = merge(atmosphere_fields,
-                            (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+    atmosphere_data = merge((; h_bℓ = boundary_layer_height(coupled_model.atmosphere)),
+                            atmosphere_fields)
 
     interface_fluxes = atmosphere_land_interface.fluxes
     interface_temperature = atmosphere_land_interface.temperature
