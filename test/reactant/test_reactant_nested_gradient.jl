@@ -21,8 +21,8 @@ include("patches.jl")
 # saturation-adjusted moisture, nested in an analytic parent with a meridional temperature gradient and
 # a sheared westerly. The test takes the gradient of the child's domain-mean squared temperature after
 # one hour (360 steps of 10 s) with respect to a perturbation of its initial ρθ: Enzyme's reverse mode
-# through a checkpointed traced loop, compiled with Reactant. GPU only (GPU_TEST=true): on the CPU the
-# compile and the hour are too slow for CI.
+# through a checkpointed traced loop, compiled with Reactant. CI runs it on the GPU only (GPU_TEST=true): on the
+# CPU the compile and the hour are too slow for CI.
 
 # Defined here, not inside the testset: closures over the testset's locals make Reactant compile them as closures,
 # whose generated `Thunk` calls cost ~20 GB more to compile on the first call (see test_reactant_nested.jl)
@@ -50,11 +50,15 @@ function grad_loss(model, dmodel, δρθ, dδρθ, Δt, Nsteps)
     return dδρθ, J
 end
 
-if !gpu_test
-    @info "Skipping the nested gradient test, which runs on the GPU only (GPU_TEST=true)"
+# For a local try: NESTED_GRADIENT_CPU=true runs it on the CPU backend, and NESTED_GRADIENT_STEPS shortens the
+# hour (360 steps of 10 s by default)
+run_on_cpu = get(ENV, "NESTED_GRADIENT_CPU", "false") == "true"
+
+if !(gpu_test || run_on_cpu)
+    @info "Skipping the nested gradient test, which runs on the GPU (GPU_TEST=true) or, locally, on the CPU (NESTED_GRADIENT_CPU=true)"
 else
 
-    @testset "Nested atmosphere: gradient through one hour" begin
+    @testset "Nested atmosphere: gradient through a compiled forecast" begin
         arch  = ReactantState()
         times = [0.0, 1800.0, 3600.0]
 
@@ -91,7 +95,7 @@ else
         dδρθ   = CenterField(child_grid)
         dmodel = Enzyme.make_zero(model)
         Δt     = 10.0
-        Nsteps = 360
+        Nsteps = parse(Int, get(ENV, "NESTED_GRADIENT_STEPS", "360"))
 
         # As Breeze's AD benchmark: these two patterns make the gradient compile run out of host memory or
         # fail (NumericalEarth/Breeze.jl#1151, EnzymeAD/Reactant.jl#3573)
@@ -99,11 +103,12 @@ else
                                                   excluded_passes = ["greedy_while_loop_batch_fission",
                                                                      "while_elementwise_reduction_to_reduce"])
 
-        @info "Compiling the gradient of one hour ($Nsteps steps of $Δt s)..."
+        @info "Compiling the gradient of $Nsteps steps of $Δt s..."
         compile_time = @elapsed compiled_grad = Reactant.@compile compile_options = compile_options grad_loss(
             model, dmodel, δρθ, dδρθ, Δt, Nsteps)
-        @info "Compiled the gradient in $(round(compile_time, digits = 1)) s; running it..."
-        ∇J, J = compiled_grad(model, dmodel, δρθ, dδρθ, Δt, Nsteps)
+        @info "Compiled the gradient in $(round(compile_time, digits = 1)) s (peak memory $(peak_memory())); running it..."
+        run_time = @elapsed ∇J, J = compiled_grad(model, dmodel, δρθ, dδρθ, Δt, Nsteps)
+        @info "Ran the gradient in $(round(run_time, digits = 1)) s (peak memory $(peak_memory()))"
         ∇ = Array(interior(∇J))
 
         @test isfinite(J)
