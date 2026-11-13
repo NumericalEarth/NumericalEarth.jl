@@ -110,6 +110,13 @@ freshwater_exchange(J::Field) = (; carrying_flux = Field{Center, Center, Nothing
 
 @inline extract_freshwater_flux(bc) = freshwater_exchange(bc).carrying_flux
 
+free_surface_grid(grid, free_surface) = grid
+
+function free_surface_grid(grid, free_surface::SplitExplicitFreeSurface)
+    TX, TY, _ = topology(grid)
+    return maybe_extend_halos(TX, TY, grid, free_surface.substepping)
+end
+
 #####
 ##### Defaults
 #####
@@ -511,14 +518,7 @@ function hydrostatic_ocean_simulation(grid;
     implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid)
     implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid)
 
-    TX, TY, _ = topology(grid)
-    η_grid = if free_surface isa SplitExplicitFreeSurface
-        maybe_extend_halos(TX, TY, grid, free_surface.substepping)
-    else
-        grid
-    end
-
-    top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(η_grid)
+    top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(free_surface_grid(grid, free_surface))
 
     if grid isa MutableGridOfSomeKind
         Fη = :η ∈ keys(forcing) ? (Jʷ, forcing.η) : Jʷ
