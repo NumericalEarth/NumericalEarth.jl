@@ -9,8 +9,8 @@ using Oceananigans.Grids: Bounded, LatitudeLongitudeGrid
 using Oceananigans.TimeSteppers: Clock, time_step!, update_state!
 using NumericalEarth
 using Breeze
-using CUDA
 
+include("setup.jl")
 include("patches.jl")
 
 #####
@@ -24,12 +24,9 @@ include("patches.jl")
 # through a checkpointed traced loop, compiled with Reactant. GPU only (GPU_TEST=true): on the CPU the
 # compile and the hour are too slow for CI.
 
-gpu_test = get(ENV, "GPU_TEST", "false") == "true"
-
 if !gpu_test
     @info "Skipping the nested gradient test, which runs on the GPU only (GPU_TEST=true)"
 else
-    Reactant.set_default_backend("gpu")
 
     @testset "Nested atmosphere: gradient through one hour" begin
         arch  = ReactantState()
