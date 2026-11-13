@@ -4,6 +4,7 @@ include("download_utils.jl")
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: compute_native_date_range
 using NumericalEarth.JRA55: download_JRA55_cache
+using Oceananigans.OutputReaders: update_field_time_series!
 
 @testset "JRA55 and data wrangling utilities" begin
     native_dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
@@ -231,5 +232,20 @@ using NumericalEarth.JRA55: download_JRA55_cache
         for t in eachindex(river_flux_span.times)
             @test maximum(abs, interior(river_flux_span[t])) > 0
         end
+
+        @info "Testing MultiYearJRA55 window wrapping past the end of a record on $A..."
+
+        # A record that does not start on 1 January: the window (3, 1) wraps to file positions
+        # that do not include 1, so the split has to find the wrap by order.
+        dates_wrap = compute_native_date_range(native_dates, DateTime("1959-01-02T12:00:00"), DateTime("1959-01-04T12:00:00"))
+        metadata_wrap = Metadata(multiyear_name; dataset, dates=dates_wrap)
+        river_flux_wrap = download_dataset_with_fallback(unique(metadata_path(metadata_wrap));
+                                                         dataset_name="MultiYearJRA55 $multiyear_name wrapped window") do
+            FieldTimeSeries(metadata_wrap, arch; time_indices_in_memory=2)
+        end
+        river_flux_all = FieldTimeSeries(metadata_wrap, arch; time_indices_in_memory=3)
+        update_field_time_series!(river_flux_wrap, 3)
+        @test Array(interior(river_flux_wrap[3])) == Array(interior(river_flux_all[3]))
+        @test Array(interior(river_flux_wrap[1])) == Array(interior(river_flux_all[1]))
     end
 end

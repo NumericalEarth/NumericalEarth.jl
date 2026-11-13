@@ -44,16 +44,14 @@ function DataWrangling.retrieve_data(metadatum::MultiYearJRA55Metadatum)
     return data
 end
 
-# Split at the wrap point if `nn` cycles past 1 — DiskArrays requires sorted indices.
+# Split where `nn` wraps around the end of the record — DiskArrays requires sorted indices.
 function jra55_read_data(ds, name, i, j, nn)
-    if issorted(nn)
-        return ds[name][i, j, nn]
-    else
-        m = findfirst(==(1), nn)
-        d1 = ds[name][i, j, nn[1:m-1]]
-        d2 = ds[name][i, j, nn[m:end]]
-        return cat(d1, d2; dims=3)
-    end
+    wrap = findfirst(k -> nn[k] < nn[k-1], 2:length(nn))
+    isnothing(wrap) && return ds[name][i, j, nn]
+    m = wrap + 1
+    d1 = ds[name][i, j, nn[1:m-1]]
+    d2 = ds[name][i, j, nn[m:end]]
+    return cat(d1, d2; dims=3)
 end
 
 function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
