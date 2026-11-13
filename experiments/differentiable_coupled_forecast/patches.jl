@@ -12,7 +12,8 @@ using Breeze.AtmosphereModels: condensate_field_names, liquid_mass_fraction, ice
 # refuses condensate by reducing every condensate field with `all(iszero, interior(field))`: element by element
 # on the host, which a device array refuses ("Scalar indexing is disallowed"). Reactant reads a CPU buffer in
 # place, so the CPU backend passes and only the GPU stops. Here each reduction runs on one host copy of the field.
-# Retire when: Breeze reduces the condensate check on the device (no issue yet; Breeze 0.14 has the same code).
+# Retire when: a Breeze release carries NumericalEarth/Breeze.jl#1261 (fixes NumericalEarth/Breeze.jl#1260), whose
+# Reactant extension reduces a host copy the same way.
 host_interior(field) = (v = interior(field); view(Array(parent(v)), v.indices...))
 
 function Breeze.AtmosphereModels.has_nonzero_mass_fraction(mass_fraction)
