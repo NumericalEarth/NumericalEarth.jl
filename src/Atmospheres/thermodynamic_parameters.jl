@@ -1,4 +1,5 @@
-import Thermodynamics.Parameters:
+using Thermodynamics: Thermodynamics
+using Thermodynamics.Parameters:
     Rv_over_Rd,     # Ratio of the specific gas constants of water vapor over dry air
     R_v,            # Specific gas constant for water vapor
     R_d,            # Specific gas constant for dry air
@@ -7,14 +8,11 @@ import Thermodynamics.Parameters:
     LH_v0,          # Vaporization enthalpy at the reference temperature
     LH_s0,          # Sublimation enthalpy at the reference temperature
     LH_f0,          # Fusion enthalpy at the reference temperature
-    cp_d,           # Heat capacity of dry air at constant pressure
     cp_v,           # Isobaric (constant pressure) specific heat capacity of gaseous water vapor
     cp_l,           # Isobaric (constant pressure) specific heat capacity of liquid water
     cp_i,           # Isobaric (constant pressure) specific heat capacity of water ice
-    cv_v,           # Isochoric (constant volume) specific heat capacity of gaseous water vapor
     cv_l,           # Isochoric (constant volume) specific heat capacity of liquid water
     cv_i,           # Isochoric (constant volume) specific heat capacity of water ice
-    e_int_v0,       # Internal energy of vaporization at reference temperature `T_0`.
     T_freeze,       # Freezing temperature of _pure_ water
     T_triple,       # Triple point temperature of _pure_ water
     press_triple,   # Triple point pressure of pure water
@@ -70,12 +68,12 @@ end
 
 const CP{FT} = ConstitutiveParameters{FT} where FT
 
-@inline gas_constant(p::CP)   = p.gas_constant
-@inline EarthSystemModels.molmass_dryair(p::CP) = p.dry_air_molar_mass
-@inline molmass_water(p::CP)  = p.water_molar_mass
-@inline Rv_over_Rd(p::CP)     = molmass_dryair(p) / molmass_water(p)
-@inline R_v(p::CP)            = gas_constant(p) / molmass_water(p)
-@inline R_d(p::CP)            = gas_constant(p) / molmass_dryair(p)
+@inline gas_constant(p::CP)                         = p.gas_constant
+@inline EarthSystemModels.molmass_dryair(p::CP)     = p.dry_air_molar_mass
+@inline molmass_water(p::CP)                        = p.water_molar_mass
+@inline Thermodynamics.Parameters.Rv_over_Rd(p::CP) = molmass_dryair(p) / molmass_water(p)
+@inline Thermodynamics.Parameters.R_v(p::CP)        = gas_constant(p) / molmass_water(p)
+@inline Thermodynamics.Parameters.R_d(p::CP)        = gas_constant(p) / molmass_dryair(p)
 
 struct HeatCapacityParameters{FT} <: AbstractThermodynamicsParameters{FT}
     dry_air_adiabatic_exponent :: FT
@@ -116,12 +114,12 @@ function HeatCapacityParameters(FT = Oceananigans.defaults.FloatType;
 end
 
 const HCP{FT} = HeatCapacityParameters{FT} where FT
-@inline cp_v(p::HCP)    = p.water_vapor_heat_capacity
-@inline cp_l(p::HCP)    = p.liquid_water_heat_capacity
-@inline cp_i(p::HCP)    = p.water_ice_heat_capacity
-@inline cv_l(p::HCP)    = cp_l(p)
-@inline cv_i(p::HCP)    = cp_i(p)
-@inline kappa_d(p::HCP) = p.dry_air_adiabatic_exponent
+@inline Thermodynamics.Parameters.cp_v(p::HCP)    = p.water_vapor_heat_capacity
+@inline Thermodynamics.Parameters.cp_l(p::HCP)    = p.liquid_water_heat_capacity
+@inline Thermodynamics.Parameters.cp_i(p::HCP)    = p.water_ice_heat_capacity
+@inline Thermodynamics.Parameters.cv_l(p::HCP)    = cp_l(p)
+@inline Thermodynamics.Parameters.cv_i(p::HCP)    = cp_i(p)
+@inline Thermodynamics.Parameters.kappa_d(p::HCP) = p.dry_air_adiabatic_exponent
 
 struct PhaseTransitionParameters{FT} <: AbstractThermodynamicsParameters{FT}
     reference_vaporization_enthalpy  :: FT
@@ -165,15 +163,15 @@ function PhaseTransitionParameters(FT = Oceananigans.defaults.FloatType;
 end
 
 const PTP{FT} = PhaseTransitionParameters{FT} where FT
-@inline LH_v0(p::PTP)        = p.reference_vaporization_enthalpy
-@inline LH_s0(p::PTP)        = p.reference_sublimation_enthalpy
-@inline LH_f0(p::PTP)        = LH_s0(p) - LH_v0(p)
-@inline T_freeze(p::PTP)     = p.water_freezing_temperature
-@inline T_triple(p::PTP)     = p.triple_point_temperature
-@inline T_icenuc(p::PTP)     = p.total_ice_nucleation_temperature
-@inline pow_icenuc(p::PTP)   = convert(eltype(p), 1) # we shouldn't have the need to set this
-@inline press_triple(p::PTP) = p.triple_point_pressure
-@inline T_0(p::PTP)          = p.reference_temperature
+@inline Thermodynamics.Parameters.LH_v0(p::PTP)        = p.reference_vaporization_enthalpy
+@inline Thermodynamics.Parameters.LH_s0(p::PTP)        = p.reference_sublimation_enthalpy
+@inline Thermodynamics.Parameters.LH_f0(p::PTP)        = LH_s0(p) - LH_v0(p)
+@inline Thermodynamics.Parameters.T_freeze(p::PTP)     = p.water_freezing_temperature
+@inline Thermodynamics.Parameters.T_triple(p::PTP)     = p.triple_point_temperature
+@inline Thermodynamics.Parameters.T_icenuc(p::PTP)     = p.total_ice_nucleation_temperature
+@inline Thermodynamics.Parameters.pow_icenuc(p::PTP)   = convert(eltype(p), 1) # we shouldn't have the need to set this
+@inline Thermodynamics.Parameters.press_triple(p::PTP) = p.triple_point_pressure
+@inline Thermodynamics.Parameters.T_0(p::PTP)          = p.reference_temperature
 
 struct AtmosphereThermodynamicsParameters{FT} <: AbstractThermodynamicsParameters{FT}
     constitutive      :: ConstitutiveParameters{FT}
@@ -227,31 +225,31 @@ end
 
 const ATP = AtmosphereThermodynamicsParameters
 
-@inline R_d(p::ATP)            = R_d(p.constitutive)
-@inline R_v(p::ATP)            = R_v(p.constitutive)
-@inline gas_constant(p::ATP)   = gas_constant(p.constitutive)
-@inline EarthSystemModels.molmass_dryair(p::ATP) = molmass_dryair(p.constitutive)
-@inline molmass_water(p::ATP)  = molmass_water(p.constitutive)
-@inline Rv_over_Rd(p::ATP)     = Rv_over_Rd(p.constitutive)
-@inline LH_v0(p::ATP)          = LH_v0(p.phase_transitions)
-@inline LH_s0(p::ATP)          = LH_s0(p.phase_transitions)
-@inline LH_f0(p::ATP)          = LH_f0(p.phase_transitions)
-@inline T_freeze(p::ATP)       = T_freeze(p.phase_transitions)
-@inline T_triple(p::ATP)       = T_triple(p.phase_transitions)
-@inline T_icenuc(p::ATP)       = T_icenuc(p.phase_transitions)
-@inline pow_icenuc(p::ATP)     = pow_icenuc(p.phase_transitions)
-@inline press_triple(p::ATP)   = press_triple(p.phase_transitions)
-@inline T_0(p::ATP)            = T_0(p.phase_transitions)
+@inline Thermodynamics.Parameters.R_d(p::ATP)          = R_d(p.constitutive)
+@inline Thermodynamics.Parameters.R_v(p::ATP)          = R_v(p.constitutive)
+@inline gas_constant(p::ATP)                           = gas_constant(p.constitutive)
+@inline EarthSystemModels.molmass_dryair(p::ATP)       = molmass_dryair(p.constitutive)
+@inline molmass_water(p::ATP)                          = molmass_water(p.constitutive)
+@inline Thermodynamics.Parameters.Rv_over_Rd(p::ATP)   = Rv_over_Rd(p.constitutive)
+@inline Thermodynamics.Parameters.LH_v0(p::ATP)        = LH_v0(p.phase_transitions)
+@inline Thermodynamics.Parameters.LH_s0(p::ATP)        = LH_s0(p.phase_transitions)
+@inline Thermodynamics.Parameters.LH_f0(p::ATP)        = LH_f0(p.phase_transitions)
+@inline Thermodynamics.Parameters.T_freeze(p::ATP)     = T_freeze(p.phase_transitions)
+@inline Thermodynamics.Parameters.T_triple(p::ATP)     = T_triple(p.phase_transitions)
+@inline Thermodynamics.Parameters.T_icenuc(p::ATP)     = T_icenuc(p.phase_transitions)
+@inline Thermodynamics.Parameters.pow_icenuc(p::ATP)   = pow_icenuc(p.phase_transitions)
+@inline Thermodynamics.Parameters.press_triple(p::ATP) = press_triple(p.phase_transitions)
+@inline Thermodynamics.Parameters.T_0(p::ATP)          = T_0(p.phase_transitions)
 
-@inline e_int_v0(p::ATP)       = LH_v0(p) - R_v(p) * T_0(p)
+@inline Thermodynamics.Parameters.e_int_v0(p::ATP)     = LH_v0(p) - R_v(p) * T_0(p)
 
-@inline cp_v(p::ATP)           = cp_v(p.heat_capacity)
-@inline cp_l(p::ATP)           = cp_l(p.heat_capacity)
-@inline cp_i(p::ATP)           = cp_i(p.heat_capacity)
+@inline Thermodynamics.Parameters.cp_v(p::ATP)         = cp_v(p.heat_capacity)
+@inline Thermodynamics.Parameters.cp_l(p::ATP)         = cp_l(p.heat_capacity)
+@inline Thermodynamics.Parameters.cp_i(p::ATP)         = cp_i(p.heat_capacity)
 
-@inline cv_l(p::ATP)           = cv_l(p.heat_capacity)
-@inline cv_i(p::ATP)           = cv_i(p.heat_capacity)
+@inline Thermodynamics.Parameters.cv_l(p::ATP)         = cv_l(p.heat_capacity)
+@inline Thermodynamics.Parameters.cv_i(p::ATP)         = cv_i(p.heat_capacity)
 
-@inline kappa_d(p::ATP)        = kappa_d(p.heat_capacity)
-@inline cp_d(p::ATP)           = R_d(p) / kappa_d(p)
-@inline cv_v(p::ATP)           = cp_v(p) - R_v(p)
+@inline Thermodynamics.Parameters.kappa_d(p::ATP)      = kappa_d(p.heat_capacity)
+@inline Thermodynamics.Parameters.cp_d(p::ATP)         = R_d(p) / kappa_d(p)
+@inline Thermodynamics.Parameters.cv_v(p::ATP)         = cp_v(p) - R_v(p)

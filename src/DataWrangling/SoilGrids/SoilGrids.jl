@@ -3,17 +3,16 @@ module SoilGrids
 export SoilGrids2
 
 using Downloads: Downloads
-using Oceananigans: Center, CPU
+
+using Oceananigans: Oceananigans, Center, CPU
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
-using ..DataWrangling: DataWrangling,
+using NumericalEarth.DataWrangling: DataWrangling,
     Dataset, DownloadProgress, AbstractStaticDataset, Metadatum, BoundingBox,
     GramPerKilogram, CentigramPerCubicCentimeter, HectogramPerCubicMeter, DecigramPerKilogram,
     metadata_path, metadata_url, dataset_variable_name, download_with_retries,
     bounding_box_suffix, native_grid
-
-import Oceananigans
 
 """
     Statistic

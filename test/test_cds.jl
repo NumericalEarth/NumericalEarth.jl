@@ -7,7 +7,8 @@ using NCDatasets
 using ZipFile: ZipFile
 using Thermodynamics: Liquid
 
-using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
+using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional,
+                                    group_by_calendar_month, is_zip
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names
@@ -19,7 +20,7 @@ using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis, GloFAS_dataset_vari
 using NumericalEarth.EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 # ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
 # CDS extension (the extension no longer re-imports the ones it does not itself use).
-using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!,
+using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, ncvar_copy!, ncvar_copy_tslice!,
                                          split_era5_nc_multistep
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
@@ -602,12 +603,12 @@ end
     end
 end
 
-@testset "ERA5 CDSAPIExt group_by_calendar_month" begin
+@testset "DataWrangling group_by_calendar_month" begin
     # Multiple days in one calendar month → one group
     same_month = [DateTime(2005, 2, 16, 0),
                   DateTime(2005, 2, 17, 6),
                   DateTime(2005, 2, 28, 23)]
-    g = CDSExt.group_by_calendar_month(same_month)
+    g = group_by_calendar_month(same_month)
     @test length(g) == 1
     @test (2005, 2) in keys(g)
     @test length(g[(2005, 2)]) == 3
@@ -615,7 +616,7 @@ end
     # Month boundary: each month is its own group
     month_boundary = [DateTime(2005, 2, 28, 23),
                       DateTime(2005, 3, 1, 0)]
-    g = CDSExt.group_by_calendar_month(month_boundary)
+    g = group_by_calendar_month(month_boundary)
     @test length(g) == 2
     @test g[(2005, 2)] == [DateTime(2005, 2, 28, 23)]
     @test g[(2005, 3)] == [DateTime(2005, 3, 1, 0)]
@@ -623,7 +624,7 @@ end
     # Year boundary: crossing Dec/Jan produces two groups under different years
     year_boundary = [DateTime(2004, 12, 31, 23),
                      DateTime(2005, 1, 1, 0)]
-    g = CDSExt.group_by_calendar_month(year_boundary)
+    g = group_by_calendar_month(year_boundary)
     @test length(g) == 2
     @test g[(2004, 12)] == [DateTime(2004, 12, 31, 23)]
     @test g[(2005, 1)]  == [DateTime(2005, 1, 1, 0)]
@@ -633,19 +634,19 @@ end
              DateTime(2005, 2, 16),
              DateTime(2005, 3, 12),
              DateTime(2005, 2, 28)]
-    g = CDSExt.group_by_calendar_month(mixed)
+    g = group_by_calendar_month(mixed)
     @test length(g) == 2
     @test Set(g[(2005, 2)]) == Set([DateTime(2005, 2, 16), DateTime(2005, 2, 28)])
     @test Set(g[(2005, 3)]) == Set([DateTime(2005, 3, 6),  DateTime(2005, 3, 12)])
 
     # Duplicate datetimes are preserved (CDS will dedupe; we don't)
     dups = [DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 12)]
-    g = CDSExt.group_by_calendar_month(dups)
+    g = group_by_calendar_month(dups)
     @test length(g) == 1
     @test length(g[(2005, 2)]) == 2
 
     # Single-element input
-    g = CDSExt.group_by_calendar_month([DateTime(2005, 2, 16, 12)])
+    g = group_by_calendar_month([DateTime(2005, 2, 16, 12)])
     @test length(g) == 1
     @test g[(2005, 2)] == [DateTime(2005, 2, 16, 12)]
 end

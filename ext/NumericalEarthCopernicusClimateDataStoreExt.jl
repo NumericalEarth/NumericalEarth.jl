@@ -8,7 +8,8 @@ using Oceananigans.DistributedComputations: @root
 using NCDatasets: NCDatasets
 
 using NumericalEarth: NumericalEarth
-using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
+using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path,
+                                    group_by_calendar_month
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
                                          ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
@@ -422,11 +423,6 @@ end
 
 cds_land_product(::ERA5HourlyLand)  = "reanalysis-era5-land"
 cds_land_product(::ERA5MonthlyLand) = "reanalysis-era5-land-monthly-means"
-
-function group_by_calendar_month(datetimes)
-    keys = unique([(Dates.year(dt), Dates.month(dt)) for dt in datetimes])
-    return Dict(k => filter(dt -> (Dates.year(dt), Dates.month(dt)) == k, datetimes) for k in keys)
-end
 
 era5_land_year_batches(::ERA5MonthlyLand, dates) = [dates]
 

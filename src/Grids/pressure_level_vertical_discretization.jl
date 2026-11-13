@@ -1,19 +1,16 @@
 using Adapt: Adapt
 using Statistics: mean
-using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans: instantiated_location
-using Oceananigans.Fields: Field, compute!, interior, set!
-using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
-using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, conformal_conic_fractional_indices
-using Oceananigans.OutputReaders: TimeSeriesInterpolation
 
-import Oceananigans.Architectures: on_architecture
-import Oceananigans.Grids: rnode, rnodes, znodes, generate_coordinate,
-                           validate_dimension_specification
-import Oceananigans.Fields: _fractional_indices, fractional_x_index,
-                            fractional_y_index, FractionalIndices, fractional_index
+using Oceananigans: Oceananigans, instantiated_location
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: Field, compute!, interior, set!,
+                           FractionalIndices, fractional_index, fractional_x_index, fractional_y_index
+using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology,
+                          rnode, rnodes
+using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, conformal_conic_fractional_indices
+using Oceananigans.OutputReaders: FieldTimeSeries, TimeSeriesInterpolation
 
 """
     PressureLevelVerticalDiscretization
@@ -70,14 +67,14 @@ function PressureLevelVerticalDiscretization(geopotential;
 end
 
 # Skip the generic validator (which would `length`-check the missing 1-D fields).
-validate_dimension_specification(T, ξ::PressureLevelVerticalDiscretization, dir, N, FT) = ξ
+Oceananigans.Grids.validate_dimension_specification(T, ξ::PressureLevelVerticalDiscretization, dir, N, FT) = ξ
 
 # Compute `Lz` from the actual geopotential data instead of a placeholder vector.
 # The returned discretization carries the geopotential (transferred to `arch`)
 # but nothing else — `znodes` will error and `rnode` reads `geopotential` directly.
-function generate_coordinate(FT, topo, sz, halo,
-                             coord::PressureLevelVerticalDiscretization,
-                             coordinate_name, dim::Int, arch)
+function Oceananigans.Grids.generate_coordinate(FT, topo, sz, halo,
+                                                coord::PressureLevelVerticalDiscretization,
+                                                coordinate_name, dim::Int, arch)
     dim == 3              || throw(ArgumentError("PressureLevelVerticalDiscretization requires dim=3"))
     coordinate_name == :z || throw(ArgumentError("PressureLevelVerticalDiscretization requires coordinate_name=:z"))
 
@@ -118,7 +115,7 @@ Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
                                         Adapt.adapt(to, z.geopotential),
                                         Adapt.adapt(to, z.surface_geopotential))
 
-on_architecture(arch, z::PressureLevelVerticalDiscretization) =
+Oceananigans.Architectures.on_architecture(arch, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
                                         on_architecture(arch, z.geopotential),
                                         on_architecture(arch, z.surface_geopotential))
@@ -181,17 +178,17 @@ end
 #####
 
 # znode falls through to rnode in Oceananigans; only rnode needs overriding.
-@inline rnode(i, j, k, grid::PressureLevelGrid, ℓx, ℓy, ℓz) =
+@inline Oceananigans.Grids.rnode(i, j, k, grid::PressureLevelGrid, ℓx, ℓy, ℓz) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
 # `rnodes(grid, ...)` returns the column-mean z profile as a 1-D
 # `Vector{Float64}` of length `Nz`. This matches what plot recipes, `Lz`,
 # and length consumers expect when only the grid is in hand. Per-cell access
 # via a `Field` is exposed through `znodes(::Field)` below.
-@inline rnodes(grid::PressureLevelGrid, ℓz::Center;          kwargs...) = mean_height_profile(grid)
-@inline rnodes(grid::PressureLevelGrid, ℓz::Face;            kwargs...) = mean_height_profile(grid)
-@inline rnodes(grid::PressureLevelGrid, ℓx, ℓy, ℓz;          kwargs...) = mean_height_profile(grid)
-@inline rnodes(grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz; kwargs...) = mean_height_profile(grid)
+@inline Oceananigans.Grids.rnodes(grid::PressureLevelGrid, ℓz::Center;          kwargs...) = mean_height_profile(grid)
+@inline Oceananigans.Grids.rnodes(grid::PressureLevelGrid, ℓz::Face;            kwargs...) = mean_height_profile(grid)
+@inline Oceananigans.Grids.rnodes(grid::PressureLevelGrid, ℓx, ℓy, ℓz;          kwargs...) = mean_height_profile(grid)
+@inline Oceananigans.Grids.rnodes(grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz; kwargs...) = mean_height_profile(grid)
 
 function mean_height_profile(grid::PressureLevelGrid)
     g = grid.z.gravitational_acceleration
@@ -246,8 +243,8 @@ const PressureLevelField =
 const PressureLevelFieldTimeSeries =
     FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:PressureLevelGrid}
 
-znodes(f::PressureLevelField; kwargs...)            = znodes_for_plg(f; kwargs...)
-znodes(fts::PressureLevelFieldTimeSeries; kwargs...) = znodes_for_plg(fts; kwargs...)
+Oceananigans.Grids.znodes(f::PressureLevelField; kwargs...)            = znodes_for_plg(f; kwargs...)
+Oceananigans.Grids.znodes(fts::PressureLevelFieldTimeSeries; kwargs...) = znodes_for_plg(fts; kwargs...)
 
 function znodes_for_plg(f; kwargs...)
     grid = f.grid
@@ -280,8 +277,8 @@ end
 @inline Base.getindex(c::ColumnView, k::Int) =
     rnode(c.i, c.j, k, c.grid, Center(), Center(), Center())
 
-@inline function _fractional_indices((x, y, z)::NTuple{3, Any},
-                                      grid::PressureLevelGrid, ℓx, ℓy, ℓz)
+@inline function Oceananigans.Fields._fractional_indices((x, y, z)::NTuple{3, Any},
+                                                          grid::PressureLevelGrid, ℓx, ℓy, ℓz)
     ii = fractional_x_index(x, (ℓx, ℓy, ℓz), grid)
     jj = fractional_y_index(y, (ℓx, ℓy, ℓz), grid)
     kk = column_fractional_z_index(z, ii, jj, grid)
@@ -292,7 +289,7 @@ end
 # `ConformalConicGrid` method: the conic horizontal with the per-column vertical.
 const ConformalConicPressureLevelGrid = ConformalConicGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
 
-@inline function _fractional_indices(
+@inline function Oceananigans.Fields._fractional_indices(
         (λ, φ, z)::NTuple{3, Any}, grid::ConformalConicPressureLevelGrid,
         ℓx::Union{Center, Face}, ℓy::Union{Center, Face}, ℓz::Union{Center, Face}
     )
@@ -303,8 +300,8 @@ end
 
 # Column-region source (Flat-Flat-Bounded): there's only one (i,j)=(1,1), so
 # bisect that single column directly. Mirrors the 3-D form's column logic.
-@inline function _fractional_indices((z,)::NTuple{1, Any},
-                                      grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz)
+@inline function Oceananigans.Fields._fractional_indices((z,)::NTuple{1, Any},
+                                                          grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz)
     kk = column_fractional_z_index(z, 1, 1, grid)
     return FractionalIndices(nothing, nothing, kk)
 end
