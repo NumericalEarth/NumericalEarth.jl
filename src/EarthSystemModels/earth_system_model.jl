@@ -517,6 +517,7 @@ function above_freezing_ocean_temperature!(ocean, grid, sea_ice)
 
     arch = architecture(grid)
     launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, Tᵒᶜ, grid, Sᵒᶜ, ℵˢⁱ, liquidus)
+    fill_halo_regions!(Tᵒᶜ, ocean.model.clock, Oceananigans.fields(ocean.model))
 
     return nothing
 end
