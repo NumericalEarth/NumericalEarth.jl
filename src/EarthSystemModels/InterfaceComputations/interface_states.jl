@@ -747,16 +747,15 @@ end
     # The first trial is a Newton step at the scales of the initial temperature.
     maximum_temperature_step = convert(FT, 25)
     Tᵇ = Tᵃ + ifelse(Σg > 0, clamp(Fᵃ / Σg, -maximum_temperature_step, maximum_temperature_step), zero(FT))
-    Ψⁱⁿ⁻ = Ψⁱⁿ
     Ψⁱⁿ = compute_interface_state(ℙⁱⁿ, rebuild_interface_state(Ψⁱⁿ, Ψⁱⁿ.fluxes, Tᵇ, Ψⁱⁿ.specific_humidity),
                                   Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, (;), Δt)
     Fᵇ, _ = skin_energy_imbalance(Tᵇ, t, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ)
 
     iteration = 1
-    while iterating(Ψⁱⁿ, Ψⁱⁿ⁻, iteration, stop_criteria) & (Tᵇ != Tᵃ) & (Fᵇ != 0)
-        bracketed = Fᵃ * Fᵇ ≤ 0
+    while bracketing(Tᵃ, Tᵇ, iteration, stop_criteria)
+        # Fᵃ = Fᵇ = 0 leaves the trial at the root.
+        bracketed = (Fᵃ * Fᵇ ≤ 0) & (Fᵃ != Fᵇ)
         T = ifelse(bracketed, (Tᵃ * Fᵇ - Tᵇ * Fᵃ) / (Fᵇ - Fᵃ), Tᵇ + 2 * (Tᵇ - Tᵃ))
-        Ψⁱⁿ⁻ = Ψⁱⁿ
         Ψⁱⁿ = compute_interface_state(ℙⁱⁿ, rebuild_interface_state(Ψⁱⁿ, Ψⁱⁿ.fluxes, T, Ψⁱⁿ.specific_humidity),
                                       Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, (;), Δt)
         F, _ = skin_energy_imbalance(T, t, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ)
