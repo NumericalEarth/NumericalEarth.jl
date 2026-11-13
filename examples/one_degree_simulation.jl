@@ -220,6 +220,12 @@ simulation = Simulation(coupled_model; Δt=90minutes, stop_time=90days)
 
 add_callback!(simulation, ConservativeSurfaceFluxRestoringCallback(salinity_flux, ocean.model))
 
+# The prescribed precipitation and runoff do not balance the evaporation, so, as in most OMIP-2 models
+# [tsujino2020evaluation](@citep), we remove the net freshwater imbalance at every time step and hold the
+# total water of the ocean, sea ice and snow at its initial value.
+
+add_callback!(simulation, TotalWaterNormalization(coupled_model), IterationInterval(1))
+
 # ### A progress messenger
 #
 # We write a function that prints out a helpful progress message while the simulation runs.
