@@ -46,8 +46,9 @@ include("patches.jl")
     initialize_from_parent!(model) = ext.initialize_nested_child!(model; balancer = false)
     @info "Compiling the initialization (exchanger window and child)..."
     compile_time = @elapsed compiled_initialize! = Reactant.@compile sync=true initialize_from_parent!(model)
-    @info "Compiled the initialization in $(round(compile_time, digits=1)) s; running it..."
+    @info "Compiled the initialization in $(round(compile_time, digits=1)) s (peak memory $(peak_memory())); running it..."
     compiled_initialize!(model)
+    @info "Ran the initialization (peak memory $(peak_memory()))"
     @test all(>(0), Array(interior(model.exchanger.prognostic.ρᵈ[1])))
     @test all(>(0), Array(interior(model.child.dynamics.reference_state.pressure)))
     @test all(isfinite, Array(interior(model.child.momentum.ρu)))
@@ -56,8 +57,9 @@ include("patches.jl")
     Δt = 0.5
     @info "Compiling (raised) time_step!..."
     compile_time = @elapsed compiled_step! = Reactant.@compile raise=true raise_first=true sync=true time_step!(model, Δt)
-    @info "Compiled time_step! in $(round(compile_time, digits=1)) s; running one step..."
+    @info "Compiled time_step! in $(round(compile_time, digits=1)) s (peak memory $(peak_memory())); running one step..."
     compiled_step!(model, Δt)
+    @info "Ran one step (peak memory $(peak_memory()))"
     @test Reactant.to_number(model.clock.time) ≈ Δt
     @test all(isfinite, Array(interior(model.child.momentum.ρu)))
     @info "Nested atmosphere Reactant test done"
