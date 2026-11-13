@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: FieldRegridding, field_cache_filename, field_cache_path,
-                                    load_field_cache, save_field_cache
+using NumericalEarth.DataWrangling: FieldRegridding, NearestNeighborInpainting, field_cache_filename, field_cache_path,
+                                    inpainted_metadata_path, load_field_cache, save_field_cache
 
 @testset "Field cache keys" begin
     grid = LatitudeLongitudeGrid(CPU();
@@ -76,4 +76,20 @@ end
     @test all(isequal.(parent(reread), parent(first_read)))
 
     rm(field_cache_path(config); force = true)
+end
+
+@testset "Inpainted-data cache" begin
+    dir = mktempdir()
+    metadatum  = Metadatum(:temperature; dataset = SyntheticOcean(), dir)
+    inpainting = NearestNeighborInpainting(10)
+    download(metadatum)
+
+    first_read = Field(metadatum; inpainting)
+    @test isfile(inpainted_metadata_path(metadatum))
+    @test sort(readdir(dir)) == sort([metadatum.filename, basename(inpainted_metadata_path(metadatum))])
+
+    cached = Field(metadatum; inpainting)
+    fresh  = Field(metadatum; inpainting, cache_inpainted_data = false)
+    @test interior(cached) == interior(first_read)
+    @test interior(cached) == interior(fresh)
 end
