@@ -12,6 +12,9 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
+# Relocate a moving nest with its surfaces on the mover's schedule (method in `NestedModels` for a `NestMover`).
+relocate!(model, ::Nothing) = nothing
+
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
 
@@ -35,6 +38,8 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     #   accurate flux computation?
     tick!(coupled_model.clock, Δt)
     update_state!(coupled_model)
+
+    relocate!(coupled_model, coupled_model.mover)
 
     return nothing
 end
