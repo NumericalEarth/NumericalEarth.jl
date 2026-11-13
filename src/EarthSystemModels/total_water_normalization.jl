@@ -13,7 +13,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: update_zstar_scaling!
 
 A callback that holds the total water of the ocean, sea ice, and snow at its initial value. A forced configuration
 cannot close its surface water budget, because precipitation and runoff are prescribed while evaporation follows
-the model state, so most OMIP-2 models remove the net imbalance at every step [Tsujino et al. (2020)](@cite tsujino2020evaluation).
+the model state, so most OMIP-2 models remove the net imbalance at every step [(Tsujino et al., 2020)](@cite tsujino2020evaluation).
 The free surface absorbs the excess, spread uniformly over the wet area, and the temperature and salinity of each
 column are rescaled by the same factor so that their content is unchanged.
 
