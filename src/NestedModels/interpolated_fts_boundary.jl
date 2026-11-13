@@ -204,6 +204,12 @@ validate_source_bracket(source, grid, dim, SideType,
                                     Oceananigans.instantiated_location(fts),
                                     source_grid)
 
+# Without a clock the series is read at the first snapshot in memory
+@inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, ::Nothing, i, j, k, grid) =
+    Oceananigans.Fields.interpolate(X, view(fts.data, :, :, :, 1),
+                                    Oceananigans.instantiated_location(fts),
+                                    source_grid)
+
 @inline _query_source(source, source_grid, X, loc, t, i, j, k, grid) =
     Oceananigans.Fields.interpolate(X, source, loc, source_grid)
 
@@ -222,14 +228,10 @@ end
 @inline _boundary_index(::Type{LeftBoundary},  N) = 1
 @inline _boundary_index(::Type{RightBoundary}, N) = N + 1
 
-# `fill_halo_regions!` is sometimes invoked without a clock — most notably
-# during `set!`-time IC setup, where the kernel is launched with an empty
-# `args` tuple. Default `time = 0` in that case so dispatch succeeds.
-# Return the boundary-evaluation time as the grid's float type so `getbc` is type-stable regardless of
-# the model precision (`clock.time` may be Float32; a bare `0.0` literal would force a Union). The
-# `Nothing` branch (no clock — `set!`-time IC halo fills) evaluates the source at t = 0.
+# The boundary-evaluation time in the grid's float type, so `getbc` is type-stable for any model
+# precision, or `nothing` for halo fills without a clock (`set!`-time initial conditions).
 @inline clock_time(clock, grid) = convert(eltype(grid), clock.time)
-@inline clock_time(::Nothing, grid) = zero(eltype(grid))
+@inline clock_time(::Nothing, grid) = nothing
 
 @inline function getbc(bc::Interpolated{1, S, LX, LY, LZ},
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
