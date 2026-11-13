@@ -196,17 +196,6 @@ end
 boundary_relaxation_mask(grid::OrthogonalSphericalShellGrid, width; ramp = SmoothStepRamp()) =
     throw(ArgumentError("boundary_relaxation_mask requires a ConformalConicGrid or a LatitudeLongitudeGrid, got a $(nameof(typeof(grid.conformal_mapping))) mapping"))
 
-# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
-# `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
-# indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
-# below the lid (0 at the top), so the shared ramp contract (1 at s=0) puts the strongest damping at
-# the model top.
-function lid_sponge_mask(grid, depth; ramp = SmoothStepRamp())
-    z_top = @allowscalar znode(1, 1, size(grid, 3) + 1, grid, Center(), Center(), Face())
-    d = convert(eltype(grid), depth)
-    return (λ, φ, z) -> (s = clamp((z_top - z) / d, zero(z), one(z)); ramp(s))
-end
-
 # Default lid-sponge depth: the top ~25% of the vertical extent (≈5 km for a ~19.5 km column, base ≈15 km).
 # Thin enough to leave the deep-convective layer (~12–16 km) undamped, yet deep enough to absorb genuine
 # vertically-propagating gravity/acoustic reflection off the rigid top — the wall-mode source is removed
@@ -221,9 +210,17 @@ default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 # `time_discretization_kwargs` override both and set any other split-explicit option. When given,
 # `base_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
+#
+# The sponge damps ρw implicitly, inside the acoustic column solve, over the lid layer AND over the
+# lateral relaxation zone (`sponge_mask`). The lateral relaxation drives a persistent vertical-velocity
+# wave up the inflow walls that a lid-only sponge catches too late (at the wall/lid corner, where the run
+# NaNs). An explicit `Relaxation` on ρw at `damping_rate` would cap the outer step at
+# `damping_rate × Δt ≲ 2.5` (12.5 s at the default 1/5 s⁻¹), far below the advective limit; the implicit
+# sponge is unconditionally stable.
 function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
-                                 time_discretization_kwargs)
-    time_discretization = SplitExplicitTimeDiscretization(; sponge = UpperSponge(; damping_rate, depth = damping_depth),
+                                 time_discretization_kwargs, sponge_mask = nothing)
+    mask = sponge_mask isa Number ? Returns(sponge_mask) : sponge_mask
+    time_discretization = SplitExplicitTimeDiscretization(; sponge = UpperSponge(; damping_rate, depth = damping_depth, mask),
                                                           damping = NoDivergenceDamping(),
                                                           time_discretization_kwargs...)
     kw = (;)
@@ -309,8 +306,8 @@ absent, `qᵗ = qᵛ`).
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
-`dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate`; a matching ρw Rayleigh
-lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
+`dynamics` with an implicit `UpperSponge` that damps ρw at `damping_rate` over the top `damping_depth` m
+and over the lateral relaxation zone (`relaxation_mask`). Pass
 `base_pressure`/`reference_potential_temperature` to anchor the default dynamics, and
 `time_discretization_kwargs` to set options of its `SplitExplicitTimeDiscretization`, e.g.
 `(; damping = ThermalDivergenceDamping())` (default: no divergence damping). Any
@@ -362,7 +359,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     damping_depth = default_lid_depth(child_grid),
     time_discretization_kwargs = NamedTuple(),
     dynamics = default_nested_dynamics(child_grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
-                                       time_discretization_kwargs),
+                                       time_discretization_kwargs, sponge_mask = relaxation_mask),
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
     time_indices_in_memory = resident_time_indices(parent_atmosphere),
@@ -445,16 +442,6 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         merge(map(SpecificForcing, specific), moist)
     end
 
-    # ρw Rayleigh sponge over BOTH the top `damping_depth` meters AND the lateral relaxation zone. The
-    # lateral boundary relaxation drives a persistent vertical-velocity wave up the (inflow) lateral walls
-    # (nudging the horizontal mass/momentum harder makes it worse); `ρw` is otherwise undamped there, so
-    # the wave amplifies up the wall column until a top-only sponge catches it too late — at the wall/lid
-    # corner, where ρ collapses and the run NaNs past ~2 h. Damping `ρw` toward zero across the wall zone,
-    # where the parent's large-scale `w` is negligible, absorbs the creep at its source. One `Relaxation`
-    # on `ρw` with the pointwise max of the lid and lateral boundary relaxation masks.
-    lid_mask = lid_sponge_mask(child_grid, damping_depth)
-    sponge_mask = (λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))
-    lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = sponge_mask))
 
     # initialize = false: the resting-state construction default would survive into
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
@@ -462,7 +449,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
         thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, closure, dynamics,
         boundary_conditions = merge_boundary_conditions(child_bcs, NamedTuple(boundary_conditions)),
-        forcing = merge(lid_sponge, relax, NamedTuple(forcing)),
+        forcing = merge(relax, NamedTuple(forcing)),
         initialize = false,
         kw...)
 
