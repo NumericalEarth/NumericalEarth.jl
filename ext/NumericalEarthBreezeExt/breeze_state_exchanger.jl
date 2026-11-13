@@ -28,12 +28,12 @@ using Oceananigans.Architectures: CPU, on_architecture
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMemoryBackend,
-                                  time_indices, interpolating_time_indices, extract_field_time_series
+                                  time_indices, interpolating_time_indices, extract_field_time_series,
+                                  new_backend, update_field_time_series!
 using Oceananigans.Units: Time
-import Oceananigans.OutputReaders: new_backend, update_field_time_series!
-import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
+using NumericalEarth.NestedModels: exchange_state!
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -48,7 +48,7 @@ struct PrognosticStateBackend <: AbstractInMemoryBackend{Int}
 end
 
 Base.length(backend::PrognosticStateBackend) = backend.length
-new_backend(::PrognosticStateBackend, start, length) = PrognosticStateBackend(start, length)
+Oceananigans.OutputReaders.new_backend(::PrognosticStateBackend, start, length) = PrognosticStateBackend(start, length)
 
 # Runtime BC/forcing kernels interpolate FTS values elementwise under `@inbounds`; unlike whole-field
 # `fts[Time(t)]`, that path cannot ask the exchanger to move the window. Keep any off-window query on a
@@ -70,7 +70,7 @@ end
 # No-op the auto-update: `update_model_field_time_series!` calls the `Time` form, so short-circuiting it
 # keeps the child from cycling these FTS — the StateExchanger owns their window.
 const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:PrognosticStateBackend}
-update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
+Oceananigans.OutputReaders.update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
 @kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛᵉ, θ, u, v,
                                              T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, uₚ, vₚ,
@@ -211,13 +211,13 @@ end
 # total density ρ = ρᵈ + Σρqˣ sums the dry density with every moisture/condensate partial density the
 # exchanger carries — currently just ρqᵛᵉ, so it stays correct when condensate densities are added.
 # It omits the parent's precipitation, which the exchanger does not transfer.
-total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛᵉ[n]
+NumericalEarth.NestedModels.total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛᵉ[n]
 
 # Reconstruct the child prognostic state (ρ, θˡⁱ, qᵗ) at `time` from the parent's FULL-memory raw fields
 # via `breeze_prognostic_state`, using the exchanger's stored constants / pˢᵗ / condensate sources. Unlike
 # indexing the derived resident window, this is exact for any `time` (no residency aliasing) — the intended
 # path for post-run diagnostics/animation that query arbitrary times.
-function reconstruct_parent_state(ex::StateExchanger, time)
+function NumericalEarth.NestedModels.reconstruct_parent_state(ex::StateExchanger, time)
     parent = ex.parent
     return NumericalEarth.Atmospheres.breeze_prognostic_state(ex.constants, ex.pˢᵗ,
                full_snapshot(parent.temperature, time),
@@ -286,7 +286,7 @@ end
 
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
 # the derived prognostics only when the bracket moves (`force` fills it once at construction).
-function exchange_state!(ex::StateExchanger, time; force=false)
+function NumericalEarth.NestedModels.exchange_state!(ex::StateExchanger, time; force=false)
     parent = ex.parent
     p = ex.prognostic
 
