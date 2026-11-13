@@ -11,6 +11,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 using NumericalEarth.Lands: RiverRouting, build_flux_routing, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 
+using NCDatasets: NCDataset, defVar
+
 # A target ocean grid whose western half (longitude < 0) is ocean and whose
 # eastern half is land, so the coastline runs down longitude = 0.
 function half_land_ocean_grid(arch)
@@ -276,6 +278,46 @@ end
 
     @test ocean.model.closure isa VerticalScalarDiffusivity
     @test isnothing(ocean_simulation(target_grid; closure = nothing).model.closure)
+end
+
+# Two GEUS-like gates just inland of the coast, with constant discharge from 1986 to 1998. Before the
+# record the routed flux is the 1987–1996 climatology, which equals that constant.
+@testset "GEUS gates routed as icebergs [$arch]" for arch in test_architectures
+    gate_discharge = [100.0, 50.0]   # Gt yr⁻¹
+    sample_dates = collect(DateTime(1986, 4, 15):Day(20):DateTime(1998, 1, 1))
+
+    dir = mktempdir()
+    NCDataset(joinpath(dir, "gate_V0.nc"), "c") do ds
+        defVar(ds, "time", sample_dates, ("time",))
+        defVar(ds, "mean_lon", [0.5, 0.5], ("gate",))
+        defVar(ds, "mean_lat", [0.0, 5.0], ("gate",))
+        defVar(ds, "discharge", repeat(gate_discharge', length(sample_dates)), ("time", "gate"))
+    end
+
+    target_grid = half_land_ocean_grid(arch)
+    geus_land = GEUSPrescribedLand(target_grid; dataset = GEUSSolidIceDischarge(version = 0), dir,
+                                   dates = (DateTime(1980, 1, 1), DateTime(1997, 6, 1)))
+
+    Q₀, ρ = 555.0, 1000.0
+    river_snapshot = synthetic_discharge_field(arch, Q₀)
+    rivers = FieldTimeSeries{Center, Center, Nothing}(river_snapshot.grid, [0.0])
+    parent(rivers[1]) .= parent(river_snapshot)
+    river_land = PrescribedLand((; rivers); river_routing = (; rivers = routing_for(river_snapshot, target_grid, ρ)))
+
+    land = merge(river_land, geus_land)
+    cpu_grid = on_architecture(CPU(), target_grid)
+    exchanger = ComponentExchanger(land, target_grid)
+
+    for date in (DateTime(1980, 3, 1), DateTime(1990, 7, 10))
+        time = Dates.value(Millisecond(date - DateTime(1980, 1, 1))) / 1000
+        interpolate_state!(exchanger, target_grid, land, (; clock = Clock(; time)))
+
+        runoff_flux  = Array(interior(exchanger.state.runoff_freshwater_flux))[:, :, 1]
+        iceberg_flux = Array(interior(exchanger.state.iceberg_freshwater_flux))[:, :, 1]
+
+        @test integrated_mass_flux(runoff_flux, cpu_grid) ≈ ρ * Q₀ rtol = 1e-5
+        @test integrated_mass_flux(iceberg_flux, cpu_grid) ≈ sum(gate_discharge) * 1e12 / (365.25 * 86400) rtol = 1e-5
+    end
 end
 
 @testset "Single-column grids carry no routing" begin
