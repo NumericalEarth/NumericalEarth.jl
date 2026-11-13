@@ -213,12 +213,17 @@ jobs:
           df -a /
 
   reactant:
-    name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Reactant extension (${{ matrix.group }}) - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 80
     strategy:
       fail-fast: false
       matrix:
+        # One job per file of test/reactant (see test/reactant/runtests.jl)
+        group:
+          - unit
+          - coupled
+          - nested
         version:
           - "1.11.9"
         os:
@@ -243,6 +248,8 @@ jobs:
           # (small) cache rather than sharing the `env=test` one.
           cache-name: julia-cache;env=reactant
           cache-scratchspaces: false
+          # The groups share one environment, so they share one cache too
+          include-matrix: false
       - name: Set JULIA_CPU_TARGET
         shell: bash
         run: |
@@ -255,12 +262,9 @@ jobs:
       - name: Run tests
         timeout-minutes: 45
         run: |
+          julia --project=test/reactant --color=yes -e 'using Pkg; Pkg.instantiate()'
           julia --project=test/reactant --color=yes --check-bounds=auto -O0 \
-                --code-coverage=@${PWD}/src -e '
-              using Pkg
-              Pkg.instantiate()
-              include("test/reactant/test_reactant.jl")
-          '
+                --code-coverage=@${PWD}/src test/reactant/runtests.jl ${{ matrix.group }}
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
         with:

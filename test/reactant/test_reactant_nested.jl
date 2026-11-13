@@ -6,10 +6,9 @@ using Oceananigans.Grids: Bounded, LatitudeLongitudeGrid
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth
 using Breeze
-using CUDA
 
-gpu_test = get(ENV, "GPU_TEST", "false") == "true"
-Reactant.set_default_backend(gpu_test ? "gpu" : "cpu")
+include("setup.jl")
+include("patches.jl")
 
 # On `ReactantState` construction leaves the exchanger's window empty; one compiled
 # `initialize_nested_child!` fills it and initializes the child from it.
