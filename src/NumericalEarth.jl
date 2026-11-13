@@ -45,6 +45,7 @@ export
     NestedModel,
     NestedSimulation,
     nested_atmosphere_model,
+    time_step_ratio,
     parent_boundary_conditions,
     # Atmosphere-land interface closures
     BulkHumidity,
@@ -289,7 +290,7 @@ using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using .NestedModels
-using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions
+using .NestedModels: NestedModel, time_step_ratio, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

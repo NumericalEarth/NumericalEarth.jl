@@ -128,7 +128,7 @@ grid = LatitudeLongitudeGrid(arch;
 # initializes the child from a full-domain ERA5 snapshot, anchors the default split-explicit compressible dynamics at the domain-mean
 # ERA5 surface pressure, derives the parent-driven lateral BCs + boundary relaxation (cosine ramp over
 # `relaxation_width` cells), materializes the blended `terrain`, and wraps parent + child in a
-# `NestedModel` whose `time_step!` advances the child then ticks the parent clock.
+# `NestedModel` whose `time_step!` advances the parent across the child's upcoming step, then steps the child.
 
 # Time window: a `(start, end)` tuple — the hourly forcing cadence is the dataset's own. The initial
 # outer time step is gentle (the adaptive wizard below ramps it). The lateral boundary relaxation is an *explicit*
