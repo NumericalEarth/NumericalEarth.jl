@@ -24,13 +24,38 @@ include("patches.jl")
 # through a checkpointed traced loop, compiled with Reactant. GPU only (GPU_TEST=true): on the CPU the
 # compile and the hour are too slow for CI.
 
+# Defined here, not inside the testset: closures over the testset's locals make Reactant compile them as closures,
+# whose generated `Thunk` calls cost ~20 GB more to compile on the first call (see test_reactant_nested.jl)
+initialize_from_parent!(model) =
+    Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt).initialize_nested_child!(model; balancer = false)
+
+function loss(model, δρθ, Δt, Nsteps)
+    ρθ = prognostic_fields(model.child).ρθ
+    parent(ρθ) .+= parent(δρθ)
+    update_state!(model)
+    @trace mincut=true checkpointing=true track_numbers=false for _ in 1:Nsteps
+        time_step!(model, Δt)
+    end
+    return mean(interior(model.child.temperature) .^ 2)
+end
+
+function grad_loss(model, dmodel, δρθ, dδρθ, Δt, Nsteps)
+    parent(dδρθ) .= 0
+    _, J = Enzyme.autodiff(Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
+                           loss, Enzyme.Active,
+                           Enzyme.Duplicated(model, dmodel),
+                           Enzyme.Duplicated(δρθ, dδρθ),
+                           Enzyme.Const(Δt),
+                           Enzyme.Const(Nsteps))
+    return dδρθ, J
+end
+
 if !gpu_test
     @info "Skipping the nested gradient test, which runs on the GPU only (GPU_TEST=true)"
 else
 
     @testset "Nested atmosphere: gradient through one hour" begin
         arch  = ReactantState()
-        ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
         times = [0.0, 1800.0, 3600.0]
 
         parent_grid = LatitudeLongitudeGrid(arch; size = (24, 24, 16),
@@ -57,33 +82,13 @@ else
                                         relaxation_rate = 1/300, relaxation_width = 4,
                                         coriolis = nothing, terrain = nothing, parent_condensates = nothing)
 
-        @info "Compiling and running initialize! and initialize_nested_child!..."
-        compiled_initialize! = Reactant.@compile sync=true Oceananigans.initialize!(model)
+        # One compiled program fills the exchanger's window and initializes the child from it
+        @info "Compiling and running the initialization..."
+        compiled_initialize! = Reactant.@compile sync=true initialize_from_parent!(model)
         compiled_initialize!(model)
         initialize_child!(model) = ext.initialize_nested_child!(model; balancer = false)
         compiled_initialize_child! = Reactant.@compile sync=true initialize_child!(model)
         compiled_initialize_child!(model)
-
-        function loss(model, δρθ, Δt, Nsteps)
-            ρθ = prognostic_fields(model.child).ρθ
-            parent(ρθ) .+= parent(δρθ)
-            update_state!(model)
-            @trace mincut=true checkpointing=true track_numbers=false for _ in 1:Nsteps
-                time_step!(model, Δt)
-            end
-            return mean(interior(model.child.temperature) .^ 2)
-        end
-
-        function grad_loss(model, dmodel, δρθ, dδρθ, Δt, Nsteps)
-            parent(dδρθ) .= 0
-            _, J = Enzyme.autodiff(Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
-                                   loss, Enzyme.Active,
-                                   Enzyme.Duplicated(model, dmodel),
-                                   Enzyme.Duplicated(δρθ, dδρθ),
-                                   Enzyme.Const(Δt),
-                                   Enzyme.Const(Nsteps))
-            return dδρθ, J
-        end
 
         δρθ    = CenterField(child_grid)
         dδρθ   = CenterField(child_grid)
