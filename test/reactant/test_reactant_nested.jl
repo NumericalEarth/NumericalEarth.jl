@@ -45,7 +45,6 @@ initialize_from_parent!(model) =
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
 
     @test all(iszero, Array(interior(model.exchanger.prognostic.ρᵈ[1])))
-    @test all(iszero, Array(interior(model.child.dynamics.reference_state.pressure)))
 
     @info "Compiling the initialization (exchanger window and child)..."
     compile_time = @elapsed compiled_initialize! = @with_stack_size Reactant.@compile sync=true initialize_from_parent!(model)

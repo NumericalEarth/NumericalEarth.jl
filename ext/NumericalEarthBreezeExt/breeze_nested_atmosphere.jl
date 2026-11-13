@@ -65,7 +65,7 @@ using Breeze:
     materialize_terrain!,
     moisture_prognostic_name
 
-using Breeze.AtmosphereModels: prognostic_field_names
+using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -466,7 +466,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
         initialize = false,
         kw...)
 
-    return NestedModel(parent_atmosphere, child, exchanger)
+    child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
+                      (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
+
+    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -542,9 +545,16 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
         drag_surface_temperature = dataset_skin_temperature(parent_dataset, child_grid, first(dates), dir)
     end
 
-    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; base_pressure,
-                                                                       bottom_drag_coefficient, drag_surface_temperature, kw...)
-    initialize && initialize_nested_child!(nested_model; balancer)
+    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
+                                                                       relaxation_width, base_pressure,
+                                                                       bottom_drag_coefficient, drag_surface_temperature,
+                                                                       parent_surface_elevation = surface_elevation(snapshot),
+                                                                       kw...)
+
+    if initialize
+        initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
+        initialize_nested_child!(nested_model; balancer, prognostic = initial_state)
+    end
     return nested_model
 end
 
@@ -604,20 +614,18 @@ function initialize_nested_child!(nested_model; balancer = true, prognostic = ne
     initialize_exchanger!(nested_model.exchanger)
 
     child = nested_model.child
-    exchanger = nested_model.exchanger
-    parent = exchanger.prognostic
     fields = prognostic_fields(child)
-    t₀ = first(parent.ρᵈ.times)
+    moisture_name = moisture_prognostic_name(child.microphysics)
+    t₀ = @allowscalar first(prognostic.ρᵈ.times)
 
     ρᵈ, ρu, ρv, ρθ = fields.ρᵈ, fields.ρu, fields.ρv, fields.ρθ
-    ρqᵛᵉ = fields[exchanger.moisture_name]
-    interpolate!(ρᵈ,   parent.ρᵈ[Time(t₀)])
-    interpolate!(ρθ,   parent.ρθ[Time(t₀)])
-    interpolate!(ρqᵛᵉ, parent.ρqᵛᵉ[Time(t₀)])
-    interpolate!(ρu,   parent.ρu[Time(t₀)])
-    interpolate!(ρv,   parent.ρv[Time(t₀)])
+    ρqᵛᵉ = fields[moisture_name]
+    interpolate!(ρᵈ,   prognostic.ρᵈ[Time(t₀)])
+    interpolate!(ρθ,   prognostic.ρθ[Time(t₀)])
+    interpolate!(ρqᵛᵉ, prognostic.ρqᵛᵉ[Time(t₀)])
+    interpolate_child_momentum!(ρu, ρv, prognostic, child.grid, t₀)
 
-    moisture = NamedTuple{(exchanger.moisture_name,)}((ρqᵛᵉ,))
+    moisture = NamedTuple{(moisture_name,)}((ρqᵛᵉ,))
     set!(nested_model; ρᵈ, ρu, ρv, ρθ, moisture..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).

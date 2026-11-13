@@ -31,9 +31,9 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMe
                                   time_indices, interpolating_time_indices, extract_field_time_series,
                                   new_backend, update_field_time_series!
 using Oceananigans.Units: Time
-using Breeze.Utils: initialize_on_construction!
-import Oceananigans.OutputReaders: new_backend, update_field_time_series!
-import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
+using NumericalEarth.NestedModels: exchange_state!, initialize_on_construction!
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -242,8 +242,8 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), something(condensates, (;)))
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
-    exchanger = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    initialize_on_construction!(architecture(prognostic.ρᵈ.grid), exchanger)
+    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
+    initialize_on_construction!(architecture(prognostic.ρᵈ.grid), Oceananigans.initialize!, exchanger)
     return exchanger
 end
 
@@ -253,9 +253,49 @@ function Oceananigans.initialize!(ex::StateExchanger)
     return nothing
 end
 
+NumericalEarth.NestedModels.initialize_exchanger!(ex::StateExchanger) = Oceananigans.initialize!(ex)
+
+# The derived child prognostics of `parent_atmosphere`, filled over the initial resident window.
+function child_prognostic_state(parent_atmosphere, pˢᵗ, constants, condensates, moisture_name;
+                                time_indices_in_memory = 3)
+    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
+    return compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates, moisture_name)
+end
+
+# One exchanger per strip, keyed by side; `condensates` is keyed by side too, or `nothing`.
+function state_exchanger(parent_atmosphere::BoundaryPrescribedComponent, pˢᵗ, constants; condensates, kw...)
+    strips = boundary_strips(parent_atmosphere)
+    return NamedTuple{keys(strips)}(state_exchanger(strips[side], pˢᵗ, constants;
+                                                    condensates = isnothing(condensates) ? nothing : condensates[side], kw...)
+                                    for side in keys(strips))
+end
+
+# The derived child prognostics of `parent_atmosphere` with the constants, moisture and condensate species
+# of `exchanger`.
+function child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchanger::StateExchanger)
+    names = keys(exchanger.condensates)
+    condensates = NamedTuple{names}(isnothing(exchanger.condensates[name]) ? nothing :
+                                    parent_atmosphere.microphysical_variables[name] for name in names)
+    return child_prognostic_state(parent_atmosphere, exchanger.pˢᵗ, exchanger.constants, condensates,
+                                  exchanger.moisture_name)
+end
+
+# A strip parent carries one exchanger per side, all with the child's constants, moisture and
+# condensate species, so the first one reconstructs the state.
+child_prognostic_state(parent_atmosphere::PrescribedAtmosphere, exchangers::NamedTuple) =
+    child_prognostic_state(parent_atmosphere, first(exchangers))
+
+# The derived child prognostics, keyed by variable; for strips, each variable is keyed by side.
+parent_prognostic(exchanger::StateExchanger) = exchanger.prognostic
+
+function parent_prognostic(exchangers::NamedTuple)
+    names = keys(first(exchangers).prognostic)
+    return NamedTuple{names}(map(exchanger -> exchanger.prognostic[name], exchangers) for name in names)
+end
+
 # Advance the derived resident window (and the parent's own FTS windows) to bracket `time`, recomputing
 # the derived prognostics only when the bracket moves. A window holding the whole series never moves.
-function exchange_state!(ex::StateExchanger, time)
+function NumericalEarth.NestedModels.exchange_state!(ex::StateExchanger, time)
     parent = ex.parent
     p = ex.prognostic
 
@@ -268,8 +308,10 @@ function exchange_state!(ex::StateExchanger, time)
     # window spanning [n₁-1, n₁, n₁+1] keeps EVERY sub-stage query resident across a node crossing.
     # A 2-level window cannot span the crossing — its start-side query returns a stale/wrong boundary target
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
-    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
-    start = clamp(n₁ - 1, 1, N - window + 1)
+    # Host copy of the times: a single time stays a device array (only 2+ evenly spaced times become a range)
+    times = on_architecture(CPU(), p.ρᵈ.times)
+    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, times, time)
+    start = clamp(n₁ - 1, 1, max(1, N - window + 1))
 
     # Hold the child window's levels `start:start+window-1` in the parent's own (possibly limited-memory)
     # FTS windows; they also bracket the parent's clock, which trails `time` by at most one interval.

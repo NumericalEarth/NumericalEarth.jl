@@ -55,8 +55,16 @@ NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing, child_callba
 exchange_state!(exchanger, time) = nothing
 exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_state!(exchanger, time), exchangers)
 
+# Fill an exchanger's derived state before the first step; a strip parent carries one exchanger per side.
+initialize_exchanger!(exchanger) = nothing
+initialize_exchanger!(exchangers::NamedTuple) = foreach(initialize_exchanger!, exchangers)
+
+# Run `initialize!(args...)` when an object is constructed on `arch`. On `ReactantState`
+# (NumericalEarthReactantExt) construction skips it: the user compiles and runs `initialize!` instead.
+initialize_on_construction!(arch, initialize!, args...) = initialize!(args...)
+
 function Oceananigans.initialize!(nm::NestedModel)
-    isnothing(nm.exchanger) || Oceananigans.initialize!(nm.exchanger)
+    initialize_exchanger!(nm.exchanger)
     Oceananigans.initialize!(nm.child)
     return nothing
 end

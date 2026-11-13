@@ -1064,7 +1064,8 @@ end
     # `SaturationAdjustment(WarmPhaseEquilibrium())` — no extra dependency needed to exercise the seam.
     model = nested_atmosphere_model(parent, child_grid;
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
-                coriolis = nothing, terrain = nothing, parent_condensates = nothing)
+                coriolis = nothing, terrain = nothing, parent_condensates = nothing,
+                time_indices_in_memory = 3)
     ext.initialize_nested_child!(model; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
@@ -1175,7 +1176,7 @@ end
                       unrelaxed_model.exchanger.prognostic)
 
     for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
-        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        ext.initialize_nested_child!(model; balancer = false, prognostic)
         for _ in 1:8
             time_step!(model, 0.5)
         end
@@ -1190,7 +1191,7 @@ end
 
     # Running the strip child in two `run!` calls reproduces its continuous run.
     rerun_model = nest(strips, 1/30)
-    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    ext.initialize_nested_child!(rerun_model; balancer = false, prognostic = initial_states[2])
     simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
     run!(simulation)
     simulation.stop_iteration = 8
