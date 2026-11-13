@@ -1,5 +1,6 @@
 using KernelAbstractions: @kernel, @index
 using Oceananigans: initialize!
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture, on_architecture, CPU
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Units: Time
@@ -224,6 +225,42 @@ EarthSystemModels.surface_temperature(land_interface::AtmosphereInterface, ocean
 EarthSystemModels.surface_temperature(::Nothing, ocean_interface::AtmosphereInterface) =
     ocean_interface.temperature
 EarthSystemModels.surface_temperature(::Nothing, ::Nothing) = nothing
+
+# The land's radiating surface, blended with the ocean's where the surface partition shares a cell.
+# Emissivity and albedo are area means, and the temperature is the one whose ϵ σ T⁴ is the area-mean emission.
+function radiative_surface(interfaces::ComponentInterfaces, albedo, emissivity)
+    land = radiative_surface(interfaces.atmosphere_land_interface, albedo, emissivity)
+    isnothing(interfaces.atmosphere_ocean_interface) && return land
+    ocean = radiative_surface(interfaces.atmosphere_ocean_interface, albedo, emissivity)
+
+    grid = interfaces.exchanger.grid
+    ℵᵒᶜ = interfaces.surface_partition.ocean_fraction
+    ocean_units = interfaces.ocean_properties.temperature_units
+
+    temperature = KernelFunctionOperation{Center, Center, Nothing}(radiative_temperature, grid, ℵᵒᶜ,
+                                                                   land.temperature, land.emissivity,
+                                                                   ocean.temperature, ocean_units, ocean.emissivity)
+
+    return (; temperature,
+              albedo = KernelFunctionOperation{Center, Center, Nothing}(area_mean, grid, ℵᵒᶜ, land.albedo, ocean.albedo),
+              emissivity = KernelFunctionOperation{Center, Center, Nothing}(area_mean, grid, ℵᵒᶜ, land.emissivity, ocean.emissivity))
+end
+
+@inline function area_mean(i, j, k, grid, ocean_fraction, land_value, ocean_value)
+    ℵᵒᶜ = state2dindex(ocean_fraction, i, j)
+    return (1 - ℵᵒᶜ) * state2dindex(land_value, i, j) + ℵᵒᶜ * state2dindex(ocean_value, i, j)
+end
+
+@inline function radiative_temperature(i, j, k, grid, ocean_fraction, land_temperature, land_emissivity,
+                                       ocean_temperature, ocean_units, ocean_emissivity)
+    ℵᵒᶜ = state2dindex(ocean_fraction, i, j)
+    Tˡᵃ = state2dindex(land_temperature, i, j)
+    ϵˡᵃ = state2dindex(land_emissivity, i, j)
+    Tᵒᶜ = convert_to_kelvin(ocean_units, state2dindex(ocean_temperature, i, j))
+    ϵᵒᶜ = state2dindex(ocean_emissivity, i, j)
+    ϵ = (1 - ℵᵒᶜ) * ϵˡᵃ + ℵᵒᶜ * ϵᵒᶜ
+    return sqrt(sqrt(((1 - ℵᵒᶜ) * ϵˡᵃ * Tˡᵃ^4 + ℵᵒᶜ * ϵᵒᶜ * Tᵒᶜ^4) / ϵ))
+end
 
 ground_conductance(interface::AtmosphereInterface) = ground_conductance(temperature_formulation(interface.formulation.state))
 
