@@ -2,6 +2,7 @@
 ##### OceanBoundaryExchanger: parent ocean → the boundary bands of a nested ocean
 #####
 
+using Oceananigans.BoundaryConditions: net_inflow_value
 using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ
 using Oceananigans.TimeSteppers: time_step!
 
@@ -58,10 +59,10 @@ end
 """
     ExteriorTransport(face_areas, edge_transports, grid)
 
-Shifts the Flather exterior transport `ū H` of the open sides by depth-uniform velocities. With a number for
-`edge_transports`, one velocity common to every open side, so that together they carry that net inflow (m³ s⁻¹,
-positive into the domain); with a `NamedTuple` of each side's inflow, one velocity per side, so that each carries its
-own.
+Shifts the Flather exterior transport `ū H` of the open sides by depth-uniform velocities. With a number (or a `Ref`
+to one) for `edge_transports`, one velocity common to every open side, so that together they carry that net inflow
+(m³ s⁻¹, positive into the domain); with a `NamedTuple` of each side's inflow, one velocity per side, so that each
+carries its own.
 `face_areas` holds, for each open side, the area `H Δ` of the child's wet column at each boundary face (`Δ` the
 face's width along the boundary), on the band of the side's depth mean.
 """
@@ -131,14 +132,14 @@ local_exterior_inflow(depth_means, areas, side) = inflow_sign(side) * sum(Base.p
 local_wet_area(areas, side) = sum(Base.parent(areas[side]))
 
 # ū ← ū - sᵢ (Q - T) / A on every open side, with Q = Σᵢ Qᵢ, A = Σᵢ Aᵢ and T the net inflow
-function adjust_exterior_transport!(depth_means, correction::ExteriorTransport{<:Any, <:Number})
+function adjust_exterior_transport!(depth_means, correction::ExteriorTransport{<:Any, <:Union{Number, Base.RefValue}})
     sides = keys(depth_means)
     areas = correction.face_areas
     grid  = correction.grid
     Q = all_reduce(+, sum(side -> local_exterior_inflow(depth_means, areas, side), sides; init = zero(grid)), architecture(grid))
     A = all_reduce(+, sum(side -> local_wet_area(areas, side), sides; init = zero(grid)), architecture(grid))
     for side in sides
-        Base.parent(depth_means[side].current) .-= inflow_sign(side) * (Q - correction.edge_transports) / A
+        Base.parent(depth_means[side].current) .-= inflow_sign(side) * (Q - net_inflow_value(correction.edge_transports)) / A
     end
     return nothing
 end
@@ -182,7 +183,7 @@ function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width,
 
     face_areas() = NamedTuple{sides}(map(side -> face_area(grid, side, depth_means[side], bands[side][normal_velocity_name(side)]), sides))
     target = !isnothing(edge_transports) ? edge_transports :
-             !isnothing(net_inflow) ? convert(eltype(grid), net_inflow) :
+             !isnothing(net_inflow) ? net_inflow :
              zero_net_inflow ? zero(grid) : nothing
     exterior_transport = isnothing(target) ? nothing : ExteriorTransport(face_areas(), target, grid)
     adjust_exterior_transport!(depth_means, exterior_transport)

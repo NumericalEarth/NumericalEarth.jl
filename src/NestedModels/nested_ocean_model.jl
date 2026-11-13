@@ -161,9 +161,10 @@ common to every open side is removed from the parent's depth means, so that the 
 inflow through the open sides together. `edge_transports`, a `NamedTuple` of each open side's inflow (m³ s⁻¹, positive
 into the domain), pins the barotropic transport through each side to that inflow at every barotropic substep, as the
 volume constraints of NEMO and ROMS do, and shifts each side's depth mean so that its exterior transport, and with it
-the boundary-normal velocity, carries the same inflow. `net_inflow` (m³ s⁻¹, positive into the domain) instead pins the
-net inflow through all open sides together and leaves its split between the sides to the Flather condition, as NEMO
-and ROMS do; the depth means are shifted by one common velocity to carry the same net inflow.
+the boundary-normal velocity, carries the same inflow. `net_inflow` (m³ s⁻¹, positive into the domain; a number, or a
+`Ref` to one that a callback may change) instead pins the net inflow through all open sides together and leaves its
+split between the sides to the Flather condition, as NEMO and ROMS do; the depth means are shifted by one common
+velocity to carry the same net inflow.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
 initialized from `initial_state` (default: the
