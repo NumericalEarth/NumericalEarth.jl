@@ -33,7 +33,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMe
 using Oceananigans.Units: Time
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
-using NumericalEarth.NestedModels: exchange_state!, initialize_on_construction!
+using NumericalEarth.NestedModels: initialize_on_construction!
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
