@@ -10,11 +10,15 @@ using Breeze
 include("setup.jl")
 include("patches.jl")
 
+# Defined here, not inside the testset: a closure over the testset's locals makes Reactant compile it as a closure,
+# whose generated `Thunk` call alone costs ~20 GB to compile on the first call (out of memory on CI's runners)
+initialize_from_parent!(model) =
+    Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt).initialize_nested_child!(model; balancer = false)
+
 # On `ReactantState` construction leaves the exchanger's window empty; one compiled
 # `initialize_nested_child!` fills it and initializes the child from it.
 @testset "Nested atmosphere: compiled initialization and time_step!" begin
     arch  = ReactantState()
-    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     times = [0.0, 4.0, 8.0]
 
     parent_grid = LatitudeLongitudeGrid(arch; size = (12, 12, 8),
@@ -43,7 +47,6 @@ include("patches.jl")
     @test all(iszero, Array(interior(model.exchanger.prognostic.ρᵈ[1])))
     @test all(iszero, Array(interior(model.child.dynamics.reference_state.pressure)))
 
-    initialize_from_parent!(model) = ext.initialize_nested_child!(model; balancer = false)
     @info "Compiling the initialization (exchanger window and child)..."
     compile_time = @elapsed compiled_initialize! = @with_stack_size Reactant.@compile sync=true initialize_from_parent!(model)
     @info "Compiled the initialization in $(round(compile_time, digits=1)) s (peak memory $(peak_memory())); running it..."
