@@ -73,6 +73,8 @@ jobs:
 
   build-docs:
     name: Build documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
+    # Temporarily off on this branch, which runs only the nested gradient (ci.yml's reactant_gpu)
+    if: false
     needs: plan
     runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440

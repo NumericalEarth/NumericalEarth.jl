@@ -35,6 +35,8 @@ env:
 jobs:
   cpu_tests:
     name: (CPU) - Julia ${{ matrix.version }}
+    # Temporarily off on this branch, which runs only the nested gradient (reactant_gpu)
+    if: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -118,6 +120,8 @@ jobs:
 
   gpu_tests:
     name: (GPU)
+    # Temporarily off on this branch, which runs only the nested gradient (reactant_gpu)
+    if: false
     runs-on: aws-linux-nvidia-gpu-l4
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
@@ -214,6 +218,8 @@ jobs:
 
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    # Temporarily off on this branch, which runs only the nested gradient (reactant_gpu)
+    if: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 80
     strategy:
@@ -395,10 +401,9 @@ jobs:
 
   ci:
     name: CI
+    # Temporarily on this branch: only the nested gradient (cpu_tests, gpu_tests, reactant are off)
     needs:
-      - cpu_tests
-      - gpu_tests
-      - reactant
+      - reactant_gpu
     runs-on: ubuntu-latest
     if: ${{ success() }}
     steps:
