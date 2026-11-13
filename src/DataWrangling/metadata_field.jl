@@ -1,10 +1,12 @@
 using NCDatasets
 using JLD2
 using KernelAbstractions: @kernel, @index
-using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded, AbstractMutableGrid, interior_indices, ξnode, ηnode, znode
+using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded, TwoSided, CommunicatingSide, AbstractMutableGrid, Face,
+                          interior_indices, ξnode, ηnode, znode, halo_size, topology
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: interpolate, interpolate!
+using Oceananigans.Fields: interpolate, interpolate!, _interpolate!
+using Oceananigans.DistributedComputations: DistributedField
 using Oceananigans.Utils: launch!, KernelParameters
 
 #####
@@ -308,12 +310,15 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
         elapsed = 1e-9 * (time_ns() - start_time)
         @info string(" ... (", prettytime(elapsed), ")")
 
-        # We cache the inpainted data to avoid recomputing it
-        @root if cache_inpainted_data
-            file = jldopen(inpainted_path, "w+")
-            file["data"] = on_architecture(CPU(), parent(field))
-            file["inpainting_maxiter"] = inpainting.maxiter
-            close(file)
+        # We cache the inpainted data to avoid recomputing it. Any rank may write it,
+        # so it is written in a temporary directory to avoid races then moved.
+        if cache_inpainted_data
+            temporary_path = tempname(dirname(inpainted_path)) * ".jld2"
+            jldopen(temporary_path, "w") do file
+                file["data"] = on_architecture(CPU(), parent(field))
+                file["inpainting_maxiter"] = inpainting.maxiter
+            end
+            mv(temporary_path, inpainted_path; force = true)
         end
     end
 
@@ -364,6 +369,44 @@ function interpolate_physical!(to_field, from_field)
     fill_halo_regions!(to_field)
     return to_field
 end
+
+# Distributed targets interpolate their halos too, so a load needs no communication and may run
+# on any subset of ranks (eg open-boundary data held only by the ranks that own the boundary).
+function interpolate_physical!(to_field::DistributedField, from_field)
+    to_grid       = to_field.grid
+    from_grid     = from_field.grid
+    arch          = child_architecture(to_grid)
+    from_location = Tuple(L() for L in location(from_field))
+    to_location   = Tuple(L() for L in location(to_field))
+    Nx, Ny, Nz    = size(to_field)
+    Hx, Hy, _     = halo_size(to_grid)
+    TX, TY, _     = topology(to_grid)
+    params        = KernelParameters(interpolation_range(to_grid, to_location[1], TX, Nx, Hx),
+                                     interpolation_range(to_grid, to_location[2], TY, Ny, Hy),
+                                     1:Nz)
+
+    launch!(arch, to_grid, params, interpolation_kernel(to_grid),
+            to_field, to_grid, to_location, from_field, from_grid, from_location)
+
+    fill_halo_regions!(to_field; only_local_halos = true)
+    return to_field
+end
+
+interpolation_kernel(grid) = _interpolate!
+interpolation_kernel(::AbstractMutableGrid) = _interpolate_physical!
+
+# Halos on physical boundaries and in z lie outside the source and are filled by `fill_halo_regions!`
+interpolation_range(grid, ℓ, topo, N, H) = 1:N
+interpolation_range(grid, ℓ, ::Type{TwoSided{L, R}}, N, H) where {L, R} = first_index(grid, ℓ, L(), H):last_index(R(), N, H)
+
+first_index(grid, ℓ, side, H) = 1
+first_index(grid, ℓ, ::CommunicatingSide, H) = 1 - H
+
+# A mutable grid's face `znode` averages ηⁿ with its west or south neighbour, which the outermost halo cell lacks
+first_index(::AbstractMutableGrid, ::Face, ::CommunicatingSide, H) = 2 - H
+
+last_index(side, N, H) = N
+last_index(::CommunicatingSide, N, H) = N + H
 
 # Regrid the native-grid field onto the target during `Field(metadata, grid)` and
 # `set!`. The default is bilinear `interpolate_physical!`; datasets whose variables
