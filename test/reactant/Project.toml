@@ -8,7 +8,6 @@ Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2
 LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
 NumericalEarth = {path = "../.."}
 
