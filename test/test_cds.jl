@@ -20,8 +20,7 @@ using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis, GloFAS_dataset_vari
 using NumericalEarth.EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 # ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
 # CDS extension (the extension no longer re-imports the ones it does not itself use).
-using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, ncvar_copy!, ncvar_copy_tslice!,
-                                         split_era5_nc_multistep
+using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, ncvar_copy!, ncvar_copy_tslice!, split_era5_nc_multistep
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
