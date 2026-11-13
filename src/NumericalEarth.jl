@@ -155,6 +155,7 @@ export
     AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
+    CDSArchive, NCARArchive,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
     ORCAOne, ORCATwo, ORCAQuarter, ORCATwelfth,

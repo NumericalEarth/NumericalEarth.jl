@@ -82,6 +82,7 @@ jobs:
           TEST_ARGS=(--verbose
                      test_jra55_ecco_en4_etopo_downloading
                      test_cds_downloading
+                     test_ncar_era5_downloading
                      test_copernicus_climate_datastore_downloading
                      test_copernicus_albedo_downloading
                      test_copernicus_dem_downloading
