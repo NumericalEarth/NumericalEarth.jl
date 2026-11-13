@@ -156,7 +156,12 @@ is the parent's depth mean velocity over its own column times the child's wet de
 velocity is corrected to integrate to it ([`BarotropicBoundaryTransport`](@ref), [`ConsistentBoundaryVelocity`](@ref)),
 and the child is built on a copy of `grid` whose immersed bottom is blended toward it within `bathymetry_blend_width` cells of each open side (default: 1/3°; see
 [`blend_parent_bathymetry`](@ref)), so that the geometry at the open boundaries matches the one the parent state
-was produced over, but never shallower than `minimum_depth`.
+was produced over, but never shallower than `minimum_depth`. With `zero_net_inflow = true`, a depth-uniform velocity
+common to every open side is removed from the parent's depth means, so that the Flather exterior transport has no net
+inflow through the open sides together. `edge_transports`, a `NamedTuple` of each open side's inflow (m³ s⁻¹, positive
+into the domain), pins the barotropic transport through each side to that inflow at every barotropic substep, as the
+volume constraints of NEMO and ROMS do, and shifts each side's depth mean so that its exterior transport, and with it
+the boundary-normal velocity, carries the same inflow.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
 initialized from `initial_state` (default: the
@@ -176,6 +181,8 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
+                            zero_net_inflow = false,
+                            edge_transports = nothing,
                             initial_state = default_initial_state(parent),
                             clock = nested_clock(grid, parent.clock.time),
                             boundary_conditions = NamedTuple(),
@@ -194,9 +201,10 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     grid = blend_parent_bathymetry(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     validate_band_width(grid, open_sides, width, "relaxation_width")
-    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
+    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height, zero_net_inflow,
+                                       edge_transports)
 
-    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
+    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means, edge_transports,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :

@@ -150,7 +150,7 @@ boundary_location(name) = name ∈ keys(velocity_locations) ? velocity_locations
                           name === :η ? free_surface_location : tracer_location
 
 """
-    ocean_open_boundary_conditions(grid, bands; depth_means, normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
+    ocean_open_boundary_conditions(grid, bands; depth_means, edge_transports, normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
 Build the open lateral boundary conditions of a regional ocean on `grid` from its boundary `bands`, a
 `NamedTuple` keyed by open side of `NamedTuple`s of [`BoundaryBand`](@ref)s holding the parent's velocities
@@ -161,7 +161,9 @@ Build the open lateral boundary conditions of a regional ocean on `grid` from it
 - the boundary-tangential velocity: `ValueBoundaryCondition` with `tangential_velocity_scheme`
   (the default, a no-flux wall, is wrong on an open side),
 - the barotropic transport: `GravityWaveRadiationBoundaryCondition` (Flather) toward the parent's
-  transport through the child's wet column ([`BarotropicBoundaryTransport`](@ref)) and sea surface height,
+  transport through the child's wet column ([`BarotropicBoundaryTransport`](@ref)) and sea surface height; with
+  `edge_transports`, a `NamedTuple` of each side's inflow (m³ s⁻¹, positive into the domain), Flather's transport
+  through the side is pinned to that inflow at every barotropic substep (`target_transport`),
 - the free surface: `SurfaceWaveRadiationBoundaryCondition` (Chapman),
 - each tracer: `ValueBoundaryCondition` with `tracer_scheme`.
 
@@ -169,6 +171,7 @@ Returns a `NamedTuple` of `FieldBoundaryConditions` for `u`, `v`, `U`, `V`, `η`
 """
 function ocean_open_boundary_conditions(grid, bands;
                                         depth_means = map(Returns(nothing), bands),
+                                        edge_transports = nothing,
                                         normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     sides = keys(bands)
@@ -214,7 +217,9 @@ function ocean_open_boundary_conditions(grid, bands;
 
         # Flather is the only route by which the parent's η reaches the child: Chapman on η only radiates.
         transport = BarotropicBoundaryTransport{dim}(side_bands[normal], depth_mean, face, cell, along_bounds(side_bands[normal], normal, side))
-        push!(transport_bcs, side => GravityWaveRadiationBoundaryCondition((transport, boundary_value(side_bands.η, :η, side))))
+        target_transport = isnothing(edge_transports) ? nothing : inflow_sign(side) * edge_transports[side]
+        push!(transport_bcs, side => GravityWaveRadiationBoundaryCondition((transport, boundary_value(side_bands.η, :η, side));
+                                                                            target_transport))
         push!(η_bcs, side => SurfaceWaveRadiationBoundaryCondition())
 
         for name in tracer_names
