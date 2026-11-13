@@ -45,6 +45,7 @@ examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation"; build_always=true, gpu=false,
             credentials=["COPERNICUSMARINE_SERVICE_USERNAME", "COPERNICUSMARINE_SERVICE_PASSWORD"]),
     Example("Coupled conservation on a z-star grid", "coupled_conservation"; build_always=true, gpu=false),
+    Example("Ocean circulation beneath an ice shelf (ISOMIP)", "isomip_ice_shelf_cavity"; build_always=false, gpu=false),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation"; build_always=false, gpu=true),
     # Near-global is the heaviest example (¼°, ~35M cells) and stays disabled.
     # Example("Near-global ocean simulation", "near_global_ocean_simulation"; build_always=false, gpu=true),
