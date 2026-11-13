@@ -86,9 +86,6 @@ else
         @info "Compiling and running the initialization..."
         compiled_initialize! = Reactant.@compile sync=true initialize_from_parent!(model)
         compiled_initialize!(model)
-        initialize_child!(model) = ext.initialize_nested_child!(model; balancer = false)
-        compiled_initialize_child! = Reactant.@compile sync=true initialize_child!(model)
-        compiled_initialize_child!(model)
 
         δρθ    = CenterField(child_grid)
         dδρθ   = CenterField(child_grid)
