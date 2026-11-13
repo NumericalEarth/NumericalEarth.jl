@@ -59,9 +59,8 @@ function ConservativeRegridding.regrid!(field::Oceananigans.Field, regridder::Re
     regrid!(vec(interior(field)), regridder, regridder.src_temp)
 end
 
-function ConservativeRegridding.regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
+regrid_from_field!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field) =
     regrid!(vec(data), regridder, vec(interior(field)))
-end
 
 # Regrid the atmospheric state on the exchange grid
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, coupled_model)
@@ -172,10 +171,10 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model::Spee
     To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation
-    regrid!(𝒬ᵀ_speedy, to_atmosphere, 𝒬ᵀᵃᵒ)
-    regrid!(Jᵛ_speedy, to_atmosphere, Jᵛᵃᵒ)
+    regrid_from_field!(𝒬ᵀ_speedy, to_atmosphere, 𝒬ᵀᵃᵒ)
+    regrid_from_field!(Jᵛ_speedy, to_atmosphere, Jᵛᵃᵒ)
     tmp .= To .+ 273.15
-    regrid!(sst, to_atmosphere, tmp)
+    regrid_from_field!(sst, to_atmosphere, tmp)
 
     return nothing
 end

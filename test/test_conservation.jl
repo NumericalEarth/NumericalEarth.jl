@@ -166,7 +166,6 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
                ∂tM   = Float64[],
                Ṁ     = Float64[],
                Q     = Float64[],
-               Qᴴ    = Float64[],
                𝒬ᶠʳᶻ  = Float64[])
 
     # The intercepted snowfall the ocean loses (−Pₛᵃᵇˢ) and the ice gains (+Pₛᵃᵇˢ) cancel in the
@@ -207,7 +206,6 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
         push!(history.∂tM,  fw.∂tM)
         push!(history.Ṁ,     fw.Ṁ)
         push!(history.Q,     Q)
-        push!(history.Qᴴ,    freshwater_enthalpy_rate(coupled_model))
         push!(history.𝒬ᶠʳᶻ,  𝒬f)
         return nothing
     end
@@ -238,7 +236,6 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
         fw = freshwater_flux_state(coupled_model, spec.rain_flux, spec.snow_flux)
         Qᵖ = -spec.snow_flux * ℒ₀ * ∫dA(coupled_model.sea_ice.model.ice_concentration)
         history.Q[end]   = net_top_heat_flux(coupled_model) + Qᵖ
-        history.Qᴴ[end]  = freshwater_enthalpy_rate(coupled_model)
         history.Jˢ[end]  = fw.Jˢ
         history.Sᴺ[end]  = fw.Sᴺ
         history.Jʷᴬ[end] = fw.Jʷᴬ
@@ -270,13 +267,9 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
 
     # --- Energy budget ---
 
-    # On a mutable grid the freshwater enters the ocean and carries its enthalpy `ρᵒᶜ cᵒᶜ Jᴴ` with it, so
-    # that enthalpy is an energy input alongside the surface heat flux. A static grid admits no freshwater
-    # volume, so nothing is carried and the surface heat flux is the only input.
+    # The ocean heat-flux diagnostic includes freshwater enthalpy for a mutable grid and omits it
+    # for a static grid, so this rate is the complete atmospheric energy input.
     ∫Q = accumulate_rate(history.Q)
-    if grid isa MutableGridOfSomeKind
-        ∫Q .+= accumulate_rate(history.Qᴴ)
-    end
 
     δE = history.𝒬ᶠʳᶻ .* Δt⁺
 
