@@ -198,8 +198,10 @@ Keyword Arguments
                 date range of the dataset, the last allowable date is chosen. Default: nothing.
 
 - `region`: Specifies the spatial region of the dataset. Can be a [`BoundingBox`](@ref)
-            for a rectangular region, a [`Column`](@ref) for a single horizontal location,
-            or `nothing` for the full domain.
+            for a longitude–latitude rectangle, a [`ConformalConicBox`](@ref) for a projected
+            rectangle, a [`Column`](@ref) for a single horizontal location, or `nothing` for
+            the full domain. `dataset_region(dataset, region)` resolves the stored region;
+            conic boxes default to their geographic bounding box.
 
 - `filename`: The filename(s) for the dataset. If `nothing`, the filename is computed from
               the dataset type. Can be a `String` (single file for all dates) or a
@@ -216,6 +218,7 @@ function Metadata(variable_name;
                   start_date = nothing,
                   end_date = nothing)
 
+    region = dataset_region(dataset, region)
     dates = expand_dates(dataset, variable_name, dates)
 
     # crop dates if _either_ a start date or an end date is provided
@@ -293,6 +296,7 @@ function Metadatum(variable_name;
                    filename = nothing,
                    dir = default_download_directory(dataset))
 
+    region = dataset_region(dataset, region)
     if date isa Date
         date = DateTime(date)
     end
@@ -484,6 +488,7 @@ function MetadataSet(variable_names::Symbol...;
                      start_date = nothing,
                      end_date = nothing)
 
+    region = dataset_region(dataset, region)
     isempty(variable_names) &&
         throw(ArgumentError("MetadataSet requires at least one variable name"))
 
@@ -930,6 +935,15 @@ moored buoy) can override this to embed their fixed [`Column`](@ref) so callers
 need not repeat the coordinates.
 """
 default_region(dataset) = nothing
+
+"""
+$(TYPEDSIGNATURES)
+
+Resolve the region stored by `Metadata` for `dataset`, before generating filenames.
+By default, preserve the supplied region; `ConformalConicBox` resolves to its geographic
+bounding box. Datasets selecting in other coordinates may specialize this hook.
+"""
+dataset_region(dataset, region) = region
 
 # Note: all_dates needs to be extended for any new dataset.
 """
