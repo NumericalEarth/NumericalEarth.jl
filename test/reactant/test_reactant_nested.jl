@@ -11,8 +11,9 @@ using CUDA
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
 Reactant.set_default_backend(gpu_test ? "gpu" : "cpu")
 
-# Construction only allocates on `ReactantState`; `initialize!` is compiled, the child setup is eager.
-@testset "Nested atmosphere: compiled initialize!, initialize_nested_child! and time_step!" begin
+# On `ReactantState` construction leaves the exchanger's window empty; one compiled
+# `initialize_nested_child!` fills it and initializes the child from it.
+@testset "Nested atmosphere: compiled initialization and time_step!" begin
     arch  = ReactantState()
     ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     times = [0.0, 4.0, 8.0]
@@ -43,18 +44,13 @@ Reactant.set_default_backend(gpu_test ? "gpu" : "cpu")
     @test all(iszero, Array(interior(model.exchanger.prognostic.ρᵈ[1])))
     @test all(iszero, Array(interior(model.child.dynamics.reference_state.pressure)))
 
-    @info "Compiling initialize!..."
-    compile_time = @elapsed compiled_initialize! = Reactant.@compile sync=true initialize!(model)
-    @info "Compiled initialize! in $(round(compile_time, digits=1)) s; running it..."
+    initialize_from_parent!(model) = ext.initialize_nested_child!(model; balancer = false)
+    @info "Compiling the initialization (exchanger window and child)..."
+    compile_time = @elapsed compiled_initialize! = Reactant.@compile sync=true initialize_from_parent!(model)
+    @info "Compiled the initialization in $(round(compile_time, digits=1)) s; running it..."
     compiled_initialize!(model)
     @test all(>(0), Array(interior(model.exchanger.prognostic.ρᵈ[1])))
     @test all(>(0), Array(interior(model.child.dynamics.reference_state.pressure)))
-
-    initialize_child!(model) = ext.initialize_nested_child!(model; balancer = false)
-    @info "Compiling initialize_nested_child!..."
-    compile_time = @elapsed compiled_initialize_child! = Reactant.@compile sync=true initialize_child!(model)
-    @info "Compiled initialize_nested_child! in $(round(compile_time, digits=1)) s; running it..."
-    compiled_initialize_child!(model)
     @test all(isfinite, Array(interior(model.child.momentum.ρu)))
     @test all(>(0), Array(interior(model.child.dynamics.dry_density)))
 

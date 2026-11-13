@@ -21,7 +21,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent
+                                   VectorComponent, initialize_exchanger!
 
 using Oceananigans:
     Oceananigans,
@@ -511,7 +511,8 @@ strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the pare
 cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
 `AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. With `initialize = false` the child
-is left uninitialized, for a workflow that compiles `initialize!(nested_model)` first. Remaining
+is left uninitialized, for a workflow that compiles `initialize_nested_child!(nested_model; balancer = false)`
+itself: on `ReactantState` that one program fills the exchanger's window and initializes the child. Remaining
 keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
@@ -550,15 +551,58 @@ end
 NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
     NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
 
-# Initialize the nested child from the exchanger's parent-derived prognostics (the SAME state that drives
-# the lateral boundaries), interpolated straight into the child's prognostic fields — so the interior IC
-# and the prescribed boundary agree at the walls (no standing pressure/density jump). `set!` of those same
-# fields reconciles the densities and recomputes the Exner reference from the domain-mean state; then
-# graft ρw ← ρw − ρw̃ so the flow follows the terrain. Kernels only up to the balancer, so on
-# `ReactantState` it compiles like `initialize!`. `balancer = true` then spins ρw into nonhydrostatic
-# balance with Breeze's adiabatic (FV3 `na_init`) balance on a stripped, memory-sharing twin (no
-# microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step — eager.
-function initialize_nested_child!(nested_model; balancer = true)
+# A parent prognostic is one source per variable, or a per-side `NamedTuple` of them for a
+# `BoundaryPrescribedComponent`.
+vector_component(::Val{C}, eastward, northward) where C = VectorComponent{C}(eastward, northward)
+
+vector_component(::Val{C}, eastward::NamedTuple, northward::NamedTuple) where C =
+    map((uᵉ, vᵉ) -> VectorComponent{C}(uᵉ, vᵉ), eastward, northward)
+
+@inline rotated_x_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[1]
+@inline rotated_y_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[2]
+
+function interpolate_child_momentum!(ρu, ρv, prognostic, child_grid, t₀)
+    interpolate!(ρu, prognostic.ρu[Time(t₀)])
+    interpolate!(ρv, prognostic.ρv[Time(t₀)])
+    return nothing
+end
+
+# Rotate at cell centers with `intrinsic_vector`, then interpolate to the staggered locations.
+function interpolate_child_momentum!(ρu, ρv, prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
+    ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid, t₀)
+    ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid, t₀)
+    ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
+    ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
+    set!(ρu, Field(@at (Face, Center, Center) ρuᶜ))
+    set!(ρv, Field(@at (Center, Face, Center) ρvᶜ))
+    return nothing
+end
+
+function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
+    field = Field{loc...}(child_grid)
+    interpolate!(field, fts[Time(t₀)])
+    return field
+end
+
+# Initialize the nested model from its parent, in one call: fill the exchanger's window, then set the child
+# from the parent-derived `prognostic` (by default the exchanger's, the SAME
+# state that drives the lateral boundaries), interpolated straight into the child's prognostic fields — so
+# the interior IC and the prescribed boundary agree at the walls (no standing pressure/density jump). `set!`
+# of those same fields reconciles the densities and recomputes the Exner reference from the domain-mean
+# state; then graft ρw ← ρw − ρw̃ so the flow follows the terrain. Kernels only up to the balancer (on a
+# grid whose momentum needs no rotation), so on `ReactantState` it compiles like `initialize!`.
+# `balancer = true` then spins ρw into nonhydrostatic balance with Breeze's adiabatic (FV3 `na_init`)
+# balance on a stripped, memory-sharing twin (no microphysics/sponge/forcing) at an
+# automatically-derived acoustic-CFL step — eager.
+#
+# This is not `Oceananigans.initialize!(nested_model)`: `run!` calls that at every start (every call of a
+# compiled `run!`), and putting the initial condition there would reset the child to the parent each time,
+# losing whatever was set on it before the run (a perturbation, a control variable) and a run continued in
+# chunks. `initialize!` keeps to what is safe to repeat: the exchanger's window and the child's own setup.
+function initialize_nested_child!(nested_model; balancer = true, prognostic = nested_model.exchanger.prognostic)
+    # Construction on `ReactantState` leaves the window empty; elsewhere this refills it from the same levels
+    initialize_exchanger!(nested_model.exchanger)
+
     child = nested_model.child
     exchanger = nested_model.exchanger
     parent = exchanger.prognostic
