@@ -179,6 +179,7 @@ export
     VelocityBasedFrictionVelocity,
     compute_ice_shelf_fluxes!,
     ice_shelf_boundary_conditions,
+    ice_shelf_boundary_layer_closure,
     ice_shelf_tracer_forcing,
     initialize!,
     net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
