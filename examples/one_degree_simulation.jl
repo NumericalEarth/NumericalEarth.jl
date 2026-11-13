@@ -222,7 +222,7 @@ add_callback!(simulation, ConservativeSurfaceFluxRestoringCallback(salinity_flux
 
 # The prescribed precipitation and runoff do not balance the evaporation, so, as in most OMIP-2 models
 # [tsujino2020evaluation](@citep), we remove the net freshwater imbalance at every time step and hold the
-# total water of the ocean, sea ice and snow at its initial value.
+# total water of the ocean, sea ice, and snow at its initial value.
 
 add_callback!(simulation, TotalWaterNormalization(coupled_model), IterationInterval(1))
 
