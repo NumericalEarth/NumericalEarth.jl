@@ -16,7 +16,7 @@ using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
 using Oceananigans.Forcings: Forcings, MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
+using Oceananigans.Grids: Grids, inactive_node, peripheral_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -40,7 +40,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters,
+                                                 vector_component_boundary_conditions
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate

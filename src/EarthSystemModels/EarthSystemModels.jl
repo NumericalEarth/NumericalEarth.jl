@@ -54,7 +54,8 @@ export
     ThreeEquationHeatFlux,
     # Friction velocity formulations
     MomentumBasedFrictionVelocity,
-    default_stop_time
+    default_stop_time,
+    TotalWaterNormalization
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
@@ -95,6 +96,7 @@ using .InterfaceComputations
 
 include("earth_system_model.jl")
 include("time_step_earth_system_model.jl")
+include("total_water_normalization.jl")
 
 #####
 #####  Fallbacks for no-interface models

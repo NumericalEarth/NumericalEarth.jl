@@ -12,14 +12,17 @@ CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
+GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 GPUCompiler = "61eb1bfa-7361-4325-ad38-22787b887f55"
 Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 LowerTriangularArrays = "ed20b33f-a660-45d0-a353-9c8c20bb5814"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 OceanBioME = "a49af516-9db8-4be4-be45-1dad61c5a376"
@@ -28,6 +31,7 @@ Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 RingGrids = "d1845624-ad4f-453b-8ff4-a8db365bf3a7"
 Scratch = "6c6a2e73-6563-6170-7368-637461726353"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
@@ -45,12 +49,7 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 [sources]
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2 (required by OceanBioME 0.21.1)
 LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
-LowerTriangularArrays = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "LowerTriangularArrays"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 NumericalEarth = {path = ".."}
-RingGrids = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "RingGrids"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
-SpeedyTransforms = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyTransforms"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
-SpeedyWeather = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeather"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
-SpeedyWeatherInternals = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeatherInternals"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
 [compat]
@@ -67,18 +66,22 @@ CopernicusMarine = "0.2"
 Dates = "<0.0.1, 1"
 Downloads = "<0.0.1, 1"
 ExplicitImports = "1.15"
+GeoInterface = "1"
 GPUCompiler = "1.17"
 Glob = "1"
 JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
+Makie = "0.24"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
+NaturalEarth = "0.1"
 Oceananigans = "0.117.2"
 OceanBioME = "0.21"
 Profile = "<0.0.1, 1"
 PythonCall = "0.9.28"
 RRTMGP = "0.21.9, 0.22, 0.23, 1"
 Random = "<0.0.1, 1"
+Reactant = "0.2.278"
 Scratch = "1"
 SeawaterPolynomials = "0.3.11"
 SpeedyWeather = "0.23, 0.24"
