@@ -4,7 +4,7 @@
 
 using Reactant: Reactant
 using Oceananigans: Oceananigans
-using Oceananigans.Grids: Face, Center, λnodes, φnodes, hack_cosd
+using Oceananigans.Grids: Face, Center, λnodes, φnodes, hack_cosd, OffsetArrays
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.TimeSteppers: time_step!
 using NumericalEarth.NestedModels: NestedModel, exchange_state!
@@ -37,7 +37,8 @@ end
 
 host_nodes(a) = a
 host_nodes(a::Reactant.AbstractConcreteArray) = Array(a)
-host_nodes(a::Oceananigans.Grids.OffsetArray) = Oceananigans.Grids.OffsetArray(host_nodes(parent(a)), a.offsets)
+# Any offset wrapper (`OffsetArray`, Oceananigans's `StaticStridesOffsetArray`); the host copy is a plain `OffsetArray`
+host_nodes(a::OffsetArrays.AbstractOffsetArray) = OffsetArrays.OffsetArray(host_nodes(parent(a)), OffsetArrays.offsets(a)...)
 host_nodes(v::SubArray) = view(host_nodes(parent(v)), v.indices...)
 
 function Oceananigans.Grids.xnodes(grid::ReactantLatLonGrid, ℓx::Union{Face, Center}, ℓy::Union{Face, Center}; with_halos = false)
