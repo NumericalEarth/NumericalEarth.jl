@@ -559,10 +559,16 @@ bottom_height = regrid_bathymetry(ocean_grid; minimum_depth = 5)
 ocean_grid = ImmersedBoundaryGrid(ocean_grid, GridFittedBottom(bottom_height))
 nothing #hide
 
-# `GloFASPrescribedLand` downloads the discharge, locates the river mouths from
-# the land/ocean boundary, and spreads each mouth over the active ocean cells of
-# `ocean_grid` around it — conserving the total volume of freshwater (see
-# [`build_river_routing`](@ref)).
+# `GloFASPrescribedLand` downloads the discharge and locates the river mouths
+# from LISFLOOD's local drainage direction map, a static map of GloFAS
+# ([`GloFASStaticMaps`](@ref)) downloaded alongside the discharge. Every
+# catchment ends in exactly one *pit*, a cell that drains nowhere; the mouths
+# are the pits within `maximum_coastal_distance` (100 km by default) of the
+# ocean, so each river is counted once. The cutoff drops inland pits, such as
+# the endorheic sink of the Caspian Sea, while keeping estuaries that GloFAS
+# treats as land, whose pit sits a few cells inland. Each mouth is then spread
+# over the active ocean cells of `ocean_grid` around it, conserving the total
+# volume of freshwater (see [`build_river_routing`](@ref)).
 
 land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
                                           start_date = discharge_date,
@@ -572,16 +578,18 @@ land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
 nothing #hide
 
 # The resulting `RiverRouting` records, for each river mouth, the coastal ocean
-# cells that receive its discharge. We overlay the mouths (on the GloFAS network)
-# and their destination ocean cells (on the coastline) on the discharge map to
-# visualize the relocation.
+# cells that receive its discharge. We overlay the mouths (on the GloFAS network,
+# sized by their discharge) and their destination ocean cells (on the coastline)
+# on the discharge map to visualize the relocation.
 
 routing = land.river_routing.rivers
 
 λn = λnodes(land.grid, Center(), Center(), Center())
 φn = φnodes(land.grid, Center(), Center(), Center())
-mouth_λ = [λn[i] for i in Array(routing.contribution_outlet_i)]
-mouth_φ = [φn[j] for j in Array(routing.contribution_outlet_j)]
+mouths = unique(zip(Array(routing.contribution_outlet_i), Array(routing.contribution_outlet_j)))
+mouth_λ = [λn[i] for (i, j) in mouths]
+mouth_φ = [φn[j] for (i, j) in mouths]
+mouth_discharge = [discharge_data[i, j] for (i, j) in mouths]
 
 λo = λnodes(ocean_grid, Center(), Center(), Center())
 φo = φnodes(ocean_grid, Center(), Center(), Center())
@@ -592,15 +600,19 @@ fig6 = Figure(size=(800, 600))
 ax6 = Axis(fig6[1, 1]; title = "GloFAS river mouths routed to the ocean coastline",
            xlabel = "Longitude (°)", ylabel = "Latitude (°)")
 hm6 = heatmap!(ax6, λd, φd, log_discharge; colormap = :grays)
-scatter!(ax6, mouth_λ, mouth_φ; color = :dodgerblue, markersize = 4, label = "river mouths")
 scatter!(ax6, target_λ, target_φ; color = :crimson, marker = :xcross,
          markersize = 8, label = "ocean injection cells")
+scatter!(ax6, mouth_λ, mouth_φ; color = :dodgerblue, strokecolor = :black, strokewidth = 0.5,
+         markersize = 3 .+ 4 .* log10.(max.(mouth_discharge, 1)), label = "river mouths")
 Colorbar(fig6[1, 2], hm6; label = "log₁₀ discharge [m³ s⁻¹]")
 axislegend(ax6; position = :rb)
 
 fig6
 
 # The red crosses mark where freshwater enters the ocean — on the coastline,
-# regardless of the (coarser) ocean grid resolution. Passing `land` to a coupled
-# ocean simulation injects this discharge as a conservative surface freshwater
-# flux, lowering coastal sea-surface salinity near the Amazon plume.
+# regardless of the (coarser) ocean grid resolution. Only the discharge at the
+# mouths reaches the ocean: the channels leading to them, such as the Amazon's
+# main stem through the estuary GloFAS treats as land, are routing on land.
+# Passing `land` to a coupled ocean simulation injects this discharge as a
+# conservative surface freshwater flux, lowering coastal sea-surface salinity
+# near the Amazon plume.

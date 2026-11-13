@@ -11,6 +11,7 @@ using Oceananigans.Fields: Field
                          time_indexing = Cyclical(),
                          region = nothing,
                          freshwater_density = 1000,
+                         maximum_coastal_distance = 100kilometers,
                          maximum_search_radius = 5,
                          spread_radius = 1.2,
                          maximum_spread_cells = 8,
@@ -21,13 +22,16 @@ discharge routed onto the coastline of `grid` (the target ocean grid).
 
 GloFAS provides river discharge (m³ s⁻¹) already accumulated downstream to river
 mouths by the LISFLOOD channel-routing model, driven by ERA5 runoff. The mouths
-are located from the dataset's land/ocean boundary and mapped to the active ocean
-cells of `grid` surrounding each mouth; the discharge is then deposited as a
-freshwater mass flux that conserves volume (see [`build_river_routing`](@ref)).
+are the pits of LISFLOOD's drainage direction map ([`GloFASStaticMaps`](@ref))
+within `maximum_coastal_distance` of the ocean, so each river is counted once.
+They are mapped to the active ocean cells of `grid` surrounding each mouth, and the
+discharge is deposited as a freshwater mass flux that conserves volume
+(see [`build_river_routing`](@ref)).
 
 Keyword Arguments
 =================
 - `freshwater_density`: density converting the discharge (m³ s⁻¹) to a mass flux (kg m⁻² s⁻¹). Default: `1000`.
+- `maximum_coastal_distance`: largest distance (m) from the ocean of a drainage pit taken as a river mouth. Default: `100kilometers`.
 - `maximum_search_radius`: search distance in `grid` cells for the ocean cell receiving a mouth. Default: `5`.
 - `spread_radius`: radius in degrees over which each mouth's discharge is divided equally. Default: `1.2`.
 - `maximum_spread_cells`: cap on that footprint, nearest first. Default: `8`.
@@ -43,6 +47,7 @@ function GloFASPrescribedLand(grid;
                               time_indexing = Cyclical(),
                               region = nothing,
                               freshwater_density = 1000,
+                              maximum_coastal_distance = 100kilometers,
                               maximum_search_radius = 5,
                               spread_radius = 1.2,
                               maximum_spread_cells = 8,
@@ -55,10 +60,10 @@ function GloFASPrescribedLand(grid;
     discharge_meta = Metadata(:river_discharge; dataset, start_date, end_date, dir, region)
     discharge = FieldTimeSeries(discharge_meta, arch; kw...)
 
-    # River mouths are located from the land/ocean boundary of the first snapshot
-    # (ocean cells are NaN), then mapped to coastal cells of the target grid.
-    snapshot = Field(first(discharge_meta), arch)
-    outlet_i, outlet_j, outlet_λ, outlet_φ = coastal_outlet_indices(snapshot)
+    static_maps = GloFASStaticMaps(dataset.system_version)
+    drainage_direction_meta = Metadatum(:drainage_direction; dataset = static_maps, dir, region)
+    drainage_direction = Field(drainage_direction_meta, arch)
+    outlet_i, outlet_j, outlet_λ, outlet_φ = river_mouth_indices(drainage_direction; maximum_coastal_distance)
 
     outlet_weight = fill(convert(eltype(grid), freshwater_density), length(outlet_i))
     river_routing = routable_grid(grid) ?

@@ -7,11 +7,15 @@ export GloFASReanalysis
 export GloFASPrescribedLand
 
 using Dates: Dates, DateTime, Day
+using Downloads: Downloads
+using Oceananigans.DistributedComputations: @root
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
+using Oceananigans.Units: kilometers
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum,
-                       available_variables, first_date, last_date
-using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices, routable_grid
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadata, Metadatum,
+                       available_variables, download_with_retries, first_date, last_date,
+                       metadata_path, metadata_url
+using ...Lands: PrescribedLand, build_river_routing, river_mouth_indices, routable_grid
 
 download_GloFAS_cache::String = ""
 
@@ -46,6 +50,7 @@ const GloFASMetadatum = Metadatum{<:GloFASDataset}
 # GloFAS v4 global coverage: -180 to 180 longitude, -60 to 90 latitude at 0.05° resolution.
 DataWrangling.longitude_interfaces(::GloFASMetadata) = (-180, 180)
 DataWrangling.latitude_interfaces(::GloFASMetadata)  = (-60, 90)
+Base.size(::GloFASDataset, variable) = (7200, 3000, 1)
 
 # GloFAS is a spatially 2-D surface dataset.
 DataWrangling.z_interfaces(::GloFASMetadata) = (0, 1)
@@ -77,6 +82,7 @@ function DataWrangling.metadata_filename(dataset::GloFASDataset, name, date, reg
 end
 
 include("glofas_reanalysis.jl")
+include("glofas_static_maps.jl")
 include("glofas_prescribed_land.jl")
 
 end # module GloFAS

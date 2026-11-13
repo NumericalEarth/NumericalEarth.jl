@@ -1,15 +1,14 @@
 include("runtests_setup.jl")
 
 using Oceananigans.Grids: Center, Face, Flat, λnodes, φnodes
-using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶜᶜᶜ
-using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
-using Oceananigans.Units: Time
-
+using Oceananigans.ImmersedBoundaries: inactive_node
+using Oceananigans.Units: Time, kilometers
+using NumericalEarth.Lands: RiverRouting, build_flux_routing, build_river_routing, river_mouth_indices, routable_grid
 using NumericalEarth.EarthSystemModels: interpolate_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
-using NumericalEarth.Lands: RiverRouting, build_flux_routing, build_river_routing, coastal_outlet_indices, routable_grid
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
+using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 
 # A target ocean grid whose western half (longitude < 0) is ocean and whose
 # eastern half is land, so the coastline runs down longitude = 0.
@@ -63,8 +62,17 @@ function integrated_mass_flux(flux, cpu_grid)
     return total
 end
 
+# The drainage direction of a synthetic discharge: a pit (5) where the discharge is positive,
+# drainage to the west (4) elsewhere on land, and NaN over the ocean.
+function synthetic_drainage_direction(discharge)
+    data = map(q -> isnan(q) ? NaN : q > 0 ? 5.0 : 4.0, Array(interior(discharge)))
+    drainage_direction = Field{Center, Center, Nothing}(discharge.grid)
+    set!(drainage_direction, data)
+    return drainage_direction
+end
+
 function routing_for(discharge, target_grid, ρ; kw...)
-    outlets = coastal_outlet_indices(discharge)
+    outlets = river_mouth_indices(synthetic_drainage_direction(discharge))
     outlet_weight = fill(ρ, length(outlets[1]))
     return build_river_routing(target_grid, outlets..., outlet_weight; maximum_search_radius = 5, kw...)
 end
@@ -127,6 +135,9 @@ end
     @test peak(spread) < peak(capped) < peak(concentrated)
 end
 
+# On a GloFAS-like 0.05ᵒ grid with ocean west of λ = 0, three pits end their catchments: one on the
+# coast, one ~55 km inland at the head of an estuary, and one ~220 km inland in an endorheic basin.
+# A land cell on the coast that drains elsewhere is not a mouth.
 @testset "River discharge shared by column depth [$arch]" for arch in test_architectures
     underlying = LatitudeLongitudeGrid(arch;
                                        size = (20, 20, 10),
@@ -155,38 +166,53 @@ end
     @test deposited ./ sum(deposited) ≈ capped_depth ./ sum(capped_depth)
 end
 
-# GloFAS discharge accumulates downstream, so a channel running along the coast puts the river's
-# whole discharge in every coastal cell it passes. On a GloFAS-like 0.05ᵒ grid (ocean west of
-# λ = 0), a channel hugs the coast over j = 10:20, leaving it inland at j = 15:16, and reaches Q₀
-# at its downstream end. A second river Q₁ reaches the coast 0.75ᵒ away, and a small stream q
-# right beside the channel's end.
-@testset "One river mouth per channel [$arch]" for arch in test_architectures
-    Q₀, Q₁, q = 23706.0, 4258.0, 50.0
-
-    grid = LatitudeLongitudeGrid(arch; size = (40, 40), longitude = (-1, 1), latitude = (-1, 1),
+@testset "River mouths are coastal drainage pits [$arch]" for arch in test_architectures
+    grid = LatitudeLongitudeGrid(arch; size = (80, 40), longitude = (-1, 3), latitude = (-1, 1),
                                  topology = (Bounded, Bounded, Flat), halo = (3, 3))
     λc = Array(λnodes(grid, Center(), Center(), Center()))
     coast_i = findfirst(>(0), λc)
 
-    data = [λc[i] < 0 ? NaN : 0.0 for i in 1:40, j in 1:40, k in 1:1]
-    for j in 10:20
-        i = j ∈ 15:16 ? coast_i + 1 : coast_i        # the channel leaves the coast for two cells
-        data[i, j, 1] = Q₀ - (20 - j)                  # discharge grows downstream
+    data = [λc[i] < 0 ? NaN : 4.0 for i in 1:80, j in 1:40, k in 1:1]
+    data[coast_i, 10, 1] = 5
+    data[coast_i + 10, 20, 1] = 5
+    data[coast_i + 40, 30, 1] = 5
+
+    drainage_direction = Field{Center, Center, Nothing}(grid)
+    set!(drainage_direction, data)
+
+    mouths(; kw...) = Set(zip(river_mouth_indices(drainage_direction; kw...)[1:2]...))
+
+    @test mouths() == Set([(coast_i, 10), (coast_i + 10, 20)])
+    @test mouths(maximum_coastal_distance = 20kilometers) == Set([(coast_i, 10)])
+    @test mouths(maximum_coastal_distance = 300kilometers) ==
+          Set([(coast_i, 10), (coast_i + 10, 20), (coast_i + 40, 30)])
+
+    # A larger cutoff only adds mouths, so more discharge reaches the ocean
+    pit_discharge = Dict((coast_i, 10) => 100.0, (coast_i + 10, 20) => 200.0, (coast_i + 40, 30) => 400.0)
+    selected = [mouths(maximum_coastal_distance = D) for D in (20kilometers, 100kilometers, 300kilometers)]
+    @test selected[1] ⊊ selected[2] ⊊ selected[3]
+    @test [sum(pit_discharge[m] for m in s) for s in selected] == [100, 300, 700]
+end
+
+# A pit in the last column of a global grid, ~111 km from ocean found only across the dateline.
+@testset "River mouths across the dateline [$arch]" for arch in test_architectures
+    Nx, Ny = 360, 4
+
+    function dateline_mouths(topology, maximum_coastal_distance)
+        grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny), longitude = (-180, 180), latitude = (-2, 2),
+                                     topology = (topology, Bounded, Flat), halo = (3, 3))
+        data = [i == 1 ? NaN : 4.0 for i in 1:Nx, j in 1:Ny, k in 1:1]
+        data[Nx, Ny, 1] = 5
+
+        drainage_direction = Field{Center, Center, Nothing}(grid)
+        set!(drainage_direction, data)
+
+        return Set(zip(river_mouth_indices(drainage_direction; maximum_coastal_distance)[1:2]...))
     end
-    data[coast_i, 21, 1] = q
-    data[coast_i, 35, 1] = Q₁
 
-    discharge = Field{Center, Center, Nothing}(grid)
-    set!(discharge, data)
-
-    outlet_i, outlet_j, _, _ = coastal_outlet_indices(discharge)
-    Q = [data[i, j, 1] for (i, j) in zip(outlet_i, outlet_j)]
-
-    # Every coastal channel cell used to be a mouth: 9 cells carrying ~Q₀ each.
-    @test count(i -> data[coast_i, i, 1] > Q₀ / 2, 1:40) == 9
-    @test sum(Q) ≈ Q₀ + Q₁ + q
-    @test count(>(0), Q) == 3
-    @test (coast_i, 20) ∈ collect(zip(outlet_i, outlet_j))  # the channel's largest coastal cell
+    @test dateline_mouths(Periodic, 150kilometers) == Set([(Nx, Ny)])
+    @test isempty(dateline_mouths(Periodic, 100kilometers))   # the wrapped distance is the true ~111 km
+    @test isempty(dateline_mouths(Bounded, 150kilometers))    # a regional grid does not wrap
 end
 
 @testset "Flux routing finds the mouths of the first year [$arch]" for arch in test_architectures
