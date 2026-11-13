@@ -4,7 +4,7 @@ using Adapt: Adapt
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: CenterField, interior
-using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory
+using Oceananigans.OutputReaders: OutputReaders, AbstractInMemoryBackend, InMemory, update_field_time_series!, new_backend
 using Thermodynamics: Liquid
 
 const ERA5PrescribedAtmosphere = Atmospheres.PrescribedAtmosphere{<:ERA5Dataset}
@@ -37,7 +37,29 @@ Adapt.adapt_structure(to, b::DewpointHumidityBackend) = InMemory(b.start, b.leng
 
 const DewpointHumidityFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DewpointHumidityBackend}
 
+# A derived series (the humidity from the dewpoint and pressure, the rain from the total precipitation and snowfall)
+# holds the window of the series it reads. `leader` is also read by the atmosphere directly, so it is brought to the
+# derived series' needed indices (`start` and the next) as the atmosphere's own update would bring it, and the
+# derived series and `follower` (read only through the derived series) take its window. Reading the derived window
+# from `leader` without this drags `leader`'s window a whole window ahead of the atmosphere's indices, and the
+# atmosphere's next update loads it back.
+function align_derived_window!(derived, leader, follower)
+    start = derived.backend.start
+    Nt = length(derived.times)
+    update_field_time_series!(leader, start, min(start + 1, Nt))
+
+    aligned = leader.backend.start
+    if follower.backend.start != aligned
+        follower.backend = new_backend(follower.backend, aligned, length(follower.backend))
+        set!(follower)
+    end
+
+    derived.backend = new_backend(derived.backend, aligned, length(derived.backend))
+    return derived.backend
+end
+
 function Oceananigans.Fields.set!(qᵛ::DewpointHumidityFTS, backend = qᵛ.backend)
+    backend = align_derived_window!(qᵛ, backend.pressure, backend.dewpoint)
     Tᵈ, p, ℂ = backend.dewpoint, backend.pressure, backend.thermodynamics_parameters
     for n in time_indices(qᵛ)
         q = KernelFunctionOperation{Center, Center, Nothing}(specific_humidity_from_dewpoint, qᵛ.grid, Tᵈ[n], p[n], ℂ, Liquid())
@@ -66,6 +88,7 @@ Adapt.adapt_structure(to, b::RainBackend) = InMemory(b.start, b.length)
 const RainFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:RainBackend}
 
 function Oceananigans.Fields.set!(Jʳⁿ::RainFTS, backend = Jʳⁿ.backend)
+    backend = align_derived_window!(Jʳⁿ, backend.snowfall, backend.total_precipitation)
     Jᵖ, Jˢⁿ = backend.total_precipitation, backend.snowfall
     for n in time_indices(Jʳⁿ)
         r = KernelFunctionOperation{Center, Center, Nothing}(rain_from_total_precipitation, Jʳⁿ.grid, Jᵖ[n], Jˢⁿ[n])
