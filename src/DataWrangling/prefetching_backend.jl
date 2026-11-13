@@ -96,14 +96,19 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
     # Cleared up-front so a failed prefetch isn't re-thrown on every later set!.
     setfield!(backend, :pending, nothing)
 
-    # Hot path: the pending prefetch already targets `needed_start`. Wait on
-    # it (typically a no-op — the background load finished while compute was
-    # running). A failed prefetch demotes to the synchronous load below, so a
-    # transient I/O error (a brief FS hiccup, a staging race, etc.) doesn't
-    # kill the simulation. The worker has already logged the exception
-    # with full variable/window context, so we just print a short warning
-    # here.
-    hot = !isnothing(pending) && pending_start == needed_start
+    # Hot path: wait on the pending prefetch (typically a no-op — the background load finished while compute was
+    # running). A failed prefetch demotes to the synchronous load below, so a transient I/O error (a brief FS hiccup,
+    # a staging race, etc.) doesn't kill the simulation. The worker has already logged the exception with full
+    # variable/window context, so we just print a short warning here.
+    #
+    # The prefetched window serves whenever it holds the needed indices `needed_start` and `needed_start + 1`, not
+    # only when it starts exactly there: a time step longer than the record interval skips indices (hourly ERA5
+    # at Δt = 1.5 h reaches every third index never), and a window reloaded by `getindex` (the series a derived
+    # one reads, e.g. ERA5's dewpoint) starts one past the old end. Offsets are taken modulo `Nt` for `Cyclical`.
+    Nm = length(getfield(backend, :inner_backend))
+    Nt = length(fts.times)
+    offset = mod(needed_start - pending_start, Nt)
+    hot = !isnothing(pending) && pending_start > 0 && offset ≤ Nm - 2
     if hot
         if take!(pending) isa Exception
             m = buffer_fts.backend.metadata
@@ -119,8 +124,11 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
 
     waited_time = time_ns()
 
-    if !hot
-        Nm = length(getfield(backend, :inner_backend))
+    if hot
+        # Hold the prefetched window, which starts at or before `needed_start`
+        setfield!(backend, :inner_backend, new_backend(getfield(backend, :inner_backend), pending_start, Nm))
+        needed_start = pending_start
+    else
         buffer_fts.backend = new_backend(buffer_fts.backend, needed_start, Nm)
         set!(buffer_fts)
     end
@@ -143,13 +151,12 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
         end
     end
 
-    # Time-indexing-aware next-window prediction: `time_index` wraps via mod1 for Cyclical and clamps to Nt for Linear/Clamp. 
-    # The next reload fires the first time `n₂ = n₁ + 1` falls outside the current window, which happens when `n₁` hits the 
-    # LAST in-memory index, so the new `start` is `needed_start + Nm - 1`, not `needed_start + Nm` (`update_field_time_series!` sets `start = n₁`). 
-    # Passing `Nm` instead of `Nm + 1` yields that prediction and keeps every reload on the HOT path.
-    Nm = length(getfield(backend, :inner_backend))
-    Nt = length(fts.times)
-    new_next = time_index(buffer_fts.backend, fts.time_indexing, Nt, Nm)
+    # Time-indexing-aware next-window prediction: `time_index` wraps via mod1 for Cyclical and clamps to Nt for Linear/Clamp.
+    # The next reload fires once `n₂ = n₁ + 1` falls outside the current window, at the earliest when `n₁` is the last
+    # in-memory index, `needed_start + Nm - 1` (`update_field_time_series!` sets `start = n₁`), and later when steps skip
+    # indices. Predicting `margin` indices before that keeps the needed indices inside the prefetched window either way.
+    margin = Nm ≥ 8 ? 2 : 0
+    new_next = time_index(buffer_fts.backend, fts.time_indexing, Nt, Nm - margin)
 
     # Linear/Clamp at end-of-data: window can't advance, no prefetch.
     if new_next == needed_start
