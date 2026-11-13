@@ -24,77 +24,73 @@ for arch in test_architectures, dataset in test_ecco_datasets
     A = typeof(arch)
     D = typeof(dataset)
 
-    if dataset isa ECCO2DarwinMonthly
-        @info "Skipping tests because of failure (see https://github.com/CliMA/NumericalEarth.jl/issues/636)"
-    else
-        @testset "$A metadata tests for $D" begin
-            @info "Running Metadata tests for $D on $A..."
+    @testset "$A metadata tests for $D" begin
+        @info "Running Metadata tests for $D on $A..."
 
-            time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-            end_date = start_date + 4 * time_resolution
-            dates = start_date : time_resolution : end_date
+        time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
+        end_date = start_date + 4 * time_resolution
+        dates = start_date : time_resolution : end_date
 
-            @testset "Fields utilities" begin
-                for name in test_names[dataset]
-                    metadata = Metadata(name; dates, dataset)
+        @testset "Fields utilities" begin
+            for name in test_names[dataset]
+                metadata = Metadata(name; dates, dataset)
 
-                    # just in case is not downloaded; fall back to NumericalEarthArtifacts
-                    # if the primary source is unreachable
-                    filepaths = [metadata_path(datum) for datum in metadata]
-                    download_dataset_with_fallback(filepaths; dataset_name="$D $name") do
-                        download(metadata)
-                    end
-                    for datum in metadata
-                        @test isfile(metadata_path(datum))
-                    end
-
-                    datum = first(metadata)
-                    Field(datum, arch, inpainting=NearestNeighborInpainting(2))
-                    datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
-                    @test isfile(datapath)
+                # just in case is not downloaded; fall back to NumericalEarthArtifacts
+                # if the primary source is unreachable
+                filepaths = [metadata_path(datum) for datum in metadata]
+                download_dataset_with_fallback(filepaths; dataset_name="$D $name") do
+                    download(metadata)
                 end
+                for datum in metadata
+                    @test isfile(metadata_path(datum))
+                end
+
+                datum = first(metadata)
+                Field(datum, arch, inpainting=NearestNeighborInpainting(2))
+                datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
+                @test isfile(datapath)
             end
-
-            @testset "Setting a field from a dataset" begin
-                test_setting_from_metadata(arch, dataset, start_date, inpainting,
-                                        varnames=test_names[dataset])
-            end
-
-            @testset "Field utilities" begin
-                test_ocean_metadata_utilities(arch, dataset, dates, inpainting,
-                                              varnames=test_names[dataset])
-            end
-
-            @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
-                test_dataset_restoring(arch, dataset, dates, inpainting,
-                                    varnames=test_names[dataset],
-                                    fldnames=test_fields[dataset])
-            end
-
-            @testset "Timestepping with DatasetRestoring" begin
-                test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting,
-                                                        varnames=test_names[dataset],
-                                                        fldnames=test_fields[dataset])
-            end
-
-            # @testset "Dataset cycling boundaries" begin
-            #     test_cycling_dataset_restoring(arch, dataset, dates, inpainting)
-            # end
-
-            @testset "Warning when target grid is deeper than dataset" begin
-                deep_grid = LatitudeLongitudeGrid(arch;
-                                                  size = (10, 10, 10),
-                                                  latitude = (-60, -40),
-                                                  longitude = (10, 15),
-                                                  z = (-100000, 0))
-
-                field = CenterField(deep_grid)
-                datum = Metadatum(:temperature; dataset, date=start_date)
-
-                @test_throws "The vertical range" set!(field, datum; inpainting=nothing)
-            end
-
-            # The inpainting algorithm is not exercised here: ECCO2's resolution makes it too slow.
         end
+
+        @testset "Setting a field from a dataset" begin
+            test_setting_from_metadata(arch, dataset, start_date, inpainting,
+                                    varnames=test_names[dataset])
+        end
+
+        @testset "Field utilities" begin
+            test_ocean_metadata_utilities(arch, dataset, dates, inpainting,
+                                          varnames=test_names[dataset])
+        end
+
+        @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
+            test_dataset_restoring(arch, dataset, dates, inpainting,
+                                varnames=test_names[dataset],
+                                fldnames=test_fields[dataset])
+        end
+
+        @testset "Timestepping with DatasetRestoring" begin
+            test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting,
+                                                    varnames=test_names[dataset],
+                                                    fldnames=test_fields[dataset])
+        end
+
+        # @testset "Dataset cycling boundaries" begin
+        #     test_cycling_dataset_restoring(arch, dataset, dates, inpainting)
+        # end
+
+        @testset "Warning when target grid is deeper than dataset" begin
+            deep_grid = LatitudeLongitudeGrid(arch;
+                                              size = (10, 10, 10),
+                                              latitude = (-60, -40),
+                                              longitude = (10, 15),
+                                              z = (-100000, 0))
+
+            field = CenterField(deep_grid)
+            datum = Metadatum(:temperature; dataset, date=start_date)
+
+            @test_throws "The vertical range" set!(field, datum; inpainting=nothing)
+        end
+
+        # The inpainting algorithm is not exercised here: ECCO2's resolution makes it too slow.
     end
 end
