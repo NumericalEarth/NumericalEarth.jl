@@ -87,9 +87,11 @@ else
                                         coriolis = nothing, terrain = nothing, parent_condensates = nothing)
 
         # One compiled program fills the exchanger's window and initializes the child from it
-        @info "Compiling and running the initialization..."
-        compiled_initialize! = Reactant.@compile sync=true initialize_from_parent!(model)
+        @info "Compiling the initialization (exchanger window and child)..."
+        compile_time = @elapsed compiled_initialize! = Reactant.@compile sync=true initialize_from_parent!(model)
+        @info "Compiled the initialization in $(round(compile_time, digits = 1)) s (peak memory $(peak_memory())); running it..."
         compiled_initialize!(model)
+        @info "Ran the initialization (peak memory $(peak_memory()))"
 
         δρθ    = CenterField(child_grid)
         dδρθ   = CenterField(child_grid)
