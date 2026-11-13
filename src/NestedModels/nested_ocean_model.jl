@@ -161,7 +161,9 @@ common to every open side is removed from the parent's depth means, so that the 
 inflow through the open sides together. `edge_transports`, a `NamedTuple` of each open side's inflow (m³ s⁻¹, positive
 into the domain), pins the barotropic transport through each side to that inflow at every barotropic substep, as the
 volume constraints of NEMO and ROMS do, and shifts each side's depth mean so that its exterior transport, and with it
-the boundary-normal velocity, carries the same inflow.
+the boundary-normal velocity, carries the same inflow. `net_inflow` (m³ s⁻¹, positive into the domain) instead pins the
+net inflow through all open sides together and leaves its split between the sides to the Flather condition, as NEMO
+and ROMS do; the depth means are shifted by one common velocity to carry the same net inflow.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
 initialized from `initial_state` (default: the
@@ -182,6 +184,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
                             zero_net_inflow = false,
+                            net_inflow = nothing,
                             edge_transports = nothing,
                             initial_state = default_initial_state(parent),
                             clock = nested_clock(grid, parent.clock.time),
@@ -202,9 +205,9 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     validate_band_width(grid, open_sides, width, "relaxation_width")
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height, zero_net_inflow,
-                                       edge_transports)
+                                       net_inflow, edge_transports)
 
-    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means, edge_transports,
+    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means, net_inflow, edge_transports,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :

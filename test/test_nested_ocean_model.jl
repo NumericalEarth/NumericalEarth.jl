@@ -529,6 +529,34 @@ end
     @test abs(volume() - volume₀) < 1e-6 * edge_transports.west * 3 * 60
 end
 
+@testset "net_inflow pins the net inflow through the open sides together on $(arch)" for arch in test_architectures
+    # The parent's u = 0.1 m/s brings about 22 Sv in through the west side; ask for 2 Sv in through both sides together
+    parent_ocean = nesting_test_parent(arch)
+    parent_bottom_height = Field{Center, Center, Nothing}(parent_ocean.grid)
+    set!(parent_bottom_height, -1000)
+    net_inflow = 2e6
+
+    model = nested_ocean_model(parent_ocean, nesting_test_child_grid(arch); parent_bottom_height,
+                               open_sides = (:west, :north), net_inflow)
+    child = model.child
+    volume() = (grid = on_architecture(CPU(), child.grid); η = on_architecture(CPU(), child.free_surface.displacement);
+                sum(η[i, j, size(grid, 3) + 1] * Azᶜᶜᶜ(i, j, 1, grid) for i in 1:size(grid, 1), j in 1:size(grid, 2)))
+
+    volume₀ = volume()
+    for _ in 1:3
+        time_step!(model, 60)
+    end
+
+    grid = on_architecture(CPU(), child.grid)
+    Nx, Ny, _ = size(grid)
+    U, V = on_architecture(CPU(), child.free_surface.barotropic_velocities.U), on_architecture(CPU(), child.free_surface.barotropic_velocities.V)
+    west  = sum(U[1, j, 1] * Δyᶠᶜᶜ(1, j, 1, grid) for j in 1:Ny)
+    north = -sum(V[i, Ny + 1, 1] * Δxᶜᶠᶜ(i, Ny + 1, 1, grid) for i in 1:Nx)
+
+    @test west + north ≈ net_inflow rtol = 1e-6
+    @test volume() - volume₀ ≈ net_inflow * 3 * 60 rtol = 1e-3
+end
+
 @testset "nested_ocean_model blends the child bathymetry toward the parent's seafloor on $(arch)" for arch in test_architectures
     parent_ocean = nesting_test_parent(arch)
 
