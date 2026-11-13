@@ -1,9 +1,8 @@
 using Oceananigans.AbstractOperations: Integral
 using Oceananigans.Fields: Field, ConstantField, compute!, interior, set!
-using Oceananigans.Grids: Center, static_column_depthᶜᶜᵃ
+using Oceananigans.Grids: Center, static_column_depthᶜᶜᵃ, surface_kernel_parameters
 using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: update_zstar_scaling!
-using Oceananigans.Utils: KernelParameters
 
 #####
 ##### Holding the water of the ocean, sea ice and snow at its initial value
@@ -107,15 +106,13 @@ function (normalization::TotalWaterNormalization)(simulation)
     coupled_model = simulation.model
     ocean = coupled_model.ocean.model
     grid = ocean.grid
-    Nx, Ny, Nz = size(grid)
+    Nz = size(grid, 3)
 
     compute_total_water!(normalization, coupled_model)
     normalization.correction .= (normalization.total_water .- normalization.reference_water) ./ normalization.wet_area
 
-    launch!(architecture(grid), grid, KernelParameters(1:Nx, 1:Ny), _correct_sea_level!,
+    launch!(architecture(grid), grid, surface_kernel_parameters(grid), _correct_sea_level!,
             ocean.free_surface.displacement, ocean.tracers.T, ocean.tracers.S, grid, normalization.correction, Nz + 1)
-
-    fill_halo_regions!((ocean.free_surface.displacement, ocean.tracers.T, ocean.tracers.S))
 
     update_zstar_scaling!(grid, ocean.free_surface.displacement)
 
