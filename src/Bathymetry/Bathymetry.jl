@@ -1,6 +1,6 @@
 module Bathymetry
 
-export regrid_bathymetry, regrid_topography, regrid_ocean_fraction, smooth_topography!, connect_basins!, ORCAGrid
+export regrid_bathymetry, regrid_topography, regrid_ocean_fraction, regrid_ice_draft, smooth_topography!, connect_basins!, ORCAGrid
 export Basin
 export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 
@@ -23,10 +23,11 @@ using Oceananigans.Utils: launch!
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: Metadatum, native_grid, metadata_path,
+using ..DataWrangling: Metadatum, native_grid,
                        dataset_variable_name, validate_dataset_coverage,
-                       FieldRegridding, load_field_cache, save_field_cache
+                       FieldRegridding, load_field_cache, save_field_cache, retrieve_bathymetry
 using ..DataWrangling.ETOPO: ETOPO2022
+using ..DataWrangling.RTopo: RTopo2
 
 include("label_ocean_basins.jl")
 include("regrid_bathymetry.jl")
