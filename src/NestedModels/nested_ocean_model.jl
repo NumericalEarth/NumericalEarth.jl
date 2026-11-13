@@ -164,7 +164,9 @@ volume constraints of NEMO and ROMS do, and shifts each side's depth mean so tha
 the boundary-normal velocity, carries the same inflow. `net_inflow` (m³ s⁻¹, positive into the domain; a number, or a
 `Ref` to one that a callback may change) instead pins the net inflow through all open sides together and leaves its
 split between the sides to the Flather condition, as NEMO and ROMS do; the depth means are shifted by one common
-velocity to carry the same net inflow.
+velocity to carry the same net inflow. The pin shifts each column's transport in proportion to
+`H^net_inflow_depth_exponent`: `0` (default) uniformly per unit length, `1` as a uniform velocity, `1/2` as a uniform
+shift of the parent's free surface in the Flather condition.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
 initialized from `initial_state` (default: the
@@ -186,6 +188,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             parent_bottom_height = nothing,
                             zero_net_inflow = false,
                             net_inflow = nothing,
+                            net_inflow_depth_exponent = 0,
                             edge_transports = nothing,
                             initial_state = default_initial_state(parent),
                             clock = nested_clock(grid, parent.clock.time),
@@ -208,7 +211,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height, zero_net_inflow,
                                        net_inflow, edge_transports)
 
-    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means, net_inflow, edge_transports,
+    nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means, net_inflow, net_inflow_depth_exponent, edge_transports,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :
