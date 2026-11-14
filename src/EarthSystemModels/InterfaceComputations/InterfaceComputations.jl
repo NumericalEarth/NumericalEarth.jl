@@ -60,6 +60,7 @@ export
     FrictionVelocityUndercanopyVelocity,
     ExponentialSoilResistance,
     GroundSurfaceResistance,
+    SoilResistanceHumidity,
     TiledLandInterface,
     JarvisConductance,
     AbsorbedPhotosyntheticallyActiveRadiation,
