@@ -15,7 +15,7 @@ struct FreezingLimitedOceanTemperature{L, F}
 end
 
 """
-    FreezingLimitedOceanTemperature(FT=Float64; liquidus=LinearLiquidus(FT))
+$(SIGNATURES)
 
 The minimal possible sea ice representation, clipping the temperature below to the freezing point.
 Not really a "model" per se, however, it is the most simple way to make sure that temperature

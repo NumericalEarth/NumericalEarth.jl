@@ -145,7 +145,7 @@ SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
                  fluxes, diagnostics, prognostic, energy, hydrology, surface_storage)
 
 """
-$(TYPEDSIGNATURES)
+$(SIGNATURES)
 
 Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
@@ -258,7 +258,7 @@ function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
 end
 
 """
-    set!(land::SlabLand; T=nothing, M=nothing, extra_prognostics...)
+$(SIGNATURES)
 
 Set the slab's prognostic bulk temperature `T` and water storage `M` and refresh
 diagnostics in one call (so `saturation` is consistent with `M` afterward).

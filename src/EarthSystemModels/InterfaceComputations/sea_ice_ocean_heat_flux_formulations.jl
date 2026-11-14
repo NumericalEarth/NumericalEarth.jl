@@ -48,9 +48,7 @@ struct IceBathHeatFlux{FT, U}
 end
 
 """
-    IceBathHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
-                    heat_transfer_coefficient = 0.006,
-                    friction_velocity = 0.02)
+$(SIGNATURES)
 
 Construct an `IceBathHeatFlux` with the specified parameters.
 
@@ -134,10 +132,7 @@ Adapt.adapt_structure(to, f::ThreeEquationHeatFlux) =
                           Adapt.adapt(to, f.friction_velocity))
 
 """
-    ThreeEquationHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
-                          heat_transfer_coefficient = 0.0095,
-                          salt_transfer_coefficient = heat_transfer_coefficient / 35,
-                          friction_velocity = 0.002)
+$(SIGNATURES)
 
 Construct a `ThreeEquationHeatFlux` with the specified parameters.
 

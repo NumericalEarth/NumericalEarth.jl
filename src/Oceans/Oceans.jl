@@ -34,6 +34,7 @@ using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
@@ -51,8 +52,7 @@ struct Default{V}
 end
 
 """
-    default_or_override(default::Default, alternative_default=default.value) = alternative_default
-    default_or_override(override, alternative_default) = override
+$(SIGNATURES)
 
 Either return `default.value`, an `alternative_default`, or an `override`.
 

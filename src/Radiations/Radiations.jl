@@ -28,7 +28,7 @@ using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, interpolator
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  _compute_fractional_indices!,

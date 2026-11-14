@@ -30,6 +30,7 @@ using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundar
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
                            BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger

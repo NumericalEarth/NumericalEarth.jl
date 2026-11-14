@@ -15,6 +15,8 @@ import Oceananigans.Grids: rnode, rnodes, znodes, generate_coordinate,
 import Oceananigans.Fields: _fractional_indices, fractional_x_index,
                             fractional_y_index, FractionalIndices, fractional_index
 
+using NumericalEarth: SIGNATURES
+
 """
     PressureLevelVerticalDiscretization
 
@@ -49,9 +51,7 @@ struct PressureLevelVerticalDiscretization{G, Geo, S} <: AbstractVerticalCoordin
 end
 
 """
-    PressureLevelVerticalDiscretization(geopotential;
-                                        gravitational_acceleration,
-                                        surface_geopotential = nothing)
+$(SIGNATURES)
 
 Build a discretization backed by per-column `geopotential` (m²/s²). `znode`
 divides by `gravitational_acceleration` at read time.

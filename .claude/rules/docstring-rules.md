@@ -7,7 +7,9 @@ paths:
 
 ## Use DocStringExtensions.jl
 
-- Include `$(SIGNATURES)` for automatic signature documentation
+- Include `$(SIGNATURES)` or `$(TYPEDSIGNATURES)` for automatic signature documentation, imported
+  with `using NumericalEarth: SIGNATURES, TYPEDSIGNATURES` (not from DocStringExtensions): they show
+  default argument values with DocStringExtensions v0.10 and fall back to plain signatures with v0.9
 - Add examples in docstrings when helpful
 
 ## CRITICAL: Always use `jldoctest`, NEVER plain `julia` blocks

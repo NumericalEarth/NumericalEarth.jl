@@ -2,12 +2,11 @@ module NumericalEarthCopernicusClimateDataStoreExt
 
 using CopernicusClimateDataStore: CopernicusClimateDataStore
 using Dates: Dates
-using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
-using Oceananigans.DistributedComputations: @root
 using NCDatasets: NCDatasets
+using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth: NumericalEarth
+using NumericalEarth: NumericalEarth, SIGNATURES, TYPEDSIGNATURES
 using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
@@ -49,7 +48,7 @@ end
 #####
 
 """
-    Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, threads=nothing, kwargs...)
+$(SIGNATURES)
 
 Download ERA5 data for every date in `metadata` using `era5cli` through the
 CopernicusClimateDataStore package, one CDS request per calendar-month batch,
@@ -332,10 +331,7 @@ function Downloads.download(mset::NativeGranularityERA5MetadataSet; kwargs...)
 end
 
 """
-    Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union{ERA5YearlySingleLevel,
-                                                                             ERA5MonthlySingleLevel,
-                                                                             ERA5MonthlyPressureLevels}};
-                      skip_existing=true, threads=Threads.nthreads(), additional_kw...)
+$(SIGNATURES)
 
 Generic ERA5 download supporting yearly, monthly, and pressure-level datasets.
 (Land datasets have their own yearly-file download method, below.)

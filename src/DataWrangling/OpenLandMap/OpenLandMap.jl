@@ -3,7 +3,7 @@ module OpenLandMap
 export OpenLandMapSoilDB
 
 using Downloads: Downloads
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Bounded, Center, Face, LatitudeLongitudeGrid
 using Oceananigans.Architectures: architecture

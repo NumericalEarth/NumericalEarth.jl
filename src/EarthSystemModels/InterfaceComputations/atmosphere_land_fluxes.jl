@@ -21,7 +21,7 @@ atmosphere_land_interface(grid, atmosphere, ::Nothing; kw...) = nothing
 atmosphere_land_interface(grid, ::Nothing,  ::Nothing; kw...) = nothing
 
 """
-$(TYPEDSIGNATURES)
+$(SIGNATURES)
 
 Build the atmosphere–land interface. `state` specifies the interface-state formulation:
 a named tuple of `temperature` and `specific_humidity` models, or a `CanopyInterface`

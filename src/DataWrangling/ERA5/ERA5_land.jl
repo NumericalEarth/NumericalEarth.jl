@@ -1,4 +1,4 @@
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 
 """
 $(TYPEDSIGNATURES)
