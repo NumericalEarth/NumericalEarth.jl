@@ -123,8 +123,10 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LX = typeof(loc[1])
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
-    on_physical_boundary(topology(grid, dim), SideType) &&
-        validate_source_bracket(c.source, grid, dim, SideType, LX, LY, LZ)
+    # Every rank measures the extent, so all ranks create the same distributed fields in the same
+    # order; only a rank on the physical boundary enforces the bracket.
+    enforce = on_physical_boundary(topology(grid, dim), SideType)
+    validate_source_bracket(c.source, grid, dim, SideType, LX, LY, LZ, enforce)
     return Interpolated{dim, SideType, LX, LY, LZ}(c.source, c.source_grid)
 end
 
@@ -145,13 +147,13 @@ function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX},
     Nx, Ny, _ = size(operation)
     i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx:Nx)) : 1:Nx
     j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny:Ny)) : 1:Ny
-    line = Field(operation; indices = (i, j, 1:1))
-    compute!(line)
+    line = Field(operation; indices = (i, j, 1:1), compute = false)
+    Oceananigans.AbstractOperations.compute_computed_field!(line)
     return extrema(interior(line))
 end
 
-function validate_axis_bracket(label, (src_lo, src_hi), (sim_lo, sim_hi))
-    (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
+function validate_axis_bracket(label, (src_lo, src_hi), (sim_lo, sim_hi), enforce)
+    (!enforce || (src_lo ≤ sim_lo && sim_hi ≤ src_hi)) || throw(ArgumentError(
         "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
         "bracket model grid $(label)-extent [$sim_lo, $sim_hi]"))
     return nothing
@@ -159,35 +161,35 @@ end
 
 # The source must bracket the boundary horizontally: along the boundary, the child's whole extent;
 # across it, only the boundary itself, which leaves a per-side source free to span only its own side.
-function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
+function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}, enforce) where {LX, LY}
     source_loc  = Oceananigans.instantiated_location(source)
     source_grid = source.grid
 
     validate_axis_bracket("x", extrema(ξnodes(source_grid, source_loc...)),
-                          boundary_coordinate_extent(ξnode, grid, dim, SideType, LX, LY))
+                          boundary_coordinate_extent(ξnode, grid, dim, SideType, LX, LY), enforce)
 
     validate_axis_bracket("y", extrema(ηnodes(source_grid, source_loc...)),
-                          boundary_coordinate_extent(ηnode, grid, dim, SideType, LX, LY))
+                          boundary_coordinate_extent(ηnode, grid, dim, SideType, LX, LY), enforce)
 
     return nothing
 end
 
 # A vector source brackets the boundary only if both of its components do, each at its own location.
-function validate_bracket(source::VectorComponent, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
-    validate_bracket(source.eastward,  grid, dim, SideType, LX, LY)
-    validate_bracket(source.northward, grid, dim, SideType, LX, LY)
+function validate_bracket(source::VectorComponent, grid, dim, SideType, ::Type{LX}, ::Type{LY}, enforce) where {LX, LY}
+    validate_bracket(source.eastward,  grid, dim, SideType, LX, LY, enforce)
+    validate_bracket(source.northward, grid, dim, SideType, LX, LY, enforce)
     return nothing
 end
 
 # A curvilinear grid's coordinates vary along both axes, so its extent comes from the cell corners.
 validate_source_bracket(source, grid::OrthogonalSphericalShellGrid, dim, SideType,
-                        ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ} =
-    validate_bracket(source, grid, dim, SideType, Face, Face)
+                        ::Type{LX}, ::Type{LY}, ::Type{LZ}, enforce) where {LX, LY, LZ} =
+    validate_bracket(source, grid, dim, SideType, Face, Face, enforce)
 
 # A separable grid's comes from the field's own location, with `Face` across the boundary.
 validate_source_bracket(source, grid, dim, SideType,
-                        ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ} =
-    validate_bracket(source, grid, dim, SideType, dim == 1 ? Face : LX, dim == 2 ? Face : LY)
+                        ::Type{LX}, ::Type{LY}, ::Type{LZ}, enforce) where {LX, LY, LZ} =
+    validate_bracket(source, grid, dim, SideType, dim == 1 ? Face : LX, dim == 2 ? Face : LY, enforce)
 
 #####
 ##### getbc: evaluate the source at the boundary-face node.

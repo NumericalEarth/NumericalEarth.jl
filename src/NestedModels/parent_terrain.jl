@@ -11,10 +11,10 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans.Architectures: architecture
 using Oceananigans.Utils: launch!
 
-@kernel function _blend_parent_terrain!(elevation, parent_elevation, width, Nx, Ny)
+@kernel function _blend_parent_terrain!(elevation, parent_elevation, width, i₁, i₂, j₁, j₂)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        w = clamp(min(i - 1, Nx - i, j - 1, Ny - j) / width, 0, 1)
+        w = clamp(min(i - i₁, i₂ - i, j - j₁, j₂ - j) / width, 0, 1)
         elevation[i, j, 1] = w * elevation[i, j, 1] + (1 - w) * parent_elevation[i, j, 1]
     end
 end
@@ -30,7 +30,13 @@ terrain at the open boundaries matches the orography the parent state was produc
 function blend_parent_terrain!(elevation, parent_elevation; width)
     grid = elevation.grid
     Nx, Ny, _ = size(grid)
+    # A side that borders another rank is interior to the domain: its wall is placed out of reach
+    far = typemax(Int) ÷ 4
+    i₁ = on_physical_boundary(topology(grid, 1), LeftBoundary)  ? 1  : -far
+    i₂ = on_physical_boundary(topology(grid, 1), RightBoundary) ? Nx : far
+    j₁ = on_physical_boundary(topology(grid, 2), LeftBoundary)  ? 1  : -far
+    j₂ = on_physical_boundary(topology(grid, 2), RightBoundary) ? Ny : far
     launch!(architecture(grid), grid, :xy, _blend_parent_terrain!,
-            elevation, parent_elevation, convert(eltype(grid), width), Nx, Ny)
+            elevation, parent_elevation, convert(eltype(grid), width), i₁, i₂, j₁, j₂)
     return elevation
 end
