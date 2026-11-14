@@ -9,6 +9,7 @@ export GloFASPrescribedLand
 using Dates: Dates, DateTime, Day
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
 
+using NumericalEarth: SIGNATURES
 using ..DataWrangling: DataWrangling, Metadata, Metadatum,
                        available_variables, first_date, last_date
 using ...Lands: PrescribedLand, build_river_routing, coastal_outlet_indices, routable_grid
