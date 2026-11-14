@@ -21,7 +21,6 @@ GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
-LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
@@ -36,7 +35,6 @@ Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release supports Oceananigans 0.117.2
 NumericalEarth = {path = ".."}
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
