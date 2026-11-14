@@ -2,20 +2,17 @@ module GHSL
 
 export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt
 
+using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
 using Downloads: Downloads
-using Oceananigans: Center, CPU
+
+using Oceananigans: Oceananigans, Center, CPU
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: dimension_faces
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
+using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
+                                    metadata_path, native_grid, BoundingBox, bounding_box_suffix
 using NumericalEarth.Lands: Lands
-
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       metadata_path, native_grid, BoundingBox, bounding_box_suffix
-
-using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
-
-import Oceananigans
 
 download_GHSL_cache::String = ""
 function __init__()

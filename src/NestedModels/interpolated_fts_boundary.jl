@@ -19,16 +19,15 @@
 # This whole file collapses to a deprecation shim once an analogous native
 # path lands upstream in Oceananigans (parallel to PR #5575 for `Relaxation`).
 
-import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
-                                        LeftBoundary, RightBoundary
-import Oceananigans.OutputReaders: FlavorOfFTS
+using Adapt: Adapt, adapt
+
+using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid
+using Oceananigans.BoundaryConditions: LeftBoundary, RightBoundary
+using Oceananigans.Fields: Field, interior, compute!
 using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
                           OrthogonalSphericalShellGrid, Sides, Connected
-using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid
-using Oceananigans.Fields: Field, interior, compute!
 using Oceananigans.Operators: intrinsic_vector
-import Oceananigans.Forcings: evaluate_target
-using Adapt: Adapt, adapt
+using Oceananigans.OutputReaders: FlavorOfFTS
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
 
@@ -119,7 +118,7 @@ Adapt.adapt_structure(to, w::Interpolated{D, S, LX, LY, LZ}) where {D, S, LX, LY
 ##### Regularization: convert the location-less wrapper to the tagged form.
 #####
 
-function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim, SideType, args...)
+function Oceananigans.BoundaryConditions.regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim, SideType, args...)
     LX = typeof(loc[1])
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
@@ -214,7 +213,7 @@ validate_source_bracket(source, grid, dim, SideType,
     return ifelse(C === :u, uᵢ, vᵢ)
 end
 
-@inline function evaluate_target(i, j, k, grid, target::VectorComponent, ℓ, time)
+@inline function Oceananigans.Forcings.evaluate_target(i, j, k, grid, target::VectorComponent, ℓ, time)
     X = node(i, j, k, grid, ℓ...)
     return _query_source(target, target.grid, X, ℓ, time, i, j, k, grid)
 end
@@ -231,8 +230,8 @@ end
 @inline clock_time(clock, grid) = convert(eltype(grid), clock.time)
 @inline clock_time(::Nothing, grid) = zero(eltype(grid))
 
-@inline function getbc(bc::Interpolated{1, S, LX, LY, LZ},
-                       j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
+@inline function Oceananigans.BoundaryConditions.getbc(bc::Interpolated{1, S, LX, LY, LZ},
+                                                       j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
     # Sample the source at the boundary FACE in the normal direction (not the field's
     # center node). A Value BC's value is the value AT the boundary, so for a Center
@@ -242,15 +241,15 @@ end
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
 
-@inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
-                       i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
+@inline function Oceananigans.BoundaryConditions.getbc(bc::Interpolated{2, S, LX, LY, LZ},
+                                                       i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), Face(), LZ())   # boundary face in the y-normal direction
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)
 end
 
-@inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
-                       i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
+@inline function Oceananigans.BoundaryConditions.getbc(bc::Interpolated{3, S, LX, LY, LZ},
+                                                       i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), Face())   # boundary face in the z-normal direction
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid), i, j, k, grid)

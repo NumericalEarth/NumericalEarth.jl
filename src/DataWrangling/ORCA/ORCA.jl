@@ -4,25 +4,14 @@ export ORCAOne, ORCATwo, ORCAQuarter, ORCATwelfth
 
 using CodecZlib: GzipDecompressorStream
 using Downloads: Downloads
+using Tar: Tar
+
 using Oceananigans: Oceananigans
 using Oceananigans.BoundaryConditions: FPivot, TPivot
 using Oceananigans.DistributedComputations: @root
-using Tar: Tar
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url,
-                       download_with_retries
-
-import ..DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    all_dates,
-    first_date,
-    last_date,
-    dataset_variable_name,
-    longitude_interfaces,
-    latitude_interfaces,
-    z_interfaces,
-    reversed_vertical_axis
+using NumericalEarth.DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url,
+                                    download_with_retries
 
 download_ORCA_cache::String = ""
 
@@ -39,13 +28,13 @@ struct ORCATwo <: ORCADataset end
 struct ORCAQuarter <: ORCADataset end
 struct ORCATwelfth <: ORCADataset end
 
-default_download_directory(::ORCADataset) = download_ORCA_cache
-reversed_vertical_axis(::ORCADataset) = false
-longitude_interfaces(::ORCADataset) = (-180, 180)
-latitude_interfaces(::ORCADataset) = (-80, 90)
-all_dates(::ORCADataset, args...) = nothing
-first_date(::ORCADataset, args...) = nothing
-last_date(::ORCADataset, args...) = nothing
+DataWrangling.default_download_directory(::ORCADataset) = download_ORCA_cache
+DataWrangling.reversed_vertical_axis(::ORCADataset) = false
+DataWrangling.longitude_interfaces(::ORCADataset) = (-180, 180)
+DataWrangling.latitude_interfaces(::ORCADataset) = (-80, 90)
+DataWrangling.all_dates(::ORCADataset, args...) = nothing
+DataWrangling.first_date(::ORCADataset, args...) = nothing
+DataWrangling.last_date(::ORCADataset, args...) = nothing
 
 const ORCATwoMetadatum = Metadatum{<:ORCATwo}
 const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
@@ -66,9 +55,9 @@ const ORCATwo_variable_names = Dict(
     :mesh_mask     => "glamt",
 )
 
-dataset_variable_name(data::ORCAMetadatum)         = ORCA_variable_names[data.name]
-dataset_variable_name(data::ORCATwoMetadatum)      = ORCATwo_variable_names[data.name]
-dataset_variable_name(data::ORCATwelfthMetadatum)  = ORCATwelfth_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::ORCAMetadatum)         = ORCA_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::ORCATwoMetadatum)      = ORCATwo_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::ORCATwelfthMetadatum)  = ORCATwelfth_variable_names[data.name]
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
 mesh_mask_url(::ORCAOne)  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
@@ -99,10 +88,10 @@ end
 
 DataWrangling.metadata_url(metadatum::ORCAMetadatum) = dataset_url(metadatum.dataset, metadatum.name)
 
-metadata_filename(dataset::ORCADataset, name, date, region) = basename(dataset_url(dataset, name))
-metadata_filename(::ORCATwo, name, date, region) = "domain_cfg_orca2l75_nemo5.nc"
+DataWrangling.metadata_filename(dataset::ORCADataset, name, date, region) = basename(dataset_url(dataset, name))
+DataWrangling.metadata_filename(::ORCATwo, name, date, region) = "domain_cfg_orca2l75_nemo5.nc"
 
-z_interfaces(::ORCAMetadatum) = nothing
+DataWrangling.z_interfaces(::ORCAMetadatum) = nothing
 
 function Downloads.download(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)

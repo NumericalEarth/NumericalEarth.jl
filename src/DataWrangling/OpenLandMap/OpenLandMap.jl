@@ -2,24 +2,22 @@ module OpenLandMap
 
 export OpenLandMapSoilDB
 
-using Downloads: Downloads
 using DocStringExtensions: TYPEDSIGNATURES
+using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
-using Oceananigans: Bounded, Center, Face, LatitudeLongitudeGrid
+
+using Oceananigans: Oceananigans, Bounded, Center, Face, LatitudeLongitudeGrid
 using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, interior, set!
 using Oceananigans.Grids: λnodes, φnodes
 
-using ..DataWrangling: DataWrangling,
+using NumericalEarth.DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,
     metadata_path, dataset_variable_name, bounding_box_suffix,
     default_download_directory, inpaint_mask!
-
-using ...Lands: Lands
-
-import Oceananigans
+using NumericalEarth.Lands: Lands
 
 download_OpenLandMap_cache::String = ""
 function __init__()

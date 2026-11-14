@@ -21,6 +21,7 @@ export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fractions, valid_area_mean!
 
 using Adapt: Adapt
+using Dates: Dates
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
@@ -110,6 +111,29 @@ function unzip(file, exdir = dirname(file))
     end
     close(archive)
     return exdir
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Group an iterable of `DateTime`s by `(year, month)`. Returns a `Dict` whose
+keys are `Tuple{Int, Int}` `(year, month)` pairs and whose values are the
+datetimes that fall in that month. The `00:00` instant of a day belongs to
+that day (not the previous one).
+"""
+function group_by_calendar_month(datetimes)
+    keys = unique([(Dates.year(dt), Dates.month(dt)) for dt in datetimes])
+    return Dict(k => filter(dt -> (Dates.year(dt), Dates.month(dt)) == k, datetimes)
+                for k in keys)
+end
+
+const ZIP_MAGIC = UInt8[0x50, 0x4b, 0x03, 0x04]
+
+function is_zip(path)
+    open(path, "r") do io
+        magic = read(io, 4)
+        return length(magic) ≥ 4 && magic == ZIP_MAGIC
+    end
 end
 
 mutable struct DownloadProgress <: Function

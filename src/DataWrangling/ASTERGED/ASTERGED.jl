@@ -3,15 +3,14 @@ module ASTERGED
 export ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km
 
 using Downloads: Downloads
-using Oceananigans: Center, CPU
+
+using Oceananigans: Oceananigans, Center, CPU
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, interior
 
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       BoundingBox, metadata_path, native_grid, inpaint_mask!,
-                       NearestNeighborInpainting, bounding_box_suffix
-
-import Oceananigans
+using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
+                                    BoundingBox, metadata_path, native_grid, inpaint_mask!,
+                                    NearestNeighborInpainting, bounding_box_suffix
 
 download_ASTERGED_cache::String = ""
 function __init__()

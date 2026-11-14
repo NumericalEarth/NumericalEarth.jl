@@ -6,18 +6,14 @@ using Dates: Dates, DateTime, Day, Month, year, month, daysinmonth
 using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
-using Oceananigans: Center
+
+using Oceananigans: Oceananigans, Center
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory,
-                       native_convention_longitude, native_cell_range, write_atomically, unzip
-
-# TODO: move `group_by_calendar_month` and `is_zip` (product-agnostic download helpers) from
-# ERA5 into DataWrangling proper, so dataset modules don't reach across siblings.
-using ..ERA5: group_by_calendar_month, is_zip
-
-import Oceananigans
+using NumericalEarth.DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
+                                    metadata_path, default_download_directory,
+                                    native_convention_longitude, native_cell_range, write_atomically, unzip,
+                                    group_by_calendar_month, is_zip
 
 download_CopernicusLandAlbedo_cache::String = ""
 function __init__()

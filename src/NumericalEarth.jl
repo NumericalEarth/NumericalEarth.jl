@@ -189,13 +189,11 @@ export
     visualize_nested_domain
 
 using DataDeps: DataDeps
-using Oceananigans: Oceananigans, initialize!
+using Oceananigans: Oceananigans, initialize!, location
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries, TimeInterpolator
-
-import Oceananigans: location
 
 """
     natural_earth_lines(name; scale = 50)

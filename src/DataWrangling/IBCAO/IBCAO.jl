@@ -3,20 +3,12 @@ module IBCAO
 export IBCAOv5
 
 using Downloads: Downloads
+
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
-                       download_with_retries
-
-import ..DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    dataset_variable_name,
-    longitude_interfaces,
-    latitude_interfaces,
-    reversed_vertical_axis,
-    validate_dataset_coverage
+using NumericalEarth.DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                                    download_with_retries
 
 download_IBCAO_cache::String = ""
 function __init__()
@@ -42,19 +34,19 @@ Data source: https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-
 """
 struct IBCAOv5 <: AbstractStaticBathymetry end
 
-default_download_directory(::IBCAOv5) = download_IBCAO_cache
-reversed_vertical_axis(::IBCAOv5) = false
+DataWrangling.default_download_directory(::IBCAOv5) = download_IBCAO_cache
+DataWrangling.reversed_vertical_axis(::IBCAOv5) = false
 
 # Geographic bounds after reprojection to WGS84
-longitude_interfaces(::IBCAOv5) = (-180, 180)
-latitude_interfaces(::IBCAOv5) = (64, 90)
+DataWrangling.longitude_interfaces(::IBCAOv5) = (-180, 180)
+DataWrangling.latitude_interfaces(::IBCAOv5) = (64, 90)
 
 # 0.01° resolution: 36000 × 2600
 Base.size(::IBCAOv5) = (36000, 2600, 1)
 
 const IBCAOMetadatum = Metadatum{<:IBCAOv5}
 
-dataset_variable_name(data::IBCAOMetadatum) = IBCAO_bathymetry_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::IBCAOMetadatum) = IBCAO_bathymetry_variable_names[data.name]
 
 # CEDA BODC direct download — 100m, with Greenland ice sheet elevation (~25 GB)
 const IBCAO_tiff_url = "https://dap.ceda.ac.uk/bodc/gebco/ibcao/ibcao_v5.1/" *
@@ -64,9 +56,9 @@ const IBCAO_tiff_url = "https://dap.ceda.ac.uk/bodc/gebco/ibcao/ibcao_v5.1/" *
 const IBCAO_tiff_filename = "ibcao_5_1_2025_ice_100m.tiff"
 const IBCAO_nc_filename   = "ibcao_v5_wgs84_0p01deg.nc"
 
-metadata_filename(::IBCAOv5, name, date, bounding_box) = IBCAO_nc_filename
+DataWrangling.metadata_filename(::IBCAOv5, name, date, bounding_box) = IBCAO_nc_filename
 
-function validate_dataset_coverage(grid, ::IBCAOMetadatum)
+function DataWrangling.validate_dataset_coverage(grid, ::IBCAOMetadatum)
     φ_south, _ = Oceananigans.Grids.y_domain(grid)
     if φ_south < 64
         error("IBCAOv5 only covers the Arctic Ocean (north of 64°N). " *

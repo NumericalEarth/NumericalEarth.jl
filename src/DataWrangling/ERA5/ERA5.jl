@@ -29,7 +29,8 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, Bounding
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend, PrefetchingBackend,
-                       instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip
+                       instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip,
+                       group_by_calendar_month, is_zip
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
 using ...EarthSystemModels: default_clock
 

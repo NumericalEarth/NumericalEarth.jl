@@ -1,8 +1,5 @@
 using Oceananigans.DistributedComputations: Distributed
-using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_index, time_indices
-
-import Oceananigans.OutputReaders: new_backend
-import Oceananigans.Fields: set!
+using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, new_backend, time_index, time_indices
 
 @inline instantiate(T::DataType) = T()
 @inline instantiate(T) = T
@@ -73,7 +70,7 @@ end
 Base.length(backend::DatasetBackend)  = backend.length
 Base.summary(backend::DatasetBackend) = string("DatasetBackend(", backend.start, ", ", backend.length, ")")
 
-new_backend(b::DatasetBackend{native, cache_data}, start, length) where {native, cache_data} =
+Oceananigans.OutputReaders.new_backend(b::DatasetBackend{native, cache_data}, start, length) where {native, cache_data} =
     DatasetBackend{native, cache_data}(start, length, b.inpainting, b.metadata)
 
 on_native_grid(::DatasetBackend{native}) where native = native
@@ -88,7 +85,7 @@ const DatasetFieldTimeSeries{N} = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:Data
 # signature keyed off the metadata's dataset type.
 window_paths(backend, indices) = filter(isfile, unique(metadata_path(backend.metadata[n]) for n in indices))
 
-function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
+function Oceananigans.Fields.set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
     inpainting = backend.inpainting
     cache_data = cache_inpainted_data(backend)
 
@@ -140,13 +137,13 @@ end
 
 Base.summary(backend::PrefetchingBackend) = string("PrefetchingBackend(", backend.start, ", ", backend.length, ")")
 
-new_backend(b::PrefetchingBackend, start, length) = PrefetchingBackend(start, length, b.metadata, b.buffer, b.pending)
+Oceananigans.OutputReaders.new_backend(b::PrefetchingBackend, start, length) = PrefetchingBackend(start, length, b.metadata, b.buffer, b.pending)
 
 Adapt.adapt_structure(to, b::PrefetchingBackend) = Adapt.adapt(to, new_backend(b.buffer.backend, b.start, b.length))
 
 const PrefetchingFieldTimeSeries = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:PrefetchingBackend}
 
-function set!(fts::PrefetchingFieldTimeSeries, backend=fts.backend)
+function Oceananigans.Fields.set!(fts::PrefetchingFieldTimeSeries, backend=fts.backend)
     buffer = backend.buffer
     wait(backend.pending)
 
