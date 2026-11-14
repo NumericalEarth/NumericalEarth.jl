@@ -93,6 +93,8 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
   models' displays inherit it — never manually print what `show`/`summary` already displays.
 - **Extension-implemented API**: declare a stub with docstring and export in `src`
   (`function foo end`), define the method in the extension as `NumericalEarth.Module.foo(...) = ...`.
+- **New extensions**: add the extension's trigger packages to `test/Project.toml` and load them with
+  `using` in `test/test_quality_assurance.jl` — ExplicitImports checks only extensions that are loaded.
 - Minimize code duplication (allow only for trivial one-liners)
 - When something would be better in Oceananigans, add a detailed TODO note
 - Almost always extend functions in source code, not in examples

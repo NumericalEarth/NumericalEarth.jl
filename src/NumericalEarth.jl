@@ -39,6 +39,7 @@ export
     EarthSystemModel,
     OceanOnlyModel,
     OceanSeaIceModel,
+    TotalWaterNormalization,
     AtmosphereOceanModel,
     AtmosphereLandModel,
     NestedModel,
