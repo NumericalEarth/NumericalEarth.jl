@@ -2,7 +2,7 @@
 ##### Open lateral boundary conditions for a regional ocean, read from its boundary bands
 #####
 
-using Oceananigans.BoundaryConditions: BoundaryConditions, GravityWaveRadiationBoundaryCondition,
+using Oceananigans.BoundaryConditions: BoundaryConditions, GravityWaveRadiationBoundaryCondition, NetInflow,
                                        SurfaceWaveRadiationBoundaryCondition,
                                        ValueBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
@@ -150,8 +150,8 @@ boundary_location(name) = name ∈ keys(velocity_locations) ? velocity_locations
                           name === :η ? free_surface_location : tracer_location
 
 """
-    ocean_open_boundary_conditions(grid, bands; depth_means, inverse_barometer, normal_velocity_scheme,
-                                   tangential_velocity_scheme, tracer_scheme)
+    ocean_open_boundary_conditions(grid, bands; depth_means, inverse_barometer, net_inflow, net_inflow_depth_exponent,
+                                   normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
 Build the open lateral boundary conditions of a regional ocean on `grid` from its boundary `bands`, a
 `NamedTuple` keyed by open side of `NamedTuple`s of [`BoundaryBand`](@ref)s holding the parent's velocities
@@ -163,7 +163,10 @@ Build the open lateral boundary conditions of a regional ocean on `grid` from it
   (the default, a no-flux wall, is wrong on an open side),
 - the barotropic transport: `GravityWaveRadiationBoundaryCondition` (Flather) toward the parent's
   transport through the child's wet column ([`BarotropicBoundaryTransport`](@ref)) and sea surface height, plus
-  the child's inverse-barometer sea level `inverse_barometer` when it is not `nothing` ([`InverseBarometerSeaLevel`](@ref)),
+  the child's inverse-barometer sea level `inverse_barometer` when it is not `nothing` ([`InverseBarometerSeaLevel`](@ref));
+  with `net_inflow` (m³ s⁻¹, positive into the domain), the net inflow through all open sides together is pinned at
+  every barotropic substep (`NetInflow`), and Flather splits it between the sides; the pin's shift of each column's
+  transport is proportional to `H^net_inflow_depth_exponent` (default 0),
 - the free surface: `SurfaceWaveRadiationBoundaryCondition` (Chapman),
 - each tracer: `ValueBoundaryCondition` with `tracer_scheme`.
 
@@ -172,6 +175,8 @@ Returns a `NamedTuple` of `FieldBoundaryConditions` for `u`, `v`, `U`, `V`, `η`
 function ocean_open_boundary_conditions(grid, bands;
                                         depth_means = map(Returns(nothing), bands),
                                         inverse_barometer = nothing,
+                                        net_inflow = nothing,
+                                        net_inflow_depth_exponent = 0,
                                         normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     sides = keys(bands)
@@ -218,7 +223,8 @@ function ocean_open_boundary_conditions(grid, bands;
         # Flather is the only route by which the parent's η reaches the child: Chapman on η only radiates.
         transport = BarotropicBoundaryTransport{dim}(side_bands[normal], depth_mean, face, cell, along_bounds(side_bands[normal], normal, side))
         sea_level = with_inverse_barometer(boundary_value(side_bands.η, :η, side), inverse_barometer)
-        push!(transport_bcs, side => GravityWaveRadiationBoundaryCondition((transport, sea_level)))
+        target_transport = isnothing(net_inflow) ? nothing : NetInflow(net_inflow; depth_exponent = net_inflow_depth_exponent)
+        push!(transport_bcs, side => GravityWaveRadiationBoundaryCondition((transport, sea_level); target_transport))
         push!(η_bcs, side => SurfaceWaveRadiationBoundaryCondition())
 
         for name in tracer_names
