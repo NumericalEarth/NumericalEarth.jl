@@ -8,6 +8,7 @@ using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid, fold_topology
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using NumericalEarth
+using NumericalEarth.Bathymetry: haversine
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove, periodic_overlap
 using Statistics
@@ -99,7 +100,7 @@ end
     @test 0 < mapping.north_poles_latitude < 90
 end
 
-# ORCA2 pivots on T points and is not extended south, so it keeps every row but the fold duplicate
+# The ORCA2 file stores no NEMO halos: the grid keeps every cell, and the T pivots lie on its top row
 @testset "ORCAGrid with ORCATwo dataset on $(arch)" for arch in test_architectures
     grid = ORCAGrid(arch; dataset=ORCATwo(), Nz=5, z=(-5000, 0), halo=(4, 4, 4))
 
@@ -111,8 +112,17 @@ end
     @test underlying.Ny == 148
     @test all(isfinite, Oceananigans.on_architecture(CPU(), underlying.Δxᶜᶜᵃ))
 
-    bottom_height = Oceananigans.on_architecture(CPU(), interior(grid.immersed_boundary.bottom_height))
-    @test minimum(bottom_height) < -5000
+    # The halo row across the fold lies one grid step north of the top row
+    Nx, Ny = underlying.Nx, underlying.Ny
+    λ  = Oceananigans.on_architecture(CPU(), underlying.λᶜᶜᵃ)
+    φ  = Oceananigans.on_architecture(CPU(), underlying.φᶜᶜᵃ)
+    Δy = Oceananigans.on_architecture(CPU(), underlying.Δyᶜᶜᵃ)
+    fold_steps = [haversine((λ[i, Ny], φ[i, Ny]), (λ[i, Ny+1], φ[i, Ny+1]), underlying.radius) / Δy[i, Ny] for i in 1:Nx]
+    @test 0.9 < minimum(fold_steps)
+    @test maximum(fold_steps) < 1.1
+
+    bottom_height = Oceananigans.on_architecture(CPU(), grid.immersed_boundary.bottom_height)
+    @test minimum(bottom_height) ≈ -5000
 end
 
 @testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
@@ -131,7 +141,7 @@ end
     z = [-5000, -1000, -100, -20, -10, 0]
     grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z, halo=(4, 4, 4), minimum_depth=20)
     Nx, Ny, _ = size(grid)
-    bottom_height = Array(view(grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1))
+    bottom_height = on_architecture(CPU(), grid.immersed_boundary.bottom_height)[1:Nx, 1:Ny, 1]
     wet = bottom_height .< 0
 
     @test any(wet)
