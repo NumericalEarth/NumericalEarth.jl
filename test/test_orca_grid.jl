@@ -3,20 +3,22 @@ include("download_utils.jl")
 
 using Oceananigans
 using Oceananigans.Architectures: CPU
+using Oceananigans.Grids: Sides, Closed
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid, fold_topology
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using NumericalEarth
+using NumericalEarth.Bathymetry: haversine
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove, periodic_overlap
 using Statistics
 using Test
 
-# Pre-download ORCAOne mesh_mask and bathymetry through the artifacts fallback so
+# Pre-download ORCAOne and ORCATwo mesh_mask and bathymetry through the artifacts fallback so
 # subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
-for name in (:mesh_mask, :bottom_height)
-    md = Metadatum(name; dataset=ORCAOne())
-    download_dataset_with_fallback(metadata_path(md); dataset_name="ORCAOne $name") do
+for dataset in (ORCAOne(), ORCATwo()), name in (:mesh_mask, :bottom_height)
+    md = Metadatum(name; dataset)
+    download_dataset_with_fallback(metadata_path(md); dataset_name="$(nameof(typeof(dataset))) $name") do
         download(md)
     end
 end
@@ -31,6 +33,15 @@ end
     @test mesh_meta.dataset isa ORCAOne
 end
 
+@testset "ORCATwo Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCATwo())
+    mesh_meta  = Metadatum(:mesh_mask; dataset=ORCATwo())
+    @test bathy_meta.dataset isa ORCATwo
+    @test mesh_meta.dataset isa ORCATwo
+
+    # ORCA2's domain_cfg holds both the mesh and the bathymetry
+    @test metadata_path(mesh_meta) == metadata_path(bathy_meta)
+end
 
 @testset "ORCATwelfth Metadatum construction" begin
     bathy_meta = Metadatum(:bottom_height; dataset=ORCATwelfth())
@@ -63,7 +74,7 @@ end
 @testset "ORCAGrid with ORCAOne dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
-    @test grid.underlying_grid.Ny == 332 - south_rows_to_remove
+    @test grid.underlying_grid.Ny == 331 - south_rows_to_remove
 
     grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
@@ -73,7 +84,7 @@ end
     @test underlying isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test underlying isa TripolarGrid
     @test underlying.Nx == 360
-    @test underlying.Ny == 332
+    @test underlying.Ny == 331
     @test underlying.Nz == 5
 
     # Coordinates span near-global domain
@@ -85,8 +96,33 @@ end
     # The conformal mapping describes the mesh it was read from: the fold the grid is folded on, and a north
     # singularity that lies on the fold row in the northern hemisphere.
     mapping = underlying.conformal_mapping
-    @test fold_topology(mapping) === Oceananigans.Grids.topology(underlying, 2)
+    @test Sides{Closed, fold_topology(mapping)} === Oceananigans.Grids.topology(underlying, 2)
     @test 0 < mapping.north_poles_latitude < 90
+end
+
+# The ORCA2 file stores no NEMO halos: the grid keeps every cell, and the T pivots lie on its top row
+@testset "ORCAGrid with ORCATwo dataset on $(arch)" for arch in test_architectures
+    grid = ORCAGrid(arch; dataset=ORCATwo(), Nz=5, z=(-5000, 0), halo=(4, 4, 4))
+
+    @test grid isa ImmersedBoundaryGrid
+    underlying = grid.underlying_grid
+    @test underlying isa TripolarGrid
+    @test Oceananigans.Grids.topology(underlying, 2) === Oceananigans.Grids.RightCenterFolded
+    @test underlying.Nx == 180
+    @test underlying.Ny == 148
+    @test all(isfinite, Oceananigans.on_architecture(CPU(), underlying.Δxᶜᶜᵃ))
+
+    # The halo row across the fold lies one grid step north of the top row
+    Nx, Ny = underlying.Nx, underlying.Ny
+    λ  = Oceananigans.on_architecture(CPU(), underlying.λᶜᶜᵃ)
+    φ  = Oceananigans.on_architecture(CPU(), underlying.φᶜᶜᵃ)
+    Δy = Oceananigans.on_architecture(CPU(), underlying.Δyᶜᶜᵃ)
+    fold_steps = [haversine((λ[i, Ny], φ[i, Ny]), (λ[i, Ny+1], φ[i, Ny+1]), underlying.radius) / Δy[i, Ny] for i in 1:Nx]
+    @test 0.9 < minimum(fold_steps)
+    @test maximum(fold_steps) < 1.1
+
+    bottom_height = Oceananigans.on_architecture(CPU(), grid.immersed_boundary.bottom_height)
+    @test minimum(bottom_height) ≈ -5000
 end
 
 @testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
@@ -97,8 +133,26 @@ end
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
     @test grid.Nx == 360
-    @test grid.Ny == 332 - default_south_rows_to_remove(ORCAOne())
+    @test grid.Ny == 331 - default_south_rows_to_remove(ORCAOne())
     @test grid.Nz == 5
+end
+
+@testset "ORCAGrid deepens wet columns to minimum_depth on $(arch)" for arch in test_architectures
+    z = [-5000, -1000, -100, -20, -10, 0]
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z, halo=(4, 4, 4), minimum_depth=20)
+    Nx, Ny, _ = size(grid)
+    bottom_height = on_architecture(CPU(), grid.immersed_boundary.bottom_height)[1:Nx, 1:Ny, 1]
+    wet = bottom_height .< 0
+
+    @test any(wet)
+    @test maximum(bottom_height[wet]) ≤ -20
+end
+
+@testset "ORCAGrid validates z against Nz on $(arch)" for arch in test_architectures
+    for z in (ExponentialDiscretization(7, -5000, 0; scale = 1000, mutable = true), collect(range(-5000, 0, length = 8)))
+        @test ORCAGrid(arch; dataset=ORCAOne(), Nz=7, z, with_bathymetry=false).Nz == 7
+        @test_throws ArgumentError ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z, with_bathymetry=false)
+    end
 end
 
 @testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
@@ -108,7 +162,7 @@ end
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
     @test underlying.Nx == 360
-    @test underlying.Ny == 332 - Nremove
+    @test underlying.Ny == 331 - Nremove
     @test underlying.Nz == 5
 end
 

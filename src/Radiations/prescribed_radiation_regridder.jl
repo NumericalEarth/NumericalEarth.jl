@@ -29,6 +29,6 @@ function EarthSystemModels.InterfaceComputations.initialize!(exchanger::Componen
     rad_grid = radiation.grid
     kernel_parameters = interface_kernel_parameters(grid)
     launch!(architecture(grid), grid, kernel_parameters,
-            _compute_fractional_indices!, frac_indices, grid, rad_grid)
+            _compute_fractional_indices!, frac_indices, grid, rad_grid, Center(), Center())
     return nothing
 end

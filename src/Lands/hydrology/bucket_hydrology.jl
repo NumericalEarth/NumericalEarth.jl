@@ -20,9 +20,9 @@ capacity"; 150 kg m⁻² ≈ 15 cm of equivalent liquid water).
 
 The atmosphere-facing `surface_saturation` is the continuous saturation
 `𝒮 = clamp(Mˡᵃ/Mˡᵃ⁺, 0, 1)`. The interface surface-humidity models derive their
-own availability from it: [`BulkHumidity`](@ref) is the binary limit (saturated
-where `𝒮 > 0`), [`FractionalHumidity`](@ref) scales saturation by `β(𝒮)`, and
-[`SkinHumidity`](@ref) solves a vapor-flux balance. The availability
+own availability from it: `BulkHumidity` is the binary limit (saturated
+where `𝒮 > 0`), [`FractionalHumidity`](@ref NumericalEarth.EarthSystemModels.InterfaceComputations.FractionalHumidity) scales saturation by `β(𝒮)`, and
+[`SkinHumidity`](@ref NumericalEarth.EarthSystemModels.InterfaceComputations.SkinHumidity) solves a vapor-flux balance. The availability
 parameterization belongs on the interface, not here.
 
 `maximum_water_storage` may be a scalar or a per-cell `Field`.
@@ -42,7 +42,7 @@ end
 flux_variables(::BucketHydrology) = (:precipitation, :evaporation)
 
 @inline function bucket_capacity(maximum_water_storage, i, j, k=1)
-    M_max = property_value(maximum_water_storage, i, j, k)
+    M_max = stateindex(maximum_water_storage, i, j, k)
     return max(M_max, 0)
 end
 

@@ -44,7 +44,7 @@ hydrology = VariablySaturatedHydrology(slab_depth = 1.0,
                                        residual_liquid_fraction = properties.residual_liquid_fraction,
                                        retention_curve,
                                        hydraulic_conductivity,
-                                       deep_liquid_flux = FreeDrainageFlux())
+                                       deep_liquid_water_flux = FreeDrainageFlux())
 
 # θʳ is zero throughout for this pedotransfer function, so five parameters vary in space.
 # Its K₀ is the *matrix* matching point the conductivity closure wants; an infiltration cap

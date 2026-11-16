@@ -8,16 +8,7 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
     JRA55PrescribedAtmosphere(child_architecture(arch); kw...)
 
 """
-    JRA55PrescribedAtmosphere([architecture = CPU()];
-                              dataset = RepeatYearJRA55(),
-                              start_date = first_date(dataset, :temperature),
-                              end_date = last_date(dataset, :temperature),
-                              dir = download_JRA55_cache,
-                              time_indices_in_memory = 10,
-                              time_indexing = Cyclical(),
-                              surface_layer_height = 10,  # meters
-                              region = nothing,
-                              other_kw...)
+$(SIGNATURES)
 
 Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
 `FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterized by JRA55 metadata so that the JRA55-specific
@@ -37,6 +28,7 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    time_indexing = Cyclical(),
                                    surface_layer_height = 10,  # meters
                                    region = nothing,
+                                   tracers = NamedTuple(),
                                    other_kw...)
 
     kw = (; time_indexing, time_indices_in_memory)
@@ -65,5 +57,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                 specific_humidity = qᵛ,
                                 pressure = p,
                                 precipitation_flux,
-                                surface_layer_height = convert(FT, surface_layer_height))
+                                surface_layer_height = convert(FT, surface_layer_height),
+                                tracers)
 end

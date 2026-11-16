@@ -7,15 +7,17 @@
 #####
 #####     dMˡᵃ/dt = Jˡᵇ − Jˡˢ − Jᵛ − Rˡᵃᵗ
 #####
-##### where every term is positive-upward (`Jˡˢ = −Pˡ + Rˢᶠᶜ`). The
+##### where every term is positive-upward (`Jˡˢ = −Pˡ + Rᵒᵛᵉʳ`). The
 ##### conservative storage variable is the *augmented* liquid fraction
 ##### `ϑˡ = θˡ + max(Π,0)/hˢˢ`, so `Mˡᵃ > Mˡᵃ⁺` is admitted and corresponds to
-##### saturated positive-pressure storage (`Π > 0`).
+##### saturated positive-pressure storage (`Π > 0`), reachable only through an
+##### upward deep liquid water flux or dew since infiltration is limited to the
+##### remaining pore volume.
 #####
 ##### Diagnostics published every step:
-#####   * `deep_liquid_flux`        (Jˡᵇ, positive upward)
-#####   * `surface_liquid_flux`     (Jˡˢ, positive upward)
-#####   * `surface_runoff`          (Rˢᶠᶜ, ≥ 0; rejected input)
+#####   * `deep_liquid_water_flux`   (Jˡᵇ, positive upward)
+#####   * `surface_liquid_water_flux` (Jˡˢ, positive upward)
+#####   * `surface_runoff`          (Rᵒᵛᵉʳ, ≥ 0; rejected input)
 #####   * `subsurface_runoff`       (Rˡᵃᵗ, ≥ 0; storage export)
 #####   * `water_storage_tendency`  (dMˡᵃ/dt, kg m⁻² s⁻¹)
 #####
@@ -36,7 +38,7 @@
                                liquid_density = 1000,
                                retention_curve,
                                hydraulic_conductivity,
-                               deep_liquid_flux = NoDeepLiquidFlux(),
+                               deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
                                deep_pressure_head = 0,
                                runoff = NoRunoff())
 
@@ -56,8 +58,8 @@ point (e.g. from a soil-texture map).
   over-saturation.
 * `retention_curve` — e.g. [`VanGenuchtenRetention`](@ref).
 * `hydraulic_conductivity` — e.g. [`VanGenuchtenConductivity`](@ref).
-* `deep_liquid_flux` — bottom-boundary closure: [`NoDeepLiquidFlux`](@ref),
-  [`FreeDrainageFlux`](@ref), [`DarcyDeepLiquidFlux`](@ref), or
+* `deep_liquid_water_flux` — bottom-boundary closure: [`NoDeepLiquidWaterFlux`](@ref),
+  [`FreeDrainageFlux`](@ref), [`DarcyDeepLiquidWaterFlux`](@ref), or
   [`LinearReservoirDrainage`](@ref).
 * `deep_pressure_head` — the deep-reservoir pressure head (m), passed to the
   deep-flux closure as `Πᵈ`. Default 0.
@@ -72,7 +74,7 @@ struct VariablySaturatedHydrology{FT, SD, P, RL, SH, R, C, DF, PD, RO} <: Abstra
     liquid_density           :: FT
     retention_curve          :: R
     hydraulic_conductivity   :: C
-    deep_liquid_flux         :: DF
+    deep_liquid_water_flux    :: DF
     deep_pressure_head       :: PD
     runoff                   :: RO
 end
@@ -85,7 +87,7 @@ Adapt.adapt_structure(to, h::VariablySaturatedHydrology) =
                                Adapt.adapt(to, h.liquid_density),
                                Adapt.adapt(to, h.retention_curve),
                                Adapt.adapt(to, h.hydraulic_conductivity),
-                               Adapt.adapt(to, h.deep_liquid_flux),
+                               Adapt.adapt(to, h.deep_liquid_water_flux),
                                Adapt.adapt(to, h.deep_pressure_head),
                                Adapt.adapt(to, h.runoff))
 
@@ -97,7 +99,7 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                     liquid_density = 1000,
                                     retention_curve,
                                     hydraulic_conductivity,
-                                    deep_liquid_flux = NoDeepLiquidFlux(),
+                                    deep_liquid_water_flux = NoDeepLiquidWaterFlux(),
                                     deep_pressure_head = 0,
                                     runoff = NoRunoff())
     if porosity isa Number && residual_liquid_fraction isa Number
@@ -111,7 +113,7 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                       convert(FT, liquid_density),
                                       retention_curve,
                                       hydraulic_conductivity,
-                                      deep_liquid_flux,
+                                      deep_liquid_water_flux,
                                       normalize_property(FT, deep_pressure_head),
                                       runoff)
 end
@@ -119,16 +121,18 @@ end
 # Coupler writes vapor flux and liquid precipitation into `land.fluxes`.
 # `vapor_flux` is the signed `Jᵛ` (positive upward); unlike `BucketHydrology`,
 # this closure does not read the positive-part `precipitation`/`evaporation`
-# fields. `liquid_precipitation_flux` is `Pˡ` (positive downward).
+# fields. `liquid_water_precipitation_flux` is `Pˡ` (positive downward).
 flux_variables(::VariablySaturatedHydrology) =
-    (:vapor_flux, :liquid_precipitation_flux)
+    (:vapor_flux, :liquid_water_precipitation_flux)
 
 diagnostic_variables(::VariablySaturatedHydrology) =
-    (:deep_liquid_flux,
-     :surface_liquid_flux,
+    (:deep_liquid_water_flux,
+     :surface_liquid_water_flux,
      :surface_runoff,
      :subsurface_runoff,
      :water_storage_tendency)
+
+prognostic_variables(h::VariablySaturatedHydrology) = prognostic_variables(h.runoff)
 
 #####
 ##### Per-cell helpers — used by both `update_diagnostics!` and `time_step!`.
@@ -136,31 +140,37 @@ diagnostic_variables(::VariablySaturatedHydrology) =
 
 @inline function augmented_liquid_fraction(i, j, grid, h, M)
     FT  = typeof(M)
-    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
+    hˡᵃ = convert(FT, stateindex(h.slab_depth, i, j, 1))
     return M / (convert(FT, h.liquid_density) * hˡᵃ)
 end
 
 @inline function liquid_fraction(i, j, grid, h, M)
     ϑˡ = augmented_liquid_fraction(i, j, grid, h, M)
-    ν  = property_value(h.porosity, i, j)
+    ν  = stateindex(h.porosity, i, j, 1)
     return min(ϑˡ, convert(typeof(ϑˡ), ν))
 end
 
 @inline function liquid_saturation(i, j, grid, h, θˡ)
     FT  = typeof(θˡ)
-    ν   = convert(FT, property_value(h.porosity, i, j))
-    θʳ  = convert(FT, property_value(h.residual_liquid_fraction, i, j))
+    ν   = convert(FT, stateindex(h.porosity, i, j, 1))
+    θʳ  = convert(FT, stateindex(h.residual_liquid_fraction, i, j, 1))
     Δ   = ν - θʳ
     return clamp((θˡ - θʳ) / Δ, 0, 1)
 end
 
+@inline function saturated_water_storage(i, j, grid, h, M)
+    FT  = typeof(M)
+    ν   = convert(FT, stateindex(h.porosity, i, j, 1))
+    hˡᵃ = convert(FT, stateindex(h.slab_depth, i, j, 1))
+    return convert(FT, h.liquid_density) * ν * hˡᵃ
+end
+
 @inline function diagnostic_pressure_head(i, j, grid, h, M, θˡ, 𝒮)
     FT  = typeof(M)
-    ν   = convert(FT, property_value(h.porosity, i, j))
     ρˡ  = convert(FT, h.liquid_density)
-    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
-    hˢˢ = convert(FT, property_value(h.storage_height, i, j))
-    Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
+    hˡᵃ = convert(FT, stateindex(h.slab_depth, i, j, 1))
+    hˢˢ = convert(FT, stateindex(h.storage_height, i, j, 1))
+    Mˡᵃ⁺ = saturated_water_storage(i, j, grid, h, M)
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
                   pressure_head(i, j, grid, h.retention_curve, 𝒮),
@@ -196,14 +206,14 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
 @kernel function _variably_saturated_step!(M, saturation,
                                            Jˡb_diag, Jˡs_diag, Rsfc_diag, Rlat_diag, dMdt_diag,
-                                           Jv, Pl, T, h, deep_pressure_head,
+                                           Jv, Pl, T, prognostic, h, deep_pressure_head,
                                            Δt, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mij = M[i, j, 1]
         Jvij = Jv[i, j, 1]
         Plij = Pl[i, j, 1]
-        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
+        Πᵈ   = stateindex(deep_pressure_head, i, j, 1, grid, Time(time), (Center, Center, Center))
         Tij  = T[i, j, 1]
     end
 
@@ -212,8 +222,11 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     Π  = diagnostic_pressure_head(i, j, grid, h, Mij, θˡ, 𝒮)
     K  = hydraulic_conductivity(i, j, grid, h.hydraulic_conductivity, 𝒮, Tij)
 
-    Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
-    Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
+    # Infiltration is limited by the runoff closure and by the pore volume the
+    # column has left; the surplus is surface runoff (or ponds, for closures that store it).
+    M⁺        = saturated_water_storage(i, j, grid, h, Mij)
+    Jˡs, Rsfc = surface_water_balance!(i, j, grid, h.runoff, prognostic, Plij, Mij, M⁺, θˡ, 𝒮, Π, K, Δt)
+    Jˡb       = deep_liquid_water_flux(h.deep_liquid_water_flux, Mij, θˡ, 𝒮, Π, K, Πᵈ, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
 
     dMdt = Jˡb - Jˡs - Jvij - Rlat
@@ -238,18 +251,20 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     end
 end
 
-function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
+function time_step!(h::VariablySaturatedHydrology, land, Δt, time,
+                    liquid_input = land.fluxes.liquid_water_precipitation_flux)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _variably_saturated_step!,
             land.water_storage, land.saturation,
-            land.diagnostics.deep_liquid_flux,
-            land.diagnostics.surface_liquid_flux,
+            land.diagnostics.deep_liquid_water_flux,
+            land.diagnostics.surface_liquid_water_flux,
             land.diagnostics.surface_runoff,
             land.diagnostics.subsurface_runoff,
             land.diagnostics.water_storage_tendency,
             land.fluxes.vapor_flux,
-            land.fluxes.liquid_precipitation_flux,
+            liquid_input,
             land.temperature,
+            land.prognostic,
             h, h.deep_pressure_head, Δt, land.grid, time)
     return nothing
 end
@@ -259,5 +274,5 @@ Base.summary(h::VariablySaturatedHydrology) =
            "slab_depth=", prettysummary(h.slab_depth),
            ", porosity=", prettysummary(h.porosity),
            ", retention=", summary(h.retention_curve),
-           ", deep=", summary(h.deep_liquid_flux),
+           ", deep=", summary(h.deep_liquid_water_flux),
            ", runoff=", summary(h.runoff), ")")

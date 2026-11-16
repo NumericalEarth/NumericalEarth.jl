@@ -117,18 +117,11 @@ end
     return interpolate(X, time, data, loc, native_grid, times, backend, time_indexing)
 end
 
-default_time_indices_in_memory(metadata) = min(2, length(metadata))
+default_time_indices_in_memory(metadata) = min(3, length(metadata))
 default_time_indices_in_memory(::Metadatum) = 1
 
 """
-    DatasetRestoring(metadata::Metadata,
-                     arch_or_grid = CPU();
-                     rate,
-                     mask = 1,
-                     time_indices_in_memory = 2, # Not more than this if we want to use GPU!
-                     time_indexing = Cyclical(),
-                     inpainting = NearestNeighborInpainting(Inf),
-                     cache_inpainted_data = true)
+$(SIGNATURES)
 
 Return a forcing term that restores to data from a dataset. The restoring is applied
 as a forcing on the right hand side of the evolution equations, calculated as:
@@ -175,7 +168,7 @@ Keyword Arguments
 
 - `time_indices_in_memory`: The number of time indices to keep in memory. The number is chosen based on
                             a trade-off between increased performance (more indices in memory) and reduced
-                            memory footprint (fewer indices in memory). Default: 2.
+                            memory footprint (fewer indices in memory). Default: 3.
 
 - `time_indexing`: The time indexing scheme for the field time series. Default: `Cyclical()`.
 
@@ -183,6 +176,10 @@ Keyword Arguments
 
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
+
+- `prefetch`: If `true`, the next window is loaded on a background task, so that reloading it costs one copy.
+              Doubles the memory the series holds, needs at least two Julia threads, and is not available
+              on a distributed grid. Default: `false`.
 """
 function DatasetRestoring(metadata::Metadata,
                           arch_or_grid = CPU();
@@ -192,6 +189,7 @@ function DatasetRestoring(metadata::Metadata,
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true,
+                          prefetch = false,
 						  field_name = oceananigans_fieldnames[metadata.name])
 
     Downloads.download(metadata)
@@ -200,7 +198,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indices_in_memory,
                           time_indexing,
                           inpainting,
-                          cache_inpainted_data)
+                          cache_inpainted_data,
+                          prefetch)
 
     arch = architecture(fts)
     mask = on_architecture(arch, mask)
@@ -270,6 +269,73 @@ function BoundaryConditions.getbc(sf::SurfaceFluxRestoring, i, j, grid, clock, f
     return - G * Δz
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Wrap a surface flux and store a corrected flux whose area-weighted mean over wet cells is zero.
+"""
+struct ConservativeSurfaceFluxRestoring{R, F, M} <: Function
+    flux :: R
+    corrected_flux :: F
+    mean_flux :: M
+end
+
+function ConservativeSurfaceFluxRestoring(flux, grid)
+    corrected_flux = Field{Center, Center, Nothing}(grid)
+    mean_flux = Field(Average(corrected_flux, dims=(1, 2)))
+    return ConservativeSurfaceFluxRestoring(flux, corrected_flux, mean_flux)
+end
+
+Adapt.adapt_structure(to, restoring::ConservativeSurfaceFluxRestoring) =
+    ConservativeSurfaceFluxRestoring(Adapt.adapt(to, restoring.flux),
+                                     Adapt.adapt(to, restoring.corrected_flux),
+                                     nothing)
+
+@inline BoundaryConditions.getbc(restoring::ConservativeSurfaceFluxRestoring,
+                                 i, j, grid, clock, fields) =
+    @inbounds restoring.corrected_flux[i, j, 1]
+
+@kernel function _materialize_surface_flux!(buffer, flux, grid, clock, fields)
+    i, j = @index(Global, NTuple)
+    @inbounds buffer[i, j, 1] = BoundaryConditions.getbc(flux, i, j, grid, clock, fields)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Evaluate `restoring.flux` from the current model state and subtract its area-weighted mean over wet cells.
+"""
+function update_restoring_flux!(restoring::ConservativeSurfaceFluxRestoring, model)
+    grid = model.grid
+    fields = merge(model.velocities, model.tracers)
+
+    launch!(architecture(grid), grid, :xy, _materialize_surface_flux!,
+            restoring.corrected_flux, restoring.flux, grid, model.clock, fields)
+
+    compute!(restoring.mean_flux)
+    interior(restoring.corrected_flux) .-= interior(restoring.mean_flux)
+    return nothing
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Refresh a conservative surface flux restoring from `model` whenever the callback runs.
+The restoring is also initialized at the beginning of `run!`.
+"""
+struct ConservativeSurfaceFluxRestoringCallback{R, M}
+    restoring :: R
+    model :: M
+end
+
+(callback::ConservativeSurfaceFluxRestoringCallback)(simulation) =
+    update_restoring_flux!(callback.restoring, callback.model)
+
+Oceananigans.initialize!(callback::ConservativeSurfaceFluxRestoringCallback, simulation) = callback(simulation)
+
+# The flux is rebuilt from the model on every call, so there is nothing to checkpoint
+Oceananigans.prognostic_state(::ConservativeSurfaceFluxRestoringCallback) = nothing
+
 #####
 ##### Masks for restoring
 #####
@@ -281,9 +347,7 @@ struct LinearlyTaperedPolarMask{N, S, Z}
 end
 
 """
-    LinearlyTaperedPolarMask(; northern = (70,   75),
-                               southern = (-75, -70),
-                               z = (-20, 0))
+$(SIGNATURES)
 
 Build a mask that is linearly tapered in latitude between the northern and southern edges.
 The mask is constant in depth between the z and equals zero everywhere else.

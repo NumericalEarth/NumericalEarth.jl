@@ -28,7 +28,7 @@ using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, interpolator
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  _compute_fractional_indices!,
@@ -37,6 +37,9 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  air_sea_interface_radiation_state,
                                                  air_sea_ice_interface_radiation_state,
                                                  air_land_interface_radiation_state,
+                                                 land_surface_energy_flux,
+                                                 land_surface_shortwave_up,
+                                                 land_surface_longwave_up,
                                                  AirLandRadiationState
 
 include("surface_radiation_properties.jl")

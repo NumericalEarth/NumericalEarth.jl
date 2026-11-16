@@ -1,7 +1,6 @@
 using Adapt: Adapt
-using DocStringExtensions: TYPEDSIGNATURES
-using Oceananigans.Grids: inactive_cell
-using Oceananigans.Operators: ∂zᶜᶜᶜ
+using NumericalEarth: TYPEDSIGNATURES
+using Oceananigans.OutputReaders: update_field_time_series!
 
 
 """
@@ -90,7 +89,7 @@ round(equivalent_chlorophyll(ChlorophyllOptics(), 1 / 23), digits=3)
     return ((κ - κw) / Cs)^Ce
 end
 
-struct TwoColorRadiation{FT, A, O, C, J}
+struct TwoColorRadiation{FT, A, O, C, J} <: Forcings.AbstractRadiativeForcing
     first_color_fraction :: FT
     first_absorption_coefficient :: FT
     second_absorption_coefficient :: A
@@ -108,10 +107,7 @@ Adapt.adapt_structure(to, R::TwoColorRadiation) =
                       adapt(to, R.surface_flux))
 
 """
-    TwoColorRadiation(grid; first_color_fraction = 0.58,
-                            first_decay_scale = 0.35,
-                            chlorophyll_optics = ChlorophyllOptics(eltype(grid)),
-                            chlorophyll = equivalent_chlorophyll(chlorophyll_optics, 1 / 23))
+$(SIGNATURES)
 
 Return `TwoColorRadiation` that computes the radiative flux divergence associated with
 a two-color radiation flux that decays according to Beer's law,
@@ -182,22 +178,6 @@ function Base.show(io::IO, R::TwoColorRadiation)
               "└── blue-green chlorophyll: ", blue_green)
 end
 
-const c = Center()
-const f = Face()
-
-# In zstar we might have positive z, so  `exp(κ * z)` is not correct
-# Radiation that reaches the bottom is dumped on the last cell
-@inline function beers_law_radiation(i, j, k, grid, J₀ , κ)
-    Nz = size(grid, 3)
-    z  = Oceananigans.Grids.znode(i, j, k,    grid, c, c, f)
-    η  = Oceananigans.Grids.znode(i, j, Nz+1, grid, c, c, f)
-    J  = J₀ * exp(κ * (z - η))
-    return ifelse(inactive_cell(i, j, k - 1, grid), zero(J), J)
-end
-
-@inline blue_green_absorption_coefficient(κ₂::Number, i, j) = κ₂
-@inline blue_green_absorption_coefficient(κ₂, i, j) = @inbounds κ₂[i, j, 1]
-
 """
 $(TYPEDSIGNATURES)
 
@@ -209,6 +189,7 @@ compute_absorption_coefficient!(radiation, time) = nothing
 function compute_absorption_coefficient!(R::TwoColorRadiation{<:Any, <:Field}, time)
     κ₂ = R.second_absorption_coefficient
     grid = κ₂.grid
+    update_field_time_series!(R.chlorophyll, time)
     launch!(architecture(grid), grid, :xy, _compute_absorption_coefficient!,
             κ₂, grid, R.chlorophyll, R.chlorophyll_optics, time)
     return nothing
@@ -220,20 +201,6 @@ end
     @inbounds κ₂[i, j, 1] = absorption_coefficient(optics, C)
 end
 
-@inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
-    J₀ = @inbounds R.surface_flux[i, j, 1]
-    κ₁ = R.first_absorption_coefficient
-    κ₂ = blue_green_absorption_coefficient(R.second_absorption_coefficient, i, j)
-    ϵ₁ = R.first_color_fraction
-
-    # Radiation flux divergences
-    dJ₁dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₁)
-    dJ₂dz = ∂zᶜᶜᶜ(i, j, k, grid, beers_law_radiation, J₀, κ₂)
-
-    # Net radiation flux divergence
-    return ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
-end
-
 @inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ
 
 @inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, Iˢʷ, ocean_properties)
@@ -242,6 +209,34 @@ end
     J₀ = tcr.surface_flux
     @inbounds J₀[i, j,  1] = - Iˢʷ / (ρᵒᶜ * cᵒᶜ)
     return zero(Iˢʷ)
+end
+
+
+#####
+##### The penetrating shortwave as the turbulence closures see it
+#####
+
+@inline function two_color_parameters(i, j, R::TwoColorRadiation)
+    κ₂ = state2dindex(R.second_absorption_coefficient, i, j)
+    return R.first_color_fraction, R.first_absorption_coefficient, κ₂
+end
+
+# `surface_flux` holds the temperature flux entering the ocean, positive downward
+@inline Forcings.surface_radiative_flux(i, j, grid, R::TwoColorRadiation) = - @inbounds R.surface_flux[i, j, 1]
+
+@inline function Forcings.transmitted_fraction(i, j, grid, R::TwoColorRadiation, d)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
+    return ϵ₁ * exp(-κ₁ * d) + (1 - ϵ₁) * exp(-κ₂ * d)
+end
+
+@inline function Forcings.transmitted_fraction_derivative(i, j, grid, R::TwoColorRadiation, d)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
+    return - ϵ₁ * κ₁ * exp(-κ₁ * d) - (1 - ϵ₁) * κ₂ * exp(-κ₂ * d)
+end
+
+@inline function Forcings.transmitted_thickness(i, j, grid, R::TwoColorRadiation, h)
+    ϵ₁, κ₁, κ₂ = two_color_parameters(i, j, R)
+    return - ϵ₁ * expm1(-κ₁ * h) / κ₁ - (1 - ϵ₁) * expm1(-κ₂ * h) / κ₂
 end
 
 get_radiative_forcing(something) = nothing

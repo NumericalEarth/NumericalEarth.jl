@@ -5,6 +5,7 @@ abstract type AbstractPrescribedComponent end
 export
     EarthSystemModel,
     AbstractPrescribedComponent,
+    BoundaryPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
@@ -13,13 +14,25 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    PlantAvailableWaterStress,
     DryLayerHumidity,
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CanopyInterface,
+    AreaIndexUndercanopyVelocity,
+    FrictionVelocityUndercanopyVelocity,
+    ExponentialSoilResistance,
+    GroundSurfaceResistance,
+    TiledLandInterface,
+    JarvisConductance,
+    AbsorbedPhotosyntheticallyActiveRadiation,
     AltitudeCorrection,
     atmosphere_land_interface,
+    surface_layer_diagnostics,
+    SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
     ConvergenceStopCriteria,
@@ -28,6 +41,9 @@ export
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
@@ -37,11 +53,11 @@ export
     ThreeEquationHeatFlux,
     # Friction velocity formulations
     MomentumBasedFrictionVelocity,
-    default_stop_time
+    default_stop_time,
+    TotalWaterNormalization
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -53,7 +69,10 @@ using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
+using Oceananigans.Grids: x_domain, y_domain
 using Oceananigans.Utils: launch!, prettytime
+
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
 default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)
@@ -61,6 +80,7 @@ default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf :
 default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
+include("boundary_prescribed_component.jl")
 
 #####
 ##### The coupled model
@@ -76,6 +96,7 @@ using .InterfaceComputations
 
 include("earth_system_model.jl")
 include("time_step_earth_system_model.jl")
+include("total_water_normalization.jl")
 
 #####
 #####  Fallbacks for no-interface models
@@ -98,7 +119,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel)   
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)    = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel, Δt) = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing
@@ -107,7 +128,7 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    
 # are all absent. The atmosphere-land interface may still be present
 # (e.g. an `AtmosphereLandModel` with ocean = sea_ice = nothing), so we
 # explicitly do *not* fall back `compute_atmosphere_land_fluxes!` here —
-# its own 2-arg Nothing dispatch handles the missing-AL-interface case.
+# its own Nothing dispatch handles the missing-AL-interface case.
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel)      = nothing

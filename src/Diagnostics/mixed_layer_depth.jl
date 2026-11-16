@@ -27,9 +27,7 @@ end
 const MixedLayerDepthField = Field{<:Any, <:Any, <:Any, <:MixedLayerDepthOperand}
 
 """
-    MixedLayerDepthField(bm, grid, tracers;
-                         difference_criterion = 2.87e-4,
-                         reference_depth = 10.0)
+$(SIGNATURES)
 
 Mixed-layer-depth diagnostic using the [de Boyer Montégut et al. (2004)](@cite de_boyer_montegut2004mixed)
 DR003 buoyancy-difference criterion.  The default `difference_criterion = 2.87e-4` m s⁻² corresponds
@@ -87,12 +85,16 @@ const f = Face()
     Nz = size(grid, 3)
     FT = eltype(grid)
 
-    # Bracket cells (k⁺ above, k⁻ below) of `zʳ`. A descending sweep replaces
+    # Reference depth and mixed layer depth are measured below the free surface η
+    η    = znode(i, j, Nz+1, grid, c, c, f)
+    zᵣ   = η + zʳ
+
+    # Bracket cells (k⁺ above, k⁻ below) of `zᵣ`. A descending sweep replaces
     # `searchsortedfirst`, which dispatches into non-GPU-compilable methods.
     k⁺ = Nz
     @inbounds for k in Nz:-1:1
         zₖ = znode(i, j, k, grid, c, c, c)
-        k⁺ = ifelse(zₖ ≥ zʳ, k, k⁺)
+        k⁺ = ifelse(zₖ ≥ zᵣ, k, k⁺)
     end
     k⁻ = max(k⁺ - 1, 1)
     z⁺ = znode(i, j, k⁺, grid, c, c, c)
@@ -101,14 +103,14 @@ const f = Face()
     # Reference buoyancy bN at z = zʳ
     b⁺ = @inbounds b[i, j, k⁺]
     b⁻ = @inbounds b[i, j, k⁻]
-    w  = clamp((zʳ - z⁻) / max(z⁺ - z⁻, eps(FT)), zero(FT), one(FT))
+    w  = clamp((zᵣ - z⁻) / max(z⁺ - z⁻, eps(FT)), zero(FT), one(FT))
     bN = b⁻ + w * (b⁺ - b⁻)
 
     # Descend from `k⁻` (first cell below `zʳ`) until Δb crosses Δb★.
     # `kc` tracks the cell where Δb was last evaluated
     Δb       = zero(FT)
     mixed    = true
-    
+
     nk  = 0
     k   = k⁻
     kc  = k⁻
@@ -123,14 +125,14 @@ const f = Face()
         inactive = inactive_cell(i, j, k, grid)
     end
 
-    # Linear interpolation between (zʳ, 0) and (z_{kc}, Δb).
+    # Linear interpolation between (zᵣ, 0) and (z_{kc}, Δb).
     zk = znode(i, j, kc, grid, c, c, c)
-    Δz = zʳ - zk
+    Δz = zᵣ - zk
     z★ = zk - Δz/Δb * (Δb★ - Δb)
-    z★ = ifelse(Δb == 0, zʳ, z★)
+    z★ = ifelse(Δb == 0, zᵣ, z★)
 
-    # Apply various criterion
-    h = -z★
+    # Apply various criterion (depth below the free surface η)
+    h = η - z★
     h = max(h, zero(FT))
     H = static_column_depthᶜᶜᵃ(i, j, grid)
     h = min(h, H)
