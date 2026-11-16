@@ -233,7 +233,7 @@ leaf temperature `Tˡᵉᵃᶠ`, the ground temperature `Tᵍʳⁿᵈ`, and the 
 `(Tᵃᶜᵃⁿ, qᵃᶜᵃⁿ)` inside the Monin–Obukhov fixed point (diagnostic node, the default),
 or couples to the land component's prognostic canopy-air reservoir. Pass it as the interface state
 formulation to solve temperature and specific humidity together. Over an
-[`InterceptingHydrology`](@ref) the wetted fraction `fʷᵉᵗ = (Mᶜⁿᵖʸ/Mᶜⁿᵖʸ⁺)^{2/3}` of the leaf
+[`InterceptingHydrology`](@ref NumericalEarth.Lands.InterceptingHydrology) the wetted fraction `fʷᵉᵗ = (Mᶜⁿᵖʸ/Mᶜⁿᵖʸ⁺)^{2/3}` of the leaf
 ([Deardorff, 1978](@cite deardorff1978)) evaporates intercepted water at the potential
 rate through the leaf boundary layer alone; a dry canopy (`Mᶜⁿᵖʸ = 0`) has no wet branch.
 

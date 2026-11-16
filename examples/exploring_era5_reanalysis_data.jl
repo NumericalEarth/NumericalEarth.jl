@@ -568,7 +568,7 @@ nothing #hide
 # the endorheic sink of the Caspian Sea, while keeping estuaries that GloFAS
 # treats as land, whose pit sits a few cells inland. Each mouth is then spread
 # over the active ocean cells of `ocean_grid` around it, conserving the total
-# volume of freshwater (see [`build_river_routing`](@ref)).
+# volume of freshwater (see [`build_river_routing`](@ref NumericalEarth.Lands.build_river_routing)).
 
 land = @suppress_out GloFASPrescribedLand(ocean_grid; dataset = glofas,
                                           start_date = discharge_date,

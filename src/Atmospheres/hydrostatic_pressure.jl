@@ -114,7 +114,7 @@ end
 $(TYPEDSIGNATURES)
 
 Moist-air density `ρ = p / (Rᵐ T)` on the grid of `temperature`, with the moist mixture gas constant
-`Rᵐ = qᵈ Rᵈ + qᵛ Rᵛ`, `qᵈ = 1 − qᵛ − qᶜ − qⁱ` — the same EOS as [`hydrostatic_pressure_from_surface`](@ref),
+`Rᵐ = qᵈ Rᵈ + qᵛ Rᵛ`, `qᵈ = 1 − qᵛ − qᶜ − qⁱ` — the same EOS as `hydrostatic_pressure_from_surface`,
 so a density built from that pressure is mutually consistent. `temperature` and `pressure` are `Field`s
 on the same grid; the moisture `qᵛ`, `qᶜ`, `qⁱ` are optional `Field`s (omitting them gives the dry
 result `ρ = p / (Rᵈ T)`). Returns a `CenterField`. Useful to initialize a compressible model's density
