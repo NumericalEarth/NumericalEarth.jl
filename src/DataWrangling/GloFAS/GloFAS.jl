@@ -12,6 +12,7 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
 using Oceananigans.Units: kilometers
 
+using NumericalEarth: SIGNATURES
 using ..DataWrangling: DataWrangling, DownloadProgress, Metadata, Metadatum,
                        available_variables, download_with_retries, first_date, last_date,
                        metadata_path, metadata_url
