@@ -22,7 +22,7 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
                        GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
-                       metadata_url, first_date, last_date, all_dates, download_with_retries
+                       metadata_url, first_date, last_date, all_dates, download_with_retries,
                        MicromolePerLiter
 
 download_ECCO_cache::String = ""
