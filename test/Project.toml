@@ -43,6 +43,7 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
+ClimaSeaIce = {url = "https://github.com/dkytezab/ClimaSeaIce.jl", rev = "dkzdev/oceananigans-breeze-main"}
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"}
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 NumericalEarth = {path = ".."}

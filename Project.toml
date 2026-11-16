@@ -78,6 +78,7 @@ NumericalEarthWOAExt = "WorldOceanAtlasTools"
 NumericalEarthZarrExt = "Zarr"
 
 [sources]
+ClimaSeaIce = {url = "https://github.com/dkytezab/ClimaSeaIce.jl", rev = "dkzdev/oceananigans-breeze-main"}
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 
 [compat]
