@@ -158,6 +158,11 @@ and the child is built on a copy of `grid` whose immersed bottom is blended towa
 [`blend_parent_bathymetry`](@ref)), so that the geometry at the open boundaries matches the one the parent state
 was produced over, but never shallower than `minimum_depth`.
 
+With `inverse_barometer = true`, the Flather exterior sea level also includes the child's inverse-barometer response
+to the atmospheric pressure it is forced with ([`InverseBarometer`](@ref)), for a parent that carries none, such as
+an ocean reanalysis whose sea level excludes the atmospheric pressure. It is refreshed with the child's state,
+from the pressure of the atmosphere the child is coupled to.
+
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
 initialized from `initial_state` (default: the
 parent, unless the parent knows only the boundaries), a parent-like ocean interpolated onto `grid` at the
@@ -176,6 +181,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
+                            inverse_barometer = false,
                             initial_state = default_initial_state(parent),
                             clock = nested_clock(grid, parent.clock.time),
                             boundary_conditions = NamedTuple(),
@@ -196,7 +202,10 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     validate_band_width(grid, open_sides, width, "relaxation_width")
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
 
+    inverse_barometer_sea_level = inverse_barometer ? Field{Center, Center, Nothing}(grid) : nothing
+
     nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
+                                                inverse_barometer = inverse_barometer_sea_level,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :
@@ -210,7 +219,9 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
 
     isnothing(initial_state) || set_from_parent!(child, initial_state, time)
 
-    return NestedModel(parent, child, exchanger)
+    child_callbacks = inverse_barometer_callbacks(child, inverse_barometer_sea_level)
+
+    return NestedModel(parent, child, exchanger, child_callbacks)
 end
 
 """

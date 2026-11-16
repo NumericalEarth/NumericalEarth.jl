@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: bracketing_dates
 using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, sample_parent!,
                                    BoundaryTimeSeries, BarotropicBoundaryTransport, ConsistentBoundaryVelocity,
                                    OceanBoundaryExchanger
-using NumericalEarth.Oceans: fill_prescribed_halo_regions!
+using NumericalEarth.Oceans: fill_prescribed_halo_regions!, forcing_barotropic_potential
 using Oceananigans.Grids: TwoSided, topology
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
@@ -379,6 +379,43 @@ end
     @test η_boundary(Δt / 2) ≈ η_parent(Δt / 2)
     @test η_boundary(Δt) ≈ η_parent(Δt)
     @test η_boundary(3Δt / 2) ≈ η_parent(Δt)
+end
+
+@testset "Flather adds the child's inverse-barometer sea level to the parent's on $(arch)" for arch in test_architectures
+    η₀ = 0.2
+    @test nested_ocean_model(nesting_test_parent(arch; η = η₀), nesting_test_child_grid(arch)).child_callbacks === ()
+
+    model = nested_ocean_model(nesting_test_parent(arch; η = η₀), nesting_test_child_grid(arch); inverse_barometer = true)
+    child = model.child
+    grid = child.grid
+    Nx, Ny, Nz = size(grid)
+
+    # A pressure potential pᵃ / ρ₀ rising northward by 10 m² s⁻² per degree, as the atmosphere would fill it
+    pᵃ = Field{Center, Center, Nothing}(grid)
+    set!(pᵃ, (λ, φ) -> 10 * (φ - 29) + λ)
+    parent(forcing_barotropic_potential(child)) .= parent(pᵃ)
+    update_state!(model)
+
+    cpu_grid = on_architecture(CPU(), grid)
+    g = child.free_surface.gravitational_acceleration
+    p = Array(interior(pᵃ, :, :, 1))
+    Az = [Azᶜᶜᶜ(i, j, Nz, cpu_grid) for i in 1:Nx, j in 1:Ny]
+    p̄ = sum(p .* Az) / sum(Az)
+    ηᴵᴮ = Array(interior(only(model.child_callbacks).parameters.sea_level, :, :, 1))
+
+    @test ηᴵᴮ ≈ (p̄ .- p) ./ g
+    @test abs(sum(ηᴵᴮ .* Az)) < 1e-12 * sum(abs, ηᴵᴮ .* Az)
+
+    bcs = child.free_surface.barotropic_velocities
+    η_boundary(bc, s) = getbc(on_architecture(CPU(), bc.condition), s, 1, cpu_grid, (; time = 0.0))[2]
+
+    @test [η_boundary(bcs.U.boundary_conditions.west, j) for j in 1:Ny] ≈ η₀ .+ ηᴵᴮ[1, :]
+    @test [η_boundary(bcs.U.boundary_conditions.east, j) for j in 1:Ny] ≈ η₀ .+ ηᴵᴮ[Nx, :]
+    @test [η_boundary(bcs.V.boundary_conditions.south, i) for i in 1:Nx] ≈ η₀ .+ ηᴵᴮ[:, 1]
+    @test [η_boundary(bcs.V.boundary_conditions.north, i) for i in 1:Nx] ≈ η₀ .+ ηᴵᴮ[:, Ny]
+
+    time_step!(model, 600)
+    @test all(isfinite, Array(interior(child.free_surface.displacement)))
 end
 
 @testset "Open boundary conditions move to the CPU with the child's fields on $(arch)" for arch in test_architectures
