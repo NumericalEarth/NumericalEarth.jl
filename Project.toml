@@ -77,6 +77,9 @@ NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 NumericalEarthZarrExt = "Zarr"
 
+[sources]
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
+
 [compat]
 Accessors = "0.1.44"
 Adapt = "4"
