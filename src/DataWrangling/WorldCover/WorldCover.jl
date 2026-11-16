@@ -8,6 +8,7 @@ using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, regrid!
 
+using NumericalEarth: SIGNATURES
 using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                                    metadata_path, BoundingBox, Dataset, majority_class!, class_fractions
 
@@ -294,7 +295,7 @@ function aggregate_blockwise(pixels::AbstractMatrix, factor::Integer, reduction)
 end
 
 """
-    aggregate_landcover(pixels, factor; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+$(SIGNATURES)
 
 Reduce the fine `pixels` raster onto the coarse grid by an INTEGER `factor`,
 returning `(; landcover_class, vegetation_fraction, class_fractions)`: the

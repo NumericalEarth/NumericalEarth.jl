@@ -40,7 +40,7 @@ at `2Δt` and `coarse` at `4Δt`. Derive the factor from a pair of grids with [`
 A prescribed parent is a function of time rather than an integration, so it follows the child's clock
 whatever the ratio.
 
-Construct via [`child_model`](@ref) plus this wrapper, or use the
+Construct from a `child` model directly, or use the
 [`NestedSimulation`](@ref) convenience that bundles model construction and
 `Simulation` wrapping.
 """

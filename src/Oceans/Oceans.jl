@@ -15,8 +15,8 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, compute!, set!, interior
-using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
+using Oceananigans.Forcings: Forcings, MultipleForcings, DiscreteForcing
+using Oceananigans.Grids: Grids, inactive_node, peripheral_node, Face, Center, xspacings, yspacings, znodes, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -34,13 +34,15 @@ using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θ_from_Θ
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
                            default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger, state2dindex, interface_kernel_parameters,
+                                                 vector_component_boundary_conditions
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -50,8 +52,7 @@ struct Default{V}
 end
 
 """
-    default_or_override(default::Default, alternative_default=default.value) = alternative_default
-    default_or_override(override, alternative_default) = override
+$(SIGNATURES)
 
 Either return `default.value`, an `alternative_default`, or an `override`.
 

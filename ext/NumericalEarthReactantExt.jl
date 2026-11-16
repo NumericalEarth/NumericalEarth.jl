@@ -49,6 +49,17 @@ EarthSystemModels.same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT
 EarthSystemModels.same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 EarthSystemModels.same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 
+# Reactant's `tick!` advances the time, the iteration and the last Δt of a device clock as device numbers, so
+# `Clock{TT}(time = 0)`, which leaves the iteration a host `Int`, cannot be ticked inside a compiled step. The kernel
+# time type is the time's own, as `Clock{TT}` gives a host clock, and the numbers are placed as the atmosphere's are.
+function Base.zero(clock::Clock{<:Reactant.ConcreteRNumber{FT}}) where FT
+    sharding = Reactant.Sharding.is_sharded(clock.time) ? clock.time.sharding : Reactant.Sharding.NoSharding()
+    device_number(x) = Reactant.ConcreteRNumber(x; sharding)
+    return Clock(; time = device_number(zero(FT)), iteration = device_number(0), stage = 1,
+                   last_Δt = device_number(convert(FT, Inf)), last_stage_Δt = device_number(convert(FT, Inf)),
+                   kernel_time_type = FT)
+end
+
 # The device clock `Clock(grid)` gives on ReactantState, for constructors that build their clock before the grid
 EarthSystemModels.default_clock(::ReactantState, FT) =
     Clock(; time = Reactant.ConcreteRNumber(0.0), iteration = Reactant.ConcreteRNumber(0),

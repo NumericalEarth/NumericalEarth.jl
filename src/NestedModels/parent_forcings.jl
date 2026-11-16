@@ -34,7 +34,7 @@ relaxation_target(source) = source
 relaxation_target(field::Field) = InterpolatedParentTarget(field)
 
 """
-    parent_forcings(; variables, rate, mask = 1)
+$(SIGNATURES)
 
 Build a `NamedTuple` of `Relaxation` forcings driving the child interior toward
 the parent's values.
