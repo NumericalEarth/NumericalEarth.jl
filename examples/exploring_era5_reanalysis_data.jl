@@ -255,7 +255,7 @@ nothing #hide
 #   A `Column(...; interpolation = Nearest())` option is also available.
 # - We explicitly load all fields in the timeseries into memory through
 #   `FieldTimeSeries...; time_indices_in_memory = Nt)` whereas the default is
-#   to load only two snapshots at a time. Having the full timeseries in memory
+#   to load only three snapshots at a time. Having the full timeseries in memory
 #   facilitates any operations we want to perform on the data — in this case,
 #   a units conversion.
 #
