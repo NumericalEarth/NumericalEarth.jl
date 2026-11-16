@@ -23,7 +23,7 @@ Keyword Arguments
 - `spread_radius`: radius in degrees over which each mouth's discharge is divided equally. Default: `1.2`.
 - `maximum_spread_cells`: cap on that footprint, nearest first. Default: `8`.
 
-See also [`JRA55PrescribedLand`](@ref).
+See also [`JRA55PrescribedLand`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedLand).
 """
 function GloFASPrescribedLand(grid;
                               dataset = GloFASReanalysis(),
