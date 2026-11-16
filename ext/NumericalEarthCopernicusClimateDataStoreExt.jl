@@ -1,14 +1,12 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
-using NumericalEarth: NumericalEarth
 using CopernicusClimateDataStore: CopernicusClimateDataStore
-using DocStringExtensions: TYPEDSIGNATURES
-using Downloads: Downloads
 using Dates: Dates
+using Downloads: Downloads
+using NCDatasets: NCDatasets
 using Oceananigans.DistributedComputations: @root
 
-using NCDatasets: NCDatasets
-
+using NumericalEarth: NumericalEarth, TYPEDSIGNATURES
 using NumericalEarth.DataWrangling: CopernicusClimateDataStoreClient, retrieve_with_retries
 using NumericalEarth.DataWrangling.ERA5: ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
                                          ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
