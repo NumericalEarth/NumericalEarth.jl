@@ -59,11 +59,10 @@ function Downloads.download(dataset::GEUSSolidIceDischarge, dir = download_GEUS_
     path = joinpath(dir, string("gate_V", dataset.version, ".nc"))
     isfile(path) && return path
 
-    listing_url = string(GEUS_DATAVERSE, "/api/datasets/:persistentId/versions/", dataset.version,
-                         ".0?persistentId=", GEUS_DISCHARGE_DOI)
-    listing = String(take!(Downloads.download(listing_url, IOBuffer())))
-    file_id = match(r"\"id\":(\d+),[^{}]*\"filename\":\"gate\.nc\"", listing)[1]
-    file_url = string(GEUS_DATAVERSE, "/api/access/datafile/", file_id)
+    listing_url = string(GEUS_DATAVERSE, "/api/datasets/:persistentId/versions/", dataset.version, ".0?persistentId=", GEUS_DISCHARGE_DOI)
+    listing     = String(take!(Downloads.download(listing_url, IOBuffer())))
+    file_id     = match(r"\"id\":(\d+),[^{}]*\"filename\":\"gate\.nc\"", listing)[1]
+    file_url    = string(GEUS_DATAVERSE, "/api/access/datafile/", file_id)
 
     return write_atomically(staging_path -> Downloads.download(file_url, staging_path), path)
 end
