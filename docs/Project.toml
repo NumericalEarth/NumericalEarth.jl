@@ -36,7 +36,6 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = ".."}
-SpeedyWeather = {url = "https://github.com/SpeedyWeather/SpeedyWeather.jl", rev = "main", subdir = "SpeedyWeather"} # TODO: remove once SpeedyWeather 0.24 is released with DocStringExtensions 0.10 compat
 Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
 
 [compat]
