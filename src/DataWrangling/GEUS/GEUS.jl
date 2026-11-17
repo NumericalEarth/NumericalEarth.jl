@@ -139,7 +139,7 @@ function GEUSPrescribedLand(grid;
     times = [Dates.value(Millisecond(month + (lastdayofmonth(month) + Day(1) - month) / 2 - start_date)) / 1000
              for month in series_months]
 
-    Ngates = length(λ)
+    Nλ = length(λ)
     FT = eltype(grid)
     gate_grid = RectilinearGrid(architecture(grid), FT; size = Ngates, x = (0, Ngates),
                                 topology = (Bounded, Flat, Flat))
