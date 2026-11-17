@@ -18,34 +18,29 @@ using Oceananigans: Field, Center, architecture
 using Oceananigans.Fields: ZeroField, interior
 using Oceananigans.Utils: launch!
 
-import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!, exchange_grid
-
 using NumericalEarth.EarthSystemModels: DegreesCelsius, convert_to_kelvin, convert_from_kelvin
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
-    land_surface_energy_flux,
-    land_surface_shortwave_up,
-    land_surface_longwave_up
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 # The exchange grid is the Terrarium land's (flattened) Oceananigans field grid, on which all
 # state/flux `Field`s live. `land` is an Oceananigans `Simulation` wrapping the `ModelIntegrator`
 # (`land.model`), which forwards `.grid` to the underlying field grid; the generic
 # `exchange_grid(..., land) = land.grid` accessor does not resolve on a bare `Simulation`, so
 # specialize it here.
-exchange_grid(atmosphere, ::Nothing, ::Nothing, land::TerrariumSimulation) = land.model.grid
+NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ::Nothing, ::Nothing, land::TerrariumSimulation) = land.model.grid
 
 # The coupler writes these at `[i, j, 1]`, but `ground_heat_flux` is a z-windowed `Ground(Top())`
 # field whose absolute index is the top face. `interior` aliases the same memory with 1-based
 # indexing, so the returned views are 2D from the coupler's point of view.
 # TODO: Figure out how to handle the case where snow is present
-land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.ground_heat_flux)
+NumericalEarth.EarthSystemModels.InterfaceComputations.land_surface_energy_flux(land::TerrariumSimulation) = interior(land.model.state.ground_heat_flux)
 
 # Targets for the upwelling radiation `PrescribedRadiativeFluxes` declares as inputs.
-land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
-land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
+NumericalEarth.EarthSystemModels.InterfaceComputations.land_surface_shortwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_shortwave_up)
+NumericalEarth.EarthSystemModels.InterfaceComputations.land_surface_longwave_up(land::TerrariumSimulation) = interior(land.model.state.surface_longwave_up)
 
 # Land exchanger: expose skin temperature `T` (K) and surface saturation `𝒮`, the land state
 # the default atmosphere-land interface formulations read. No regridder (exchange grid == land grid).
-function ComponentExchanger(land::TerrariumSimulation, exchange_grid; kw...)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land::TerrariumSimulation, exchange_grid; kw...)
     state = (T = Field{Center, Center, Nothing}(exchange_grid),
              𝒮 = Field{Center, Center, Nothing}(exchange_grid))
     return ComponentExchanger(state, nothing)
@@ -66,7 +61,7 @@ end
     end
 end
 
-function interpolate_state!(exchanger, exchange_grid, land::TerrariumSimulation, coupled_model)
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, land::TerrariumSimulation, coupled_model)
     state = land.model.state
     arch = architecture(exchange_grid)
     Nz = size(exchange_grid, 3)
@@ -120,7 +115,7 @@ end
     end
 end
 
-function update_net_fluxes!(coupled_model, land::TerrariumSimulation)
+function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, land::TerrariumSimulation)
     atmosphere_land_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(atmosphere_land_interface) && return nothing
 

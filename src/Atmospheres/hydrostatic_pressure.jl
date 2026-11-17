@@ -2,7 +2,7 @@
 ##### hydrostatic_pressure_from_surface: balanced pressure from a surface-pressure anchor
 #####
 
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: CenterField, interior
 using Oceananigans.Grids: znode
