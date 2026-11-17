@@ -5,16 +5,19 @@ using NumericalEarth: IceShelfOceanInterface,
                       VelocityBasedFrictionVelocity,
                       compute_ice_shelf_fluxes!,
                       ice_shelf_boundary_conditions,
+                      ice_shelf_boundary_layer_closure,
                       ice_shelf_tracer_forcing
 
 using NumericalEarth.IceShelves: ice_shelf_friction_velocity, ice_shelf_liquidus, ice_ocean_interface_heat_flux,
-                                 melting_temperature_salinity_derivative, U²ᶜᶜᶜ
+                                 melting_temperature_salinity_derivative, U²ᶜᶜᶜ,
+                                 ice_shelf_boundary_layer_diffusivity
 
 using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
 
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
 using Oceananigans
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
@@ -247,6 +250,45 @@ for arch in test_architectures
         @test Jʷ[1] == Jʷ[4] == 0
         @test T★[2] ≈ melting_temperature(liquidus, S★[2], -0.1) atol = 1e-10
         @test T★[3] ≈ melting_temperature(liquidus, S★[3], -0.6) atol = 1e-10
+    end
+
+    @testset "Ice shelf boundary layer closure [$(typeof(arch))]" begin
+        # Iced column 2 has its ice base at z = -0.5 (k_draft = 2) and Δz = 1/4
+        underlying_grid = RectilinearGrid(arch, size = (3, 3, 4),
+                                          x = (0, 3), y = (0, 3), z = (-1, 0),
+                                          topology = (Bounded, Periodic, Bounded))
+
+        top_height(x, y) = 1 < x < 2 ? -0.5 : 0.0
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedVerticalBoundaries(; bottom_height = -1, top_height))
+
+        interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux(),
+                                           boundary_layer_thickness = 0.3)
+        closure = ice_shelf_boundary_layer_closure(interface; mixing_coefficient = 0.5)
+
+        model = HydrostaticFreeSurfaceModel(grid; tracers = (:T, :S),
+                                            buoyancy = SeawaterBuoyancy(),
+                                            closure = (VerticalScalarDiffusivity(ν = 1e-4, κ = 1e-5), closure),
+                                            boundary_conditions = ice_shelf_boundary_conditions(interface),
+                                            forcing = ice_shelf_tracer_forcing(interface))
+        set!(model, T = 1.0, S = 34.5)
+        compute_ice_shelf_fluxes!(interface, model)
+
+        κ = KernelFunctionOperation{Center, Center, Face}(ice_shelf_boundary_layer_diffusivity, grid,
+                                                          model.clock, nothing, closure.κ.parameters)
+        κ = Array(interior(Field(κ)))[:, 2, :]
+
+        # Only the face 0.25 below the ice base lies within the 0.3-thick layer
+        κ★ = 0.5 * 0.002 * 0.3
+        @test κ[2, :] ≈ [0, κ★, 0, 0, 0]
+        @test all(κ[1, :] .== 0)
+        @test all(κ[3, :] .== 0)
+
+        simulation = Simulation(model; Δt = 0.05, stop_iteration = 20, verbose = false)
+        add_callback!(simulation, sim -> compute_ice_shelf_fluxes!(interface, sim), IterationInterval(1))
+        run!(simulation)
+
+        @test all(isfinite, Array(interior(model.tracers.T)))
+        @test all(isfinite, Array(interior(model.tracers.S)))
     end
 
     @testset "Melting cavity simulation [$(typeof(arch))]" begin
