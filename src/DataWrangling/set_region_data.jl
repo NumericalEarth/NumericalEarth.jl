@@ -111,9 +111,27 @@ function region_info(::BoundingBox, target, λc, φc)
     j₁, _ = compute_bounding_indices((φmin, φmax), φc)
 
     Nx, Ny, _ = size(target)
+    check_region_coverage(length(λc), Nx, length(φc), Ny)
+
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
     return BoundingBoxOffset(di, dj)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Throw an error when a file with `Nλ × Nφ` horizontal points cannot cover a target with `Nx × Ny`
+points. Without this check the reader clamps its indices and silently copies the file's edge
+values across the rest of the target. One latitude fewer than the target is allowed because
+`ShiftSouth` handles staggered latitude axes.
+"""
+function check_region_coverage(Nλ, Nx, Nφ, Ny)
+    Nλ < Nx && throw(ArgumentError("The data file has $Nλ longitudes but the target region needs $Nx. " *
+                                   "The file was probably downloaded for a different or truncated region; delete it to download it again."))
+    Nφ < Ny - 1 && throw(ArgumentError("The data file has $Nφ latitudes but the target region needs $Ny. " *
+                                       "The file was probably downloaded for a different or truncated region; delete it to download it again."))
+    return nothing
 end
 
 function region_info(col::Column, target, λc, φc)
