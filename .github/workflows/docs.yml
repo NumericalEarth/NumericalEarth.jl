@@ -134,10 +134,11 @@ jobs:
         run: julia --project=docs --color=yes docs/make.jl
       - uses: actions/upload-artifact@v6
         # make.jl fails the step when any example fails, but still builds the
-        # site from the examples that succeeded — upload it for inspection.
+        # site from the examples that succeeded — upload it for inspection,
+        # under a "-failed" name that the deploy job does not download.
         if: ${{ always() }}
         with:
-          name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}
+          name: documentation-build${{ matrix.ref != '' && format('-{0}', matrix.ref) || '' }}${{ job.status != 'success' && '-failed' || '' }}
           path: docs/build
           retention-days: 10
 
@@ -147,10 +148,13 @@ jobs:
     #   found an undeployed release)
     # * it's a manual dispatch with deploy enabled (same as scheduled)
     # * it's a PR, but not from a fork (preview)
+    # Each leg deploys the build of its own ref, so a failed release build
+    # does not hold back the dev docs.
     needs: [plan, build-docs]
-    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.deploy) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork)) }}
     name: Deploy documentation ${{ matrix.ref != '' && format('({0})', matrix.ref) || '' }}
     strategy:
+      fail-fast: false
       max-parallel: 1
       matrix:
         ref: ${{ fromJSON(needs.plan.outputs.refs) }}
