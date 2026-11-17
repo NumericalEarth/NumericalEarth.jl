@@ -3,12 +3,16 @@ include("runtests_setup.jl")
 using NumericalEarth: IceShelfOceanInterface,
                       TEOS10Liquidus,
                       VelocityBasedFrictionVelocity,
+                      StratFeedback,
+                      RotatingBoundaryLayerTransfer,
+                      ConvectiveMeltLimit,
+                      IceHeatConduction,
                       compute_ice_shelf_fluxes!,
                       ice_shelf_boundary_conditions,
                       ice_shelf_tracer_forcing
 
 using NumericalEarth.IceShelves: ice_shelf_friction_velocity, ice_shelf_liquidus, ice_ocean_interface_heat_flux,
-                                 melting_temperature_salinity_derivative, U²ᶜᶜᶜ
+                                 ice_ocean_interface_fluxes, melting_temperature_salinity_derivative, U²ᶜᶜᶜ
 
 using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
 
@@ -136,6 +140,138 @@ end
     @test u★₀ ≈ sqrt(2.5e-3) * 0.01
     u★₁ = ice_shelf_friction_velocity(fv_tidal, 2, 2, 2, grid, U², H_TBL)
     @test u★₁ ≈ sqrt(2.5e-3 * (0.1^2 + 0.2^2 + 0.01^2))
+
+    # Minimum friction velocity
+    fv_min = VelocityBasedFrictionVelocity(minimum_friction_velocity = 1e-4)
+    @test ice_shelf_friction_velocity(fv_min, 2, 2, 2, grid, U²₀, H_TBL) == 1e-4
+    @test ice_shelf_friction_velocity(fv_min, 2, 2, 2, grid, U², H_TBL) ≈ sqrt(0.0015 * (0.1^2 + 0.2^2))
+    @test fv.minimum_friction_velocity == 0
+    @test VelocityBasedFrictionVelocity(Float32; minimum_friction_velocity = 1e-4).minimum_friction_velocity isa Float32
+end
+
+melt_physics(; transfer_coefficients = nothing, convective_limit = nothing,
+               ice_heat_conduction = nothing, basal_slope = nothing) =
+    (; transfer_coefficients, convective_limit, ice_heat_conduction, basal_slope)
+
+@testset "Optional ice shelf melt physics" begin
+    flux = ThreeEquationHeatFlux()
+    ℰ = 334e3
+    zᵈ = -500.0
+    properties = (reference_density = 1028.0, heat_capacity = 3991.0)
+    ice_state = (; S = 0.0, h = 0.0, hc = 0.0, ℵ = 1.0, T = 0.0)
+    warm = (; T = 1.0, S = 34.5)
+    cold = (; T = -3.0, S = 34.5)
+    steep = fill(1.0, 1, 1, 1)
+    flat = fill(0.0, 1, 1, 1)
+
+    fluxes(physics, ocean_state, liquidus; u★ = 0.002) =
+        ice_ocean_interface_fluxes(physics, 1, 1, flux, ocean_state, ice_state, liquidus, zᵈ, properties, ℰ, u★)
+
+    let liquidus = TEOS10Liquidus()
+        𝒬₀, q₀, Tᵦ₀, Sᵦ₀ = fluxes(melt_physics(), warm, liquidus)
+        𝒬ᵒ, Tᵦᵒ, Sᵦᵒ = ice_ocean_interface_heat_flux(flux, warm, ice_state, liquidus, zᵈ, properties, ℰ, 0.002)
+        @test (𝒬₀, q₀, Tᵦ₀, Sᵦ₀) === (𝒬ᵒ, 𝒬ᵒ / ℰ, Tᵦᵒ, Sᵦᵒ)
+
+        # The general solver reproduces the default when no option is active
+        𝒬, q, Tᵦ, Sᵦ = fluxes(melt_physics(convective_limit = ConvectiveMeltLimit(), basal_slope = flat), warm, liquidus)
+        @test 𝒬 ≈ 𝒬₀
+        @test q ≈ q₀
+        @test Tᵦ ≈ Tᵦ₀
+        @test Sᵦ ≈ Sᵦ₀
+
+        # Meltwater stratification suppresses melting
+        𝒬, q, Tᵦ, Sᵦ = fluxes(melt_physics(transfer_coefficients = StratFeedback()), warm, liquidus)
+        @test 0 < q < q₀
+        @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ, zᵈ) atol = 1e-10
+
+        # Strong shear swamps the stratification and recovers constant coefficients
+        _, q₀, _, _ = fluxes(melt_physics(), warm, liquidus; u★ = 0.1)
+        _, q, _, _  = fluxes(melt_physics(transfer_coefficients = StratFeedback()), warm, liquidus; u★ = 0.1)
+        @test q ≈ q₀
+
+        # Freezing is statically unstable, so the coefficients stay constant
+        _, q₀, _, _ = fluxes(melt_physics(), cold, liquidus)
+        _, q, _, _  = fluxes(melt_physics(transfer_coefficients = StratFeedback()), cold, liquidus)
+        @test q₀ < 0
+        @test q ≈ q₀
+
+        # Convection on a steep base enhances melting under weak shear
+        _, q₀, _, _ = fluxes(melt_physics(), warm, liquidus; u★ = 1e-4)
+        _, q, _, _  = fluxes(melt_physics(convective_limit = ConvectiveMeltLimit(), basal_slope = steep), warm, liquidus; u★ = 1e-4)
+        @test q > q₀
+
+        _, qˢ, _, _ = fluxes(melt_physics(transfer_coefficients = StratFeedback(),
+                                          convective_limit = ConvectiveMeltLimit(), basal_slope = steep), warm, liquidus; u★ = 1e-4)
+        @test qˢ ≥ q * (1 - 1e-6)
+
+        # Conduction into cold ice takes heat away from melting
+        _, q₀, _, _ = fluxes(melt_physics(), warm, liquidus)
+        𝒬, q, Tᵦ, _ = fluxes(melt_physics(ice_heat_conduction = IceHeatConduction()), warm, liquidus)
+        γᵀ = flux.heat_transfer_coefficient * 0.002
+        @test 𝒬 ≈ properties.reference_density * properties.heat_capacity * γᵀ * (warm.T - Tᵦ)
+        @test 0 < q < 𝒬 / ℰ
+        @test q < q₀
+    end
+
+    # Velocity- and stability-dependent coefficients in a rotating boundary layer
+    f = -1.4e-4
+    u★ = 0.002
+    hj = RotatingBoundaryLayerTransfer()
+    ξᴺ, k, ν = hj.stability_constant, hj.von_karman_constant, hj.molecular_viscosity
+    Γᵀ = 12.5 * hj.prandtl_number^(2/3) - 6
+    ρc = properties.reference_density * properties.heat_capacity
+
+    let liquidus = TEOS10Liquidus()
+        warm_f = (; warm..., f)
+        neutral = melt_physics(transfer_coefficients = RotatingBoundaryLayerTransfer(critical_richardson_number = Inf))
+
+        𝒬ⁿ, qⁿ, Tᵦ, Sᵦ = fluxes(neutral, warm_f, liquidus; u★)
+        Γᵗ = log(ξᴺ * u★^2 / (5ν * abs(f))) / k + 1 / (2ξᴺ) - 1 / k
+        @test 𝒬ⁿ / (ρc * (warm.T - Tᵦ)) ≈ u★ / (Γᵗ + Γᵀ)
+        @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ, zᵈ) atol = 1e-10
+
+        # Without rotation the log-layer term vanishes
+        𝒬, _, Tᵦ, _ = fluxes(neutral, (; warm..., f = 0.0), liquidus; u★)
+        @test 𝒬 / (ρc * (warm.T - Tᵦ)) ≈ u★ / (1 / (2ξᴺ) - 1 / k + Γᵀ)
+        _, q, _, _ = fluxes(melt_physics(transfer_coefficients = hj), (; warm..., f = 0.0), liquidus; u★)
+        @test isfinite(q) && q > 0
+
+        # Meltwater stratification reduces η★ and so the melt rate
+        _, q, _, _ = fluxes(melt_physics(transfer_coefficients = hj), warm_f, liquidus; u★)
+        @test 0 < q < qⁿ
+
+        # Freezing is unstable, so η★ = 1
+        _, qⁿ, _, _ = fluxes(neutral, (; cold..., f), liquidus; u★)
+        _, q, _, _  = fluxes(melt_physics(transfer_coefficients = hj), (; cold..., f), liquidus; u★)
+        @test qⁿ < 0
+        @test q ≈ qⁿ
+    end
+
+    # Advective-diffusive ice heat flux
+    let liquidus = TEOS10Liquidus()
+        advective = IceHeatConduction(advective = true)
+        cᴵ, Tˢ = advective.ice_heat_capacity, advective.surface_temperature
+
+        _, q₀, _, _ = fluxes(melt_physics(), warm, liquidus)
+        𝒬, q, Tᵦ, Sᵦ = fluxes(melt_physics(ice_heat_conduction = advective), warm, liquidus)
+        @test 𝒬 ≈ q * (ℰ + cᴵ * (Tᵦ - Tˢ))
+        @test 0 < q < q₀
+        @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ, zᵈ) atol = 1e-10
+
+        _, q, _, _ = fluxes(melt_physics(ice_heat_conduction = IceHeatConduction(advective = true, ice_heat_capacity = 0)), warm, liquidus)
+        @test q ≈ q₀
+
+        # No ice heat flux when the ocean is below freezing
+        _, q₀, _, _ = fluxes(melt_physics(), cold, liquidus)
+        _, q, _, _  = fluxes(melt_physics(ice_heat_conduction = advective), cold, liquidus)
+        @test q ≈ q₀
+    end
+
+    @test RotatingBoundaryLayerTransfer(Float32).stability_constant isa Float32
+    @test IceHeatConduction(Float32; advective = true).ice_heat_capacity isa Float32
+    @test StratFeedback(Float32).heat_prefactor isa Float32
+    @test ConvectiveMeltLimit(Float32).coefficient isa Float32
+    @test IceHeatConduction(Float32).ice_diffusivity isa Float32
 end
 
 # Immersed-top grids need an Oceananigans release with CliMA/Oceananigans.jl#6175
@@ -218,6 +354,40 @@ for arch in test_architectures
         S★ = Array(interior(interface.salinity))[2, 2, 1]
         @test T★ ≈ melting_temperature(liquidus, S★, -0.5) atol = 1e-10
         @test Array(interior(interface.fluxes.freshwater))[2, 2, 1] > 0
+
+        # Optional melt physics through the kernel
+        @test_throws ArgumentError IceShelfOceanInterface(grid; convective_limit = ConvectiveMeltLimit())
+
+        reduced_interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux(),
+                                                   transfer_coefficients = StratFeedback(),
+                                                   ice_heat_conduction = IceHeatConduction())
+        convective_interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux(friction_velocity = 1e-4),
+                                                      convective_limit = ConvectiveMeltLimit(), basal_slope = 1)
+        weak_interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux(friction_velocity = 1e-4))
+
+        for i in (interface, reduced_interface, convective_interface, weak_interface)
+            compute_ice_shelf_fluxes!(i, model)
+        end
+
+        melt_rate = Array(interior(interface.fluxes.freshwater))[:, 2, 1]
+        reduced_melt_rate = Array(interior(reduced_interface.fluxes.freshwater))[:, 2, 1]
+        @test 0 < reduced_melt_rate[2] < melt_rate[2]
+        @test reduced_melt_rate[[1, 3, 4]] == [0, 0, 0]
+        @test Array(interior(convective_interface.fluxes.freshwater))[2, 2, 1] >
+              Array(interior(weak_interface.fluxes.freshwater))[2, 2, 1]
+
+        hj_interface = IceShelfOceanInterface(grid; flux_formulation = ThreeEquationHeatFlux(),
+                                              transfer_coefficients = RotatingBoundaryLayerTransfer(),
+                                              ice_heat_conduction = IceHeatConduction(advective = true))
+        rotating_model = HydrostaticFreeSurfaceModel(grid; tracers = (:T, :S), coriolis = FPlane(f = -1.4e-4))
+        set!(rotating_model, T = 1.0, S = 34.5)
+
+        for m in (model, rotating_model)
+            compute_ice_shelf_fluxes!(hj_interface, m)
+            hj_melt_rate = Array(interior(hj_interface.fluxes.freshwater))[:, 2, 1]
+            @test hj_melt_rate[2] > 0
+            @test hj_melt_rate[[1, 3, 4]] == [0, 0, 0]
+        end
     end
 
     @testset "Partial-cell drafts [$(typeof(arch))]" begin

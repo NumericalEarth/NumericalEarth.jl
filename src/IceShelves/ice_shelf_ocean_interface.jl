@@ -11,7 +11,7 @@ A friction velocity formulation that computes the friction velocity from the
 ocean velocity averaged over the boundary layer beneath the ice shelf,
 
 ```math
-u_*^2 = C_d \\, (u^2 + v^2 + u_\\mathrm{tidal}^2) ,
+u_* = \\max\\left[\\sqrt{C_d \\, (u^2 + v^2 + u_\\mathrm{tidal}^2)}, \\, u_{*,\\min}\\right] ,
 ```
 
 where ``C_d`` is a quadratic drag coefficient (default ``C_d = 0.0015``) and ``u_\\mathrm{tidal}``
@@ -19,7 +19,9 @@ is an RMS tidal velocity that keeps the friction velocity (and thus the melt
 rate) from vanishing when the resolved flow is at rest (ISOMIP+ uses
 ``u_\\mathrm{tidal} = 0.01`` m/s; default 0). This is the ice-shelf analog of
 `MomentumBasedFrictionVelocity`, which is built from ice-ocean stress fields
-that do not exist for a static ice shelf.
+that do not exist for a static ice shelf. The floor ``u_{*,\\min}`` (default 0)
+is the alternative low-velocity limit of [yung2025](@citet), who use
+``u_{*,\\min} = 10^{-4}`` m/s.
 
 $(TYPEDFIELDS)
 """
@@ -28,6 +30,8 @@ struct VelocityBasedFrictionVelocity{FT}
     drag_coefficient :: FT
     "RMS tidal velocity, which keeps ``u_*`` from vanishing at rest"
     tidal_velocity :: FT
+    "minimum friction velocity ``u_{*,\\min}``"
+    minimum_friction_velocity :: FT
 end
 
 """
@@ -37,9 +41,11 @@ Construct a [`VelocityBasedFrictionVelocity`](@ref).
 """
 function VelocityBasedFrictionVelocity(FT::DataType = Oceananigans.defaults.FloatType;
                                        drag_coefficient = 0.0015,
-                                       tidal_velocity = 0)
+                                       tidal_velocity = 0,
+                                       minimum_friction_velocity = 0)
     return VelocityBasedFrictionVelocity(convert(FT, drag_coefficient),
-                                         convert(FT, tidal_velocity))
+                                         convert(FT, tidal_velocity),
+                                         convert(FT, minimum_friction_velocity))
 end
 
 @inline ϕ²(i, j, k, grid, ϕ) = @inbounds ϕ[i, j, k]^2
@@ -51,20 +57,22 @@ $(TYPEDSIGNATURES)
 Return the friction velocity at the ice-shelf base for column `(i, j)`.
 A `Number` is returned as-is (constant-``u_*`` formulation);
 `VelocityBasedFrictionVelocity` computes
-``u_* = \\sqrt{C_d (u² + v² + u_tidal²)}`` from `U²` averaged over the top `H_TBL` meters of the wet column.
+``u_* = \\max[\\sqrt{C_d (u² + v² + u_tidal²)}, u_{*,\\min}]`` from `U²` averaged over the top `H_TBL` meters of the wet column.
 """
 @inline ice_shelf_friction_velocity(u★::Number, i, j, kd, grid, U², H_TBL) = u★
 
 @inline function ice_shelf_friction_velocity(fv::VelocityBasedFrictionVelocity, i, j, kd, grid, U², H_TBL)
     Ū² = surface_layer_average(i, j, kd, grid, Center(), Center(), U², H_TBL)
-    return sqrt(fv.drag_coefficient * (Ū² + fv.tidal_velocity^2))
+    u★ = sqrt(fv.drag_coefficient * (Ū² + fv.tidal_velocity^2))
+    return max(u★, fv.minimum_friction_velocity)
 end
 
 Base.summary(::VelocityBasedFrictionVelocity) = "VelocityBasedFrictionVelocity"
 
 function Base.show(io::IO, fv::VelocityBasedFrictionVelocity)
     print(io, "VelocityBasedFrictionVelocity(drag_coefficient = ", fv.drag_coefficient,
-              ", tidal_velocity = ", fv.tidal_velocity, ")")
+              ", tidal_velocity = ", fv.tidal_velocity,
+              ", minimum_friction_velocity = ", fv.minimum_friction_velocity, ")")
 end
 
 #####
@@ -79,7 +87,7 @@ following the sea ice-ocean interface pattern (`SeaIceOceanInterface`).
 
 $(TYPEDFIELDS)
 """
-mutable struct IceShelfOceanInterface{K, A, J, F, L, T, S, U, P}
+mutable struct IceShelfOceanInterface{K, A, J, F, M, L, T, S, U, P}
     "topmost wet cell of each ice-covered column, zero in open-ocean and dry columns"
     k_draft :: K
     "fraction of each column's immersed top that is ice, by which the heat, salt and melt fluxes are scaled"
@@ -88,6 +96,8 @@ mutable struct IceShelfOceanInterface{K, A, J, F, L, T, S, U, P}
     fluxes :: J
     "`ThreeEquationHeatFlux` or `IceBathHeatFlux`"
     flux_formulation :: F
+    "optional `transfer_coefficients`, `convective_limit`, `ice_heat_conduction` and `basal_slope`"
+    melt_physics :: M
     "`TEOS10Liquidus`, `LinearLiquidus`, or `nothing` for a `TEOS10Liquidus` consistent with the ocean"
     liquidus :: L
     "interface temperature"
@@ -127,6 +137,21 @@ acceleration when the ocean provides them.
 `boundary_layer_thickness` sets the fixed physical thickness over which the
 ocean state feeding the melt-rate solver is averaged, default 30 m
 (Mathiot et al., 2017).
+
+Optional melt physics for a `ThreeEquationHeatFlux`, all off by default:
+
+- `transfer_coefficients = StratFeedback()` reduces the transfer coefficients
+  under meltwater stratification (see [`StratFeedback`](@ref)).
+  `transfer_coefficients = RotatingBoundaryLayerTransfer()` instead uses the velocity- and
+  stability-dependent coefficients of [holland1999modeling](@citet), with the Coriolis
+  parameter of the ocean model (see [`RotatingBoundaryLayerTransfer`](@ref)).
+- `convective_limit = ConvectiveMeltLimit()` bounds the transfer coefficients
+  from below by convective melting on a sloping base (see [`ConvectiveMeltLimit`](@ref)).
+  It needs `basal_slope`, the magnitude of the ice-base gradient ``|∇z_d|``:
+  a number, a function of `(x, y)`, an array or a field.
+- `ice_heat_conduction = IceHeatConduction()` conducts heat into the ice
+  (see [`IceHeatConduction`](@ref)); `IceHeatConduction(advective = true)` uses the
+  advective–diffusive ice temperature profile of a melting ice shelf.
 """
 function IceShelfOceanInterface(grid;
                                 flux_formulation = ThreeEquationHeatFlux(eltype(grid);
@@ -137,7 +162,11 @@ function IceShelfOceanInterface(grid;
                                 heat_capacity = 3991,
                                 latent_heat = 334e3,
                                 ice_salinity = 0,
-                                boundary_layer_thickness = 30)
+                                boundary_layer_thickness = 30,
+                                transfer_coefficients = nothing,
+                                convective_limit = nothing,
+                                ice_heat_conduction = nothing,
+                                basal_slope = nothing)
 
     FT = eltype(grid)
 
@@ -153,6 +182,13 @@ function IceShelfOceanInterface(grid;
               freshwater              = F(grid),
               freshwater_heat_content = F(grid))
 
+    if !isnothing(convective_limit) && isnothing(basal_slope)
+        throw(ArgumentError("convective_limit requires basal_slope"))
+    end
+
+    melt_physics = (; transfer_coefficients, convective_limit, ice_heat_conduction,
+                      basal_slope = slope_field(grid, basal_slope))
+
     temperature = F(grid)
     salinity = F(grid)
     friction_velocity = F(grid)
@@ -163,8 +199,16 @@ function IceShelfOceanInterface(grid;
                   ice_salinity                = convert(FT, ice_salinity),
                   boundary_layer_thickness    = convert(FT, boundary_layer_thickness))
 
-    return IceShelfOceanInterface(k_draft, ℵ, fluxes, flux_formulation, liquidus,
+    return IceShelfOceanInterface(k_draft, ℵ, fluxes, flux_formulation, melt_physics, liquidus,
                                   temperature, salinity, friction_velocity, properties)
+end
+
+slope_field(grid, ::Nothing) = nothing
+
+function slope_field(grid, basal_slope)
+    slope = Field{Center, Center, Nothing}(grid)
+    set!(slope, basal_slope)
+    return slope
 end
 
 # k_draft = 0 marks open-ocean and fully immersed columns, which have no ice base.
@@ -187,6 +231,10 @@ function Base.show(io::IO, interface::IceShelfOceanInterface)
     print(io, summary(interface), '\n')
     print(io, "├── flux_formulation: ", summary(interface.flux_formulation), '\n')
     print(io, "├── liquidus: ", liquidus_summary(interface.liquidus), '\n')
+    for name in (:transfer_coefficients, :convective_limit, :ice_heat_conduction)
+        physics = interface.melt_physics[name]
+        isnothing(physics) || print(io, "├── ", name, ": ", physics, '\n')
+    end
     print(io, "└── properties: ", interface.properties)
 end
 

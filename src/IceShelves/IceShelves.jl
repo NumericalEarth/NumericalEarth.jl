@@ -1,6 +1,10 @@
 module IceShelves
 
 export IceShelfOceanInterface,
+       StratFeedback,
+       RotatingBoundaryLayerTransfer,
+       ConvectiveMeltLimit,
+       IceHeatConduction,
        TEOS10Liquidus,
        VelocityBasedFrictionVelocity,
        compute_ice_shelf_fluxes!,
@@ -12,6 +16,7 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy
+using Oceananigans.Coriolis: fᶜᶜᵃ
 using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: Center, Face, rnode
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryCondition, immersed_cell
@@ -24,9 +29,10 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
 
 import ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
-using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_interface_heat_flux, ice_ocean_interface_fluxes,
-                                                   ice_base_height
-import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_heat_flux
+using ..EarthSystemModels.InterfaceComputations: ThreeEquationHeatFlux, compute_interface_heat_flux, interface_conditions,
+                                                   ice_base_height, at_depth
+
+import ..EarthSystemModels.InterfaceComputations: ice_ocean_interface_fluxes, ice_ocean_interface_heat_flux
 using ..Oceans: bottom_drag_bc,
                 u_immersed_drag_coefficient, v_immersed_drag_coefficient,
                 u_immersed_bottom_drag, v_immersed_bottom_drag,
@@ -34,6 +40,7 @@ using ..Oceans: bottom_drag_bc,
 
 include("teos10_liquidus.jl")
 include("ice_shelf_ocean_interface.jl")
+include("ice_shelf_melt_physics.jl")
 include("ice_shelf_fluxes.jl")
 include("ice_shelf_boundary_conditions.jl")
 include("ice_shelf_tracer_forcing.jl")
