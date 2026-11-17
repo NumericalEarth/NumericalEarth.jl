@@ -394,6 +394,7 @@ end
     pᵃ = Field{Center, Center, Nothing}(grid)
     set!(pᵃ, (λ, φ) -> 10 * (φ - 29) + λ)
     parent(forcing_barotropic_potential(child)) .= parent(pᵃ)
+    η_before = Array(interior(child.free_surface.displacement, :, :, 1))
     update_state!(model)
 
     cpu_grid = on_architecture(CPU(), grid)
@@ -401,7 +402,9 @@ end
     p = Array(interior(pᵃ, :, :, 1))
     Az = [Azᶜᶜᶜ(i, j, Nz, cpu_grid) for i in 1:Nx, j in 1:Ny]
     p̄ = sum(p .* Az) / sum(Az)
-    ηᴵᴮ = Array(interior(only(model.child_callbacks).parameters.sea_level, :, :, 1))
+    inverse_barometer = only(model.child_callbacks).parameters
+    ηᴵᴮ = Array(interior(inverse_barometer.sea_level, :, :, 1))
+    wet = Array(interior(inverse_barometer.wet_surface_area, :, :, 1)) .> 0
 
     @test ηᴵᴮ ≈ (p̄ .- p) ./ g
     @test abs(sum(ηᴵᴮ .* Az)) < 1e-12 * sum(abs, ηᴵᴮ .* Az)
@@ -414,8 +417,20 @@ end
     @test [η_boundary(bcs.V.boundary_conditions.south, i) for i in 1:Nx] ≈ η₀ .+ ηᴵᴮ[:, 1]
     @test [η_boundary(bcs.V.boundary_conditions.north, i) for i in 1:Nx] ≈ η₀ .+ ηᴵᴮ[:, Ny]
 
+    η_initial = Array(interior(child.free_surface.displacement, :, :, 1))
+    @test any(wet)
+    @test η_initial ≈ η_before .+ ηᴵᴮ .* wet
+
+    update_state!(model)
+    @test Array(interior(child.free_surface.displacement, :, :, 1)) == η_initial
+
     time_step!(model, 600)
-    @test all(isfinite, Array(interior(child.free_surface.displacement)))
+    η_stepped = Array(interior(child.free_surface.displacement, :, :, 1))
+    @test all(isfinite, η_stepped)
+
+    parent(forcing_barotropic_potential(child)) .*= 2
+    update_state!(model)
+    @test Array(interior(child.free_surface.displacement, :, :, 1)) == η_stepped
 end
 
 @testset "Open boundary conditions move to the CPU with the child's fields on $(arch)" for arch in test_architectures

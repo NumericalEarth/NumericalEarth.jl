@@ -161,7 +161,8 @@ was produced over, but never shallower than `minimum_depth`.
 With `inverse_barometer = true`, the Flather exterior sea level also includes the child's inverse-barometer response
 to the atmospheric pressure it is forced with ([`InverseBarometer`](@ref)), for a parent that carries none, such as
 an ocean reanalysis whose sea level excludes the atmospheric pressure. It is refreshed with the child's state,
-from the pressure of the atmosphere the child is coupled to.
+from the pressure of the atmosphere the child is coupled to, and is added to the child's initial free surface
+before the first time step.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child is
 initialized from `initial_state` (default: the

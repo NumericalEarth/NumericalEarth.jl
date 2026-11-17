@@ -3,6 +3,7 @@
 #####
 
 using Oceananigans: UpdateStateCallsite
+using Oceananigans.TimeSteppers: reconcile_state!
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Simulations: Callback
 using DocStringExtensions: TYPEDEF, TYPEDFIELDS
@@ -54,6 +55,8 @@ The inverse-barometer sea level `ηᴵᴮ = -(pᵃ / ρ₀ - ⟨pᵃ / ρ₀⟩)
 that a nested ocean is forced with, `⟨⟩` being the mean over the wet surface area of the whole child domain, so that
 `ηᴵᴮ` moves no volume through the open sides. A parent without atmospheric pressure (such as an ocean reanalysis)
 carries no inverse-barometer response, which the child's open boundaries then add to the parent's sea level.
+Before the first time step, `ηᴵᴮ` is also added to the child's free surface over its wet columns, so that the
+initial state taken from the parent is in balance with the pressure.
 
 $(TYPEDFIELDS)
 """
@@ -64,6 +67,8 @@ struct InverseBarometer{S, P, A, FT}
     potential :: P
     "the wet area of each surface cell of the child grid"
     wet_surface_area :: A
+    "the inverse-barometer sea level added to the child's free surface before the first time step"
+    initial_sea_level :: S
     "the wet surface area of the whole child domain"
     total_wet_surface_area :: FT
     "the gravitational acceleration of the child's free surface"
@@ -97,7 +102,9 @@ function InverseBarometer(child, sea_level)
     total_area = all_reduce(+, sum(interior(area)), architecture(grid))
     g = convert(eltype(grid), child.free_surface.gravitational_acceleration)
 
-    return InverseBarometer(sea_level, potential, area, convert(eltype(grid), total_area), g)
+    initial_sea_level = Field{Center, Center, Nothing}(grid)
+
+    return InverseBarometer(sea_level, potential, area, initial_sea_level, convert(eltype(grid), total_area), g)
 end
 
 function update_inverse_barometer!(model, ib::InverseBarometer)
@@ -108,6 +115,25 @@ function update_inverse_barometer!(model, ib::InverseBarometer)
     mean_potential = all_reduce(+, Σ, architecture(model.grid)) / ib.total_wet_surface_area
 
     ηᴵᴮ .= (mean_potential .- ηᴵᴮ) ./ ib.gravitational_acceleration
+
+    model.clock.iteration == 0 && add_initial_inverse_barometer!(model, ib)
+
+    return nothing
+end
+
+function add_initial_inverse_barometer!(model, ib)
+    ηᴵᴮ = interior(ib.sea_level)
+    η₀ᴵᴮ = interior(ib.initial_sea_level)
+
+    change = mapreduce((a, b) -> abs(a - b), max, ηᴵᴮ, η₀ᴵᴮ)
+    all_reduce(max, change, architecture(model.grid)) > 0 || return nothing
+
+    η = interior(model.free_surface.displacement)
+    η .+= (ηᴵᴮ .- η₀ᴵᴮ) .* (interior(ib.wet_surface_area) .> 0)
+    η₀ᴵᴮ .= ηᴵᴮ
+
+    reconcile_state!(model)
+    update_state!(model)
 
     return nothing
 end
