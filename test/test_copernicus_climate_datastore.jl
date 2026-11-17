@@ -105,6 +105,13 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         )
         area = CDSExt.era5cli_request_area(polar, sl, :temperature)
         @test area.lat == (84.5, 90.0)
+
+        # A global longitude span is not padded past 360°
+        for longitude in ((0, 360), (-180, 180))
+            arctic = NumericalEarth.DataWrangling.BoundingBox(; longitude, latitude = (50, 90))
+            @test CDSExt.era5cli_request_area(arctic, sl, :temperature).lon == longitude
+            @test CDSExt.era5_request_area(arctic, sl, :temperature) == [49.5, longitude[1], 90.0, longitude[2]]
+        end
     end
 
     @testset "Area builder utilities" begin

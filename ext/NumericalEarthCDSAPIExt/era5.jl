@@ -423,7 +423,9 @@ function era5_request_area(bbox::BBOX, dataset, name)
     Δφ = 180 / Ny
     lon = bbox.longitude
     lat = bbox.latitude
-    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+    # A padded span wider than 360° is wrapped by CDS into a sliver around the seam.
+    lon = lon[2] - lon[1] + 4Δλ < 360 ? (lon[1] - 2Δλ, lon[2] + 2Δλ) : lon
+    padded = BBOX(longitude = lon,
                   latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
     return build_era5_area(padded)
 end
