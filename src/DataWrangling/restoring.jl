@@ -117,7 +117,7 @@ end
     return interpolate(X, time, data, loc, native_grid, times, backend, time_indexing)
 end
 
-default_time_indices_in_memory(metadata) = min(2, length(metadata))
+default_time_indices_in_memory(metadata) = min(3, length(metadata))
 default_time_indices_in_memory(::Metadatum) = 1
 
 """
@@ -168,7 +168,7 @@ Keyword Arguments
 
 - `time_indices_in_memory`: The number of time indices to keep in memory. The number is chosen based on
                             a trade-off between increased performance (more indices in memory) and reduced
-                            memory footprint (fewer indices in memory). Default: 2.
+                            memory footprint (fewer indices in memory). Default: 3.
 
 - `time_indexing`: The time indexing scheme for the field time series. Default: `Cyclical()`.
 

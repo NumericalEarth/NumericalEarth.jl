@@ -36,7 +36,7 @@ Keyword Arguments
 =================
 - `clock`: the component's `Clock`. Default: `nothing`, a `Clock` matching the element type of `freshwater_flux`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), one per component, scattering each onto coastal ocean cells conserving volume
-  (see [`GloFASPrescribedLand`](@ref), [`JRA55PrescribedLand`](@ref)). Default: `nothing`, which interpolates the flux pointwise onto the ocean grid.
+  (see [`GloFASPrescribedLand`](@ref NumericalEarth.DataWrangling.GloFAS.GloFASPrescribedLand), [`JRA55PrescribedLand`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedLand)). Default: `nothing`, which interpolates the flux pointwise onto the ocean grid.
 """
 function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     first_flux = first(freshwater_flux)
