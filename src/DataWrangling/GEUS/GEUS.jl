@@ -14,6 +14,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Center, set!
 using Oceananigans.Grids: Bounded, Flat, RectilinearGrid
 using Oceananigans.OutputReaders: Clamp, FieldTimeSeries
+using Oceananigans.Units: days
 using Statistics: mean
 
 using ..DataWrangling: DataWrangling, write_atomically
@@ -46,9 +47,7 @@ const GEUS_DATAVERSE = "https://dataverse.geus.dk"
 const GEUS_DISCHARGE_DOI = "doi:10.22008/promice/data/ice_discharge/d/v02"
 
 # Before the record starts, each month takes its mean over these years.
-const GEUSS_climatology_years = 1987:1996
-
-const SECONDS_PER_YEAR = 365.25 * 86400
+const GEUS_CLIMATOLOGY_YEARS = 1987:1996
 
 """
 $(TYPEDSIGNATURES)
@@ -125,7 +124,7 @@ function GEUSPrescribedLand(grid;
         throw(ArgumentError("$(summary(dataset)) ends on $(lastdayofmonth(last(months))), before $end_date."))
 
     climatology = [mean(monthly_discharge[n, :] for n in eachindex(months)
-                        if Dates.month(months[n]) == calendar_month && Dates.year(months[n]) in CLIMATOLOGY_YEARS)
+                        if Dates.month(months[n]) == calendar_month && Dates.year(months[n]) in GEUS_CLIMATOLOGY_YEARS)
                    for calendar_month in 1:12]
 
     # One month beyond the window at each end within the record, so the window is interpolated throughout
@@ -142,9 +141,9 @@ function GEUSPrescribedLand(grid;
     FT = eltype(grid)
     gate_grid = RectilinearGrid(architecture(grid), FT; size = Nλ, x = (0, Nλ), topology = (Bounded, Flat, Flat))
     discharge = FieldTimeSeries{Center, Center, Center}(gate_grid, times; time_indexing)
-    
+
     for n in eachindex(times)
-        set!(discharge[n], reshape(series_discharge[n] .* 1e12 ./ SECONDS_PER_YEAR, Nλ, 1, 1))
+        set!(discharge[n], reshape(series_discharge[n] .* 1e12 ./ 365.25days, Nλ, 1, 1))
     end
 
     # The discharge is a mass flux per gate, so the routing weight is 1
