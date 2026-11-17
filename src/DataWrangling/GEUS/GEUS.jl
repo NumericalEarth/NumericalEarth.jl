@@ -46,7 +46,7 @@ const GEUS_DATAVERSE = "https://dataverse.geus.dk"
 const GEUS_DISCHARGE_DOI = "doi:10.22008/promice/data/ice_discharge/d/v02"
 
 # Before the record starts, each month takes its mean over these years.
-const CLIMATOLOGY_YEARS = 1987:1996
+const GEUSS_climatology_years = 1987:1996
 
 const SECONDS_PER_YEAR = 365.25 * 86400
 
