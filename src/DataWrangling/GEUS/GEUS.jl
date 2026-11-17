@@ -141,16 +141,15 @@ function GEUSPrescribedLand(grid;
 
     Nλ = length(λ)
     FT = eltype(grid)
-    gate_grid = RectilinearGrid(architecture(grid), FT; size = Ngates, x = (0, Ngates),
-                                topology = (Bounded, Flat, Flat))
-
+    gate_grid = RectilinearGrid(architecture(grid), FT; size = Nλ, x = (0, Nλ), topology = (Bounded, Flat, Flat))
     discharge = FieldTimeSeries{Center, Center, Center}(gate_grid, times; time_indexing)
+    
     for n in eachindex(times)
-        set!(discharge[n], reshape(series_discharge[n] .* 1e12 ./ SECONDS_PER_YEAR, Ngates, 1, 1))
+        set!(discharge[n], reshape(series_discharge[n] .* 1e12 ./ SECONDS_PER_YEAR, Nλ, 1, 1))
     end
 
     # The discharge is a mass flux per gate, so the routing weight is 1
-    routing = build_river_routing(grid, collect(1:Ngates), ones(Int, Ngates), λ, φ, ones(FT, Ngates);
+    routing = build_river_routing(grid, collect(1:Nλ), ones(Int, Nλ), λ, φ, ones(FT, Nλ);
                                   maximum_search_radius, spread_radius, maximum_spread_cells)
 
     return PrescribedLand((; icebergs = discharge); river_routing = (; icebergs = routing))
