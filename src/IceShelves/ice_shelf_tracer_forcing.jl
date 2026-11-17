@@ -28,17 +28,22 @@ using Oceananigans.Forcings: Forcing
         end
     end
 
-    J      = - ice_shelf_tracer_flux(p.tracer, i, j, kt_safe, p, model_fields)
+    J      = - ice_shelf_tracer_flux(p.tracer, i, j, kt_safe, grid, p, model_fields)
     Δz_own = Δzᶜᶜᶜ(i, j, k, grid)
 
     return ifelse(own_weight > zero(FT), J * own_weight / total_weight / Δz_own, zero(grid))
 end
 
-@inline ice_shelf_tracer_flux(::Val{:T}, i, j, k, p, fields) =
+@inline ice_shelf_tracer_flux(::Val{:T}, i, j, k, grid, p, fields) =
     @inbounds p.fluxes.interface_heat[i, j, 1] / (p.reference_density * p.heat_capacity)
 
-# The meltwater volume dilutes the column at the salinity of its topmost wet cell, as a virtual salt flux
-@inline ice_shelf_tracer_flux(::Val{:S}, i, j, k, p, fields) =
+# The meltwater volume enters at the interface temperature, cancelling the topmost wet cell's temperature it carries in
+@inline ice_shelf_tracer_flux(::Val{:T}, i, j, k, grid::MutableGridOfSomeKind, p, fields) =
+    @inbounds p.fluxes.interface_heat[i, j, 1] / (p.reference_density * p.heat_capacity) -
+              p.fluxes.freshwater_heat_content[i, j, 1] + fields.T[i, j, k] * p.fluxes.freshwater[i, j, 1]
+
+# The meltwater volume dilutes the column at the salinity of its topmost wet cell
+@inline ice_shelf_tracer_flux(::Val{:S}, i, j, k, grid, p, fields) =
     @inbounds p.fluxes.salt[i, j, 1] + fields.S[i, j, k] * p.fluxes.freshwater[i, j, 1]
 
 """
@@ -50,8 +55,9 @@ as an explicit tracer tendency (Losch, 2008). The tendency is spread, weighted b
 cell thickness, across the same boundary layer (thickness
 `interface.properties.boundary_layer_thickness`) that the ocean state is averaged
 over, rather than concentrated in the topmost active cell. This avoids an amplified tendency in thin `PartialCellVerticalBoundaries` cells and
-a mismatch between the sensing and forcing layers in shallow water columns. Merge into a model's own `forcing`
-`NamedTuple` before passing to the model constructor:
+a mismatch between the sensing and forcing layers in shallow water columns. On a grid with a
+`MutableVerticalDiscretization` the tuple also has an `η` entry holding the freshwater volume flux.
+Merge into a model's own `forcing` `NamedTuple` before passing to the model constructor:
 
 ```jldoctest
 using Oceananigans
@@ -79,6 +85,11 @@ function ice_shelf_tracer_forcing(interface::IceShelfOceanInterface)
                   reference_density = properties.reference_density,
                   heat_capacity = properties.heat_capacity)
 
-    return (T = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = merge(parameters, (; tracer = Val(:T)))),
-            S = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = merge(parameters, (; tracer = Val(:S)))))
+    tracer_forcing = (T = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = merge(parameters, (; tracer = Val(:T)))),
+                      S = Forcing(ice_shelf_tracer_flux_forcing; discrete_form = true, parameters = merge(parameters, (; tracer = Val(:S)))))
+
+    return merge(tracer_forcing, freshwater_forcing(interface.k_draft.grid, interface.fluxes.freshwater))
 end
+
+freshwater_forcing(grid, Jʷ) = NamedTuple()
+freshwater_forcing(::MutableGridOfSomeKind, Jʷ) = (; η = Jʷ)

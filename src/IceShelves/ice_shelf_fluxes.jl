@@ -41,6 +41,8 @@ function compute_ice_shelf_fluxes!(interface::IceShelfOceanInterface, model)
             interface.flux_formulation, ice_shelf_liquidus(interface, model),
             Tᵒᶜ, Sᵒᶜ, U², interface.properties)
 
+    fill_halo_regions!(interface.fluxes.freshwater)
+
     return nothing
 end
 
