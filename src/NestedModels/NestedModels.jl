@@ -31,6 +31,7 @@ using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
 using DocStringExtensions: TYPEDSIGNATURES
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
                            BoundaryPrescribedComponent, boundary_strips, remove_default_stop_callbacks!
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger

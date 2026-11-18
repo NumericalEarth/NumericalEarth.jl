@@ -18,7 +18,8 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, component_model, relaxation_zone_width
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, component_model, relaxation_zone_width,
+                                        default_relaxation_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
                                    VectorComponent
@@ -57,7 +58,6 @@ using Breeze:
     CompressibleDynamics,
     SplitExplicitTimeDiscretization,
     UpperSponge,
-    NoDivergenceDamping,
     MixedPhaseEquilibrium,
     SpecificForcing,
     TKEBasedTurbulenceClosure,
@@ -65,7 +65,7 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
+using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -76,8 +76,6 @@ function default_nested_microphysics()
     isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
 end
-
-const default_relaxation_width = 5
 
 # Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
 # Contract: ramp(0)=1, ramp(1)=0, monotone between.
@@ -150,7 +148,7 @@ end
 function boundary_relaxation(child, prognostic, rate, mask, width)
     child_fields = Oceananigans.prognostic_fields(child)
     moisture_name = moisture_prognostic_name(child.microphysics)
-    ρᵈ = dynamics_density(child.dynamics)
+    ρᵈ = continuity_density(child.dynamics)
     θ = Oceananigans.fields(child.formulation).θ
 
     fts_target(target) = FieldTimeSeriesTarget(target, target.grid)
@@ -216,15 +214,13 @@ end
 default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
-# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
-# (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). Entries of
-# `time_discretization_kwargs` override both and set any other split-explicit option. When given,
+# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and Breeze's default divergence
+# damping. Entries of `time_discretization_kwargs` override both and set any other split-explicit option. When given,
 # `base_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
 function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
                                  time_discretization_kwargs)
     time_discretization = SplitExplicitTimeDiscretization(; sponge = UpperSponge(; damping_rate, depth = damping_depth),
-                                                          damping = NoDivergenceDamping(),
                                                           time_discretization_kwargs...)
     kw = (;)
     isnothing(base_pressure)                   || (kw = merge(kw, (; base_pressure)))
@@ -313,7 +309,7 @@ prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a co
 lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
 `base_pressure`/`reference_potential_temperature` to anchor the default dynamics, and
 `time_discretization_kwargs` to set options of its `SplitExplicitTimeDiscretization`, e.g.
-`(; damping = ThermalDivergenceDamping())` (default: no divergence damping). Any
+`(; damping = NoDivergenceDamping())` (default: Breeze's divergence damping). Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
 When `bottom_drag_coefficient` is given — a constant drag coefficient or a `Breeze.PolynomialCoefficient`

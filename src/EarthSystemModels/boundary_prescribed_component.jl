@@ -34,6 +34,8 @@ function boundary_strips(component::BoundaryPrescribedComponent)
     return NamedTuple{sides}(map(side -> getproperty(component, side), sides))
 end
 
+const default_relaxation_width = 5
+
 # Width of a boundary relaxation zone spanning `width` cells along the coarser horizontal direction
 # of `grid`, in the `grid`’s native coordinates.
 function relaxation_zone_width(grid, width)
