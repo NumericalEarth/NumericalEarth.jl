@@ -51,7 +51,7 @@ grid = ORCAGrid(arch; dataset = ORCAOne(), Nz = 100, z, halo = (8, 8, 8), major_
 # Finally, a biharmonic viscosity ``ν = A_z^2 / λ`` damps grid-scale motions on a timescale ``λ`` = 50 days
 # independently of the cell area ``A_z``.
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, ScalarBiharmonicDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEMixingLength
 using Oceananigans.Operators: Az
 
@@ -269,8 +269,6 @@ add_callback!(simulation, progress, TimeInterval(5days))
 # By default, the writers save the ocean model's Coriolis, buoyancy, and closure to every file.
 # JLD2 cannot store the user-defined `biharmonic_viscosity` function, so we save the closure
 # ourselves, without the biharmonic viscosity, through the writer's `init` function.
-
-using Oceananigans.TurbulenceClosures: ScalarBiharmonicDiffusivity
 
 save_closure_without_biharmonic(file, model) =
     file["serialized/closure"] = filter(c -> !(c isa ScalarBiharmonicDiffusivity), model.closure)
