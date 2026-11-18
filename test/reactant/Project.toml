@@ -12,6 +12,7 @@ NumericalEarth = {path = "../.."}
 [compat]
 Breeze = "0.15"
 CUDA = "5.9.5, 6"
+Oceananigans = "0.118"
 Reactant = "0.2.289"
 Test = "<0.0.1, 1"
 julia = "1.10"
