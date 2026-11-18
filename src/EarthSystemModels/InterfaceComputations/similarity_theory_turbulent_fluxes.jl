@@ -801,7 +801,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Stability function evaluated at the roughness height by [`similarity_profile`](@ref).
+Stability function evaluated at the roughness height by `similarity_profile`.
 
 The free-convection matched functions split the profile at ``z = -ζ_m L_★`` and keep
 the Businger--Dyer form below the match, so their roughness-height term is the

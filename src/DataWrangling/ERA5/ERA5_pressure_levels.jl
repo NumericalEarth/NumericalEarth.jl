@@ -257,7 +257,7 @@ the whole date window of `metadata` (all snapshots in memory) and wrapped in a
 into a `Field` refreshed at each `update_state!(::PrescribedAtmosphere)`; `znode`
 reads that snapshot and divides by `g`. The single-level surface geopotential
 (orography × g, static in time) is downloaded from the matching `ERA5*SingleLevel`
-dataset and exposed through [`surface_elevation`](@ref).
+dataset and exposed through [`surface_elevation`](@ref NumericalEarth.Grids.surface_elevation).
 
 A static-z copy of the pressure-level dataset backs the Φ `FieldTimeSeries`, to
 break the recursive `Field(ϕ) → native_grid → z_interfaces` chain. The static z
