@@ -2,7 +2,8 @@ module NestedModels
 
 export NestedModel, NestedSimulation, nested_atmosphere_model,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-       exchange_state!, step_until!, ParentSnapshots, total_density, reconstruct_parent_state, VectorComponent
+       exchange_state!, step_until!, ParentSnapshots, total_density, reconstruct_parent_state, VectorComponent,
+       interpolate_from_parent!
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
@@ -40,6 +41,7 @@ include("nested_model.jl")
 include("nested_component.jl")
 include("nested_simulation.jl")
 include("parent_snapshots.jl")
+include("parent_sampling.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
