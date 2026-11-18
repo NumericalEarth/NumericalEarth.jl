@@ -21,7 +21,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width, default_relaxation_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent, initialize_exchanger!
+                                   VectorComponent, initialize_exchanger!, initialize_on!
 
 using Oceananigans:
     Oceananigans,
@@ -508,10 +508,9 @@ the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_atm
 strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the parent in full, at the
 cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
-`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. With `initialize = false` the child
-is left uninitialized, for a workflow that compiles `initialize_nested_child!(nested_model; balancer = false)`
-itself: on `ReactantState` that one program fills the exchanger's window and initializes the child. Remaining
-keyword arguments flow to
+`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. On `ReactantState` the initialization
+runs as one `@jit` program; the balance is eager there, so pass `balancer = false`. With `initialize = false`
+the child is left uninitialized. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
@@ -595,7 +594,7 @@ end
 # the interior IC and the prescribed boundary agree at the walls (no standing pressure/density jump). `set!`
 # of those same fields reconciles the densities and recomputes the Exner reference from the domain-mean
 # state; then graft ρw ← ρw − ρw̃ so the flow follows the terrain. Kernels only up to the balancer (on a
-# grid whose momentum needs no rotation), so on `ReactantState` it compiles like `initialize!`.
+# grid whose momentum needs no rotation), so on `ReactantState` it runs as one `@jit` program.
 # `balancer = true` then spins ρw into nonhydrostatic balance with Breeze's adiabatic (FV3 `na_init`)
 # balance on a stripped, memory-sharing twin (no microphysics/sponge/forcing) at an
 # automatically-derived acoustic-CFL step — eager.
@@ -605,7 +604,13 @@ end
 # losing whatever was set on it before the run (a perturbation, a control variable) and a run continued in
 # chunks. `initialize!` keeps to what is safe to repeat: the exchanger's window and the child's own setup.
 function initialize_nested_child!(nested_model; balancer = true, prognostic = nested_model.exchanger.prognostic)
-    # Construction on `ReactantState` leaves the window empty; elsewhere this refills it from the same levels
+    initialize_on!(architecture(nested_model.child.grid), initialize_nested_child!, nested_model, balancer, prognostic)
+    return nested_model
+end
+
+# Positional, so `prognostic` reaches a `@jit` program as an argument rather than a constant keyword.
+function initialize_nested_child!(nested_model, balancer, prognostic)
+    # Refills the window construction filled, from the same levels
     initialize_exchanger!(nested_model.exchanger)
 
     child = nested_model.child
@@ -636,5 +641,5 @@ function initialize_nested_child!(nested_model; balancer = true, prognostic = ne
     # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
     balancer === false || set!(nested_model; balancer)
 
-    return nested_model
+    return nothing
 end

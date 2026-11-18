@@ -33,7 +33,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, Clamp, AbstractInMe
 using Oceananigans.Units: Time
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips
-using NumericalEarth.NestedModels: initialize_on_construction!
+using NumericalEarth.NestedModels: initialize_on!
 
 #####
 ##### An in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -243,7 +243,7 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates, moisture_name)
-    initialize_on_construction!(architecture(prognostic.ρᵈ.grid), Oceananigans.initialize!, exchanger)
+    initialize_on!(architecture(prognostic.ρᵈ.grid), Oceananigans.initialize!, exchanger)
     return exchanger
 end
 

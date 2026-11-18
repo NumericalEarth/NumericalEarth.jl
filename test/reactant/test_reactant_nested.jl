@@ -10,14 +10,11 @@ using Breeze
 include("setup.jl")
 include("patches.jl")
 
-# Defined here, not inside the testset: a closure over the testset's locals makes Reactant compile it as a closure,
-# whose generated `Thunk` call alone costs ~20 GB to compile on the first call (out of memory on CI's runners)
-initialize_from_parent!(model) =
-    Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt).initialize_nested_child!(model; balancer = false)
+const initialize_nested_child! = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt).initialize_nested_child!
 
-# On `ReactantState` construction leaves the exchanger's window empty; one compiled
-# `initialize_nested_child!` fills it and initializes the child from it.
-@testset "Nested atmosphere: compiled initialization and time_step!" begin
+# On `ReactantState` construction fills the exchanger's window and `initialize_nested_child!` initializes the
+# child, each as one `@jit` program.
+@testset "Nested atmosphere: jitted initialization and compiled time_step!" begin
     arch  = ReactantState()
     times = [0.0, 4.0, 8.0]
 
@@ -40,17 +37,15 @@ initialize_from_parent!(model) =
     @info "Constructing the nested atmosphere model..."
     # A fixed number of acoustic substeps: the adaptive count does not trace.
     dynamics = CompressibleDynamics(SplitExplicitTimeDiscretization(substeps = 3); base_pressure = 1e5)
-    model = nested_atmosphere_model(parent, child_grid; dynamics,
+    model = @with_stack_size nested_atmosphere_model(parent, child_grid; dynamics,
                 relaxation_rate = 1/300, relaxation_width = 3,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
 
-    @test all(iszero, Array(interior(model.exchanger.prognostic.ρᵈ[1])))
+    @test all(>(0), Array(interior(model.exchanger.prognostic.ρᵈ[1])))
 
-    @info "Compiling the initialization (exchanger window and child)..."
-    compile_time = @elapsed compiled_initialize! = @with_stack_size Reactant.@compile sync=true initialize_from_parent!(model)
-    @info "Compiled the initialization in $(round(compile_time, digits=1)) s (peak memory $(peak_memory())); running it..."
-    @with_stack_size compiled_initialize!(model)
-    @info "Ran the initialization (peak memory $(peak_memory()))"
+    @info "Initializing the child..."
+    initialize_time = @elapsed @with_stack_size initialize_nested_child!(model; balancer = false)
+    @info "Initialized the child in $(round(initialize_time, digits=1)) s (peak memory $(peak_memory()))"
     @test all(>(0), Array(interior(model.exchanger.prognostic.ρᵈ[1])))
     @test all(>(0), Array(interior(model.child.dynamics.reference_state.pressure)))
     @test all(isfinite, Array(interior(model.child.momentum.ρu)))

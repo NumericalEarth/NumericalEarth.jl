@@ -59,9 +59,8 @@ exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_st
 initialize_exchanger!(exchanger) = nothing
 initialize_exchanger!(exchangers::NamedTuple) = foreach(initialize_exchanger!, exchangers)
 
-# Run `initialize!(args...)` when an object is constructed on `arch`. On `ReactantState`
-# (NumericalEarthReactantExt) construction skips it: the user compiles and runs `initialize!` instead.
-initialize_on_construction!(arch, initialize!, args...) = initialize!(args...)
+# Run `initialize!(args...)` on `arch`; on `ReactantState` (NumericalEarthReactantExt) as one `@jit` program.
+initialize_on!(arch, initialize!, args...) = initialize!(args...)
 
 function Oceananigans.initialize!(nm::NestedModel)
     initialize_exchanger!(nm.exchanger)
