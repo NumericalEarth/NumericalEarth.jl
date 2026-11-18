@@ -220,32 +220,32 @@ ocean = PrescribedOcean(surface_grid, sst.times; sea_surface_temperature = sst)
 
 # ## Surface partition
 #
-# What makes a cell land or ocean is its `ocean_fraction` þ: the fraction of the cell's area
+# What makes a cell land or ocean is its `ocean_fraction` ℵᵒᶜ: the fraction of the cell's area
 # below sea level in ETOPO2022 — the same dataset that shapes the child's terrain, so the
 # coastline and the orography agree. Coastal cells carry genuine fractions rather than a binary
-# mask: the coupler blends each cell's land and ocean fluxes as `(1 - þ) * land_fluxes + þ * ocean_fluxes`;
+# mask: the coupler blends each cell's land and ocean fluxes as `(1 - ℵᵒᶜ) * land_fluxes + ℵᵒᶜ * ocean_fluxes`;
 # the radiation sees the same blend of skin temperatures.
 
 ocean_fraction = regrid_ocean_fraction(surface_grid; dataset = ETOPO2022())
 
-# Alongside þ in the left panel, the right panel shows the sea surface temperature the ocean part of each cell supplies.
+# Alongside ℵᵒᶜ in the left panel, the right panel shows the sea surface temperature the ocean part of each cell supplies.
 # ERA5's sea surface temperature is undefined over land and is inpainted there from the nearest water;
-# masking to þ > 1/2 shows the water the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
+# masking to ℵᵒᶜ > 1/2 shows the water the partition actually weights — the Gulf, the Florida Straits and the western Atlantic.
 
 Tᵒᶜ = Field{Center, Center, Nothing}(surface_grid)
 set!(Tᵒᶜ, ocean.sea_surface_temperature[1])
 interior(Tᵒᶜ) .= ifelse.(interior(ocean_fraction) .> 1/2, interior(Tᵒᶜ) .- 273.15, NaN)
 
 fig_partition = Figure(size = (1320, 560))
-ax_þ = Axis(fig_partition[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-            title = "Ocean fraction þ (ETOPO2022)")
-hm_þ = heatmap!(ax_þ, ocean_fraction; colormap = :dense, colorrange = (0, 1))
-scatter!(ax_þ, [λ₀], [φ₀]; marker = :star5, color = :orange, markersize = 15)
-text!(ax_þ, λ₀ + 0.3, φ₀; text = "ARM SGP", color = :orange, align = (:left, :center))
-Colorbar(fig_partition[1, 2], hm_þ)
+ax_ℵᵒᶜ = Axis(fig_partition[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
+            title = "Ocean fraction ℵᵒᶜ (ETOPO2022)")
+hm_ℵᵒᶜ = heatmap!(ax_ℵᵒᶜ, ocean_fraction; colormap = :dense, colorrange = (0, 1))
+scatter!(ax_ℵᵒᶜ, [λ₀], [φ₀]; marker = :star5, color = :orange, markersize = 15)
+text!(ax_ℵᵒᶜ, λ₀ + 0.3, φ₀; text = "ARM SGP", color = :orange, align = (:left, :center))
+Colorbar(fig_partition[1, 2], hm_ℵᵒᶜ)
 
 ax_T = Axis(fig_partition[1, 3]; xlabel = "longitude (°)",
-            title = "Initial sea surface temperature where þ > 1/2")
+            title = "Initial sea surface temperature where ℵᵒᶜ > 1/2")
 hm_T = heatmap!(ax_T, Tᵒᶜ; colormap = :thermal, colorrange = (5, 30))
 Colorbar(fig_partition[1, 4], hm_T; label = "°C")
 save("gulf_ocean_fraction.png", fig_partition)
@@ -295,7 +295,7 @@ conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt
 # on the terrain-following grid a constant reference level ≈ constant height above ground near the
 # surface), and a zonal x-z section at `j_section`, the latitude row through the ARM SGP site.
 # A fourth writer saves the surface: the land skin temperature, the bucket saturation, and the
-# partition-blended skin temperature Tₛ the atmosphere sees (2-D already, no slicing needed —
+# partition-blended skin temperature Tⁱⁿ the atmosphere sees (2-D already, no slicing needed —
 # the writer stores each output's own grid).
 
 child = nest.child
@@ -324,7 +324,7 @@ simulation.output_writers[:section] = slice_writer((:, j_section, :), section_fi
 land_filename = name * "_land.jld2"
 land_fields = (Tˡᵃ = land.temperature,
                𝒮 = land.saturation,
-               Tₛ = surface_temperature(model.interfaces))
+               Tⁱⁿ = surface_temperature(model.interfaces))
 simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
                                               overwrite_files = true)
@@ -530,23 +530,23 @@ nothing #hide
 
 # ## Surface response
 #
-# The coupled surface closes the loop. The partition-blended skin temperature Tₛ — the one
+# The coupled surface closes the loop. The partition-blended skin temperature Tⁱⁿ — the one
 # surface the atmosphere and the radiation see — changes over the run only where the land
 # fraction lets it: daytime heating plus cooling under the squall line's cold pool and anvil
 # shading over the plains, next to nothing over the prescribed Gulf, and a muted response along
 # the fractional coast. The final bucket saturation shows where the squall line rained. Both
 # load back as 2-D `FieldTimeSeries` and plot directly.
 
-Tₛ_series = FieldTimeSeries(land_filename, "Tₛ")
+Tⁱⁿ_series = FieldTimeSeries(land_filename, "Tⁱⁿ")
 𝒮_series  = FieldTimeSeries(land_filename, "𝒮")
 
 fig_land = Figure(size = (1100, 420))
 
 ax_T = Axis(fig_land[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-            title = "ΔTₛ over $(prettytime(duration)) (K)")
+            title = "ΔTⁱⁿ over $(prettytime(duration)) (K)")
 ax_𝒮 = Axis(fig_land[1, 3]; xlabel = "longitude (°)", title = "final surface saturation 𝒮")
 
-hm_T = heatmap!(ax_T, Tₛ_series[end] - Tₛ_series[1]; colormap = :balance, colorrange = (-8, 8))
+hm_T = heatmap!(ax_T, Tⁱⁿ_series[end] - Tⁱⁿ_series[1]; colormap = :balance, colorrange = (-8, 8))
 hm_𝒮 = heatmap!(ax_𝒮, 𝒮_series[end]; colormap = :dense, colorrange = (0, 1))
 
 Colorbar(fig_land[1, 2], hm_T)

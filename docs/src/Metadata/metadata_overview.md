@@ -182,6 +182,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
 | `RTopo2`           | [Supported variables](@ref dataset-rtopo2-vars)           | [RTopo-2.0.4 (PANGAEA)](https://doi.org/10.1594/PANGAEA.905295)                                    |
 | `ORCAOne`          | `:bottom_height`, `:mesh_mask`                            | [eORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                          |
+| `ORCATwo`          | `:bottom_height`, `:mesh_mask`                            | [ORCA2 domain configuration (Zenodo)](https://zenodo.org/records/15705144)                         |
 | `ORCAQuarter`      | `:bottom_height`, `:mesh_mask`                            | [eORCA025 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15494369)                       |
 | `ORCATwelfth`      | `:bottom_height`, `:mesh_mask`                            | [eORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                        |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |

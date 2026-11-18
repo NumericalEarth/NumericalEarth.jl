@@ -29,14 +29,14 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     interface_formulation = coupled_model.interfaces.atmosphere_ocean_interface.formulation
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = atmosphere_ocean_properties(coupled_model)
-    ocean_state = assemble_interior_fields(exchanger.ocean.state, interface_formulation.temperature)
+    ocean_state = assemble_interior_fields(exchanger.ocean.state, temperature_formulation(interface_formulation.state))
 
     # Radiation state for the interface solve (used by SkinTemperature).
     # When `radiation === nothing` these are `nothing`s and the getter
     # returns zero-valued radiative state, so SkinTemperature degrades to
     # a turbulent-only flux balance.
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation)
+    radiation_kernel_props = kernel_radiation_properties(radiation, exchanger.radiation)
     radiation_state = atmosphere_ocean_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)
@@ -97,7 +97,7 @@ end
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Ψₐ  = local_atmosphere_state(i, j, atmosphere_state, atmosphere_properties)
 
-    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_formulation.temperature)
+    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, temperature_formulation(interface_formulation.state))
     Tᵒᶜ = local_interior_state.T
     Sᵒᶜ = local_interior_state.S
 
@@ -109,9 +109,9 @@ end
     u★ = convert(FT, 1e-4)
 
     # Estimate interface specific humidity using interior temperature
-    q_formulation = interface_formulation.specific_humidity
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tᵒᶜ, Sᵒᶜ)
-    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, local_interior_state.u, local_interior_state.v, Tᵒᶜ, Sᵒᶜ, qₛ)
+    q_formulation = specific_humidity_formulation(interface_formulation.state)
+    qⁱⁿ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Ψₐ.p, Tᵒᶜ, Sᵒᶜ)
+    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, local_interior_state.u, local_interior_state.v, Tᵒᶜ, Sᵒᶜ, qⁱⁿ)
 
     # Don't use convergence criteria in an inactive cell
     stop_criteria = interface_formulation.turbulent_fluxes.solver_stop_criteria
@@ -131,10 +131,10 @@ end
     end
 
     # In the case of FixedIterations, make sure interface state is zero'd
-    Ψₛ = ifelse(not_water, zero_interface_state(FT), interface_state)
+    Ψⁱⁿ = ifelse(not_water, zero_interface_state(FT), interface_state)
     ℒˡ = AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Ψₐ.T)
-    Tₛ = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.temperature)
+    Tⁱⁿ = convert_from_kelvin(ocean_properties.temperature_units, Ψⁱⁿ.temperature)
 
     store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
-                            Ψₛ, Ψₐ, ℂᵃᵗ, ℒˡ, Tₛ, interface_formulation)
+                            Ψⁱⁿ, Ψₐ, ℂᵃᵗ, ℒˡ, Tⁱⁿ, interface_formulation)
 end

@@ -117,7 +117,7 @@ end
 @testset "Prescribed atmosphere tracers at any horizontal location" begin
     for arch in test_architectures
         atmosphere_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 1), longitude = (0, 90), latitude = (-40, 40), z = (0, 1))
-        grid = LatitudeLongitudeGrid(arch; size = (10, 12, 1), longitude = (10, 80), latitude = (-30, 30), z = (-100, 0), halo = (6, 6, 3))
+        grid = LatitudeLongitudeGrid(arch; size = (10, 12, 1), longitude = (10, 80), latitude = (-30, 30), z = (-100, 0), halo = (6, 6, 4))
 
         # Tracers have their own time axis, twice as long as the atmosphere's
         function linear_tracer(LX, LY, f)
@@ -159,7 +159,7 @@ end
 
 @testset "Prescribed atmosphere fields on their own time axes" begin
     for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch; size = (10, 10, 1), longitude = (10, 20), latitude = (30, 40), z = (-100, 0), halo = (6, 6, 3))
+        grid = LatitudeLongitudeGrid(arch; size = (10, 10, 1), longitude = (10, 20), latitude = (30, 40), z = (-100, 0), halo = (6, 6, 4))
 
         # Rain is sampled half an interval before the other fields, as ERA5 accumulations are
         rain_times = [-1800, 1800.0]

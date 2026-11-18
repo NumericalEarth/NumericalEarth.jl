@@ -14,7 +14,7 @@ using NumericalEarth.Oceans: PrescribedOcean, SlabOcean
                                      z = (-100, 0),
                                      latitude = (-80, 80),
                                      longitude = (0, 360),
-                                     halo = (6, 6, 3))
+                                     halo = (6, 6, 4))
 
         model_clock = Clock{Float64}(time=0)
 

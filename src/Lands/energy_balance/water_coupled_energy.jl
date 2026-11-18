@@ -21,7 +21,7 @@
 #####    unchanged. `dMˡᵃ/dt` is consumed from `land.diagnostics.water_storage_tendency`
 #####    written by the hydrology step.
 #####
-##### The internal energies carried by the boundary liquid fluxes are upwinded:
+##### The internal energies carried by the boundary liquid water fluxes are upwinded:
 ##### with `advect_deep_liquid_energy = true`, capillary rise brings in
 ##### `eᵇ = cˡ(Tᵈᵉᵉᵖ − Tᵣ)` and drainage exports `eᵇ = eˡ`; with
 ##### `advect_surface_liquid_energy = true`, infiltrating precipitation carries
@@ -153,8 +153,8 @@ end
         Tᵢⱼ  = prognostic.T[i, j, 1]
         Mᵢⱼ  = prognostic.M[i, j, 1]
         dMdt = diagnostics.water_storage_tendency[i, j, 1]
-        Jˡᵇ  = diagnostics.deep_liquid_flux[i, j, 1]
-        Jˡˢ  = diagnostics.surface_liquid_flux[i, j, 1]
+        Jˡᵇ  = diagnostics.deep_liquid_water_flux[i, j, 1]
+        Jˡˢ  = diagnostics.surface_liquid_water_flux[i, j, 1]
         Rˡᵃᵗ = diagnostics.subsurface_runoff[i, j, 1]
         Jᴱs  = fluxes.surface_energy_flux[i, j, 1]
         Jᵛ   = fluxes.vapor_flux[i, j, 1]

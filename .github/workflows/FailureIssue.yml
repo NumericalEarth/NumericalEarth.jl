@@ -1,0 +1,35 @@
+name: Failure issue
+
+# Opens an issue when the Data tests or the Documentation workflow fails on main, and comments on it while it stays open.
+
+on:
+  workflow_run:
+    workflows: ["Data tests", "Documentation"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  issues: write
+
+jobs:
+  report:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event != 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          title="${WORKFLOW} failing on main"
+          body="[This ${WORKFLOW} run](${RUN_URL}) failed on ${SHA}."
+          number=$(gh issue list --state open --search "in:title \"${title}\"" --json number,title |
+                   jq -r --arg title "${title}" 'map(select(.title == $title)) | first | .number // empty')
+          if [[ -n "${number}" ]]; then
+              gh issue comment "${number}" --body "${body}"
+          else
+              gh issue create --title "${title}" --body "${body}"
+          fi

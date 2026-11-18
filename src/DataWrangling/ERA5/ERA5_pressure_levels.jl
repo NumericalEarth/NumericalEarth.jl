@@ -21,7 +21,7 @@ ERA5MonthlyPressureLevels(pressure_levels, z = nothing) =
     ERA5MonthlyPressureLevels{typeof(z)}(sort(pressure_levels, rev=true), z)
 
 """
-    ERA5HourlyPressureLevels(; pressure_levels = ERA5_all_pressure_levels, z = nothing)
+$(SIGNATURES)
 
 Hourly ERA5 pressure-levels dataset metadata. By default (`z = nothing`) the
 native grid's vertical coordinate is a 3-D
@@ -248,8 +248,7 @@ end
 #####
 
 """
-    per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
-                                           clock = Clock{eltype(metadata)}(time = 0))
+$(SIGNATURES)
 
 Build a [`PressureLevelVerticalDiscretization`](@ref) whose per-column heights
 follow the ERA5 geopotential in time. The geopotential Φ(λ,φ,p,t) is loaded over
@@ -258,7 +257,7 @@ the whole date window of `metadata` (all snapshots in memory) and wrapped in a
 into a `Field` refreshed at each `update_state!(::PrescribedAtmosphere)`; `znode`
 reads that snapshot and divides by `g`. The single-level surface geopotential
 (orography × g, static in time) is downloaded from the matching `ERA5*SingleLevel`
-dataset and exposed through [`surface_elevation`](@ref).
+dataset and exposed through [`surface_elevation`](@ref NumericalEarth.Grids.surface_elevation).
 
 A static-z copy of the pressure-level dataset backs the Φ `FieldTimeSeries`, to
 break the recursive `Field(ϕ) → native_grid → z_interfaces` chain. The static z
@@ -335,7 +334,8 @@ end
 # `native_grid` rebuild + column-mean equality check (once per variable).
 function era5_native_pressure_fts(metadata, grid;
                                   time_indexing = nothing,
-                                  time_indices_in_memory = nothing)
+                                  time_indices_in_memory = nothing,
+                                  prefetch = false)
     Downloads.download(metadata)
     times = convert.(eltype(grid), native_times(metadata))
     time_indexing = something(time_indexing, length(times) > 1 ? Cyclical() : Clamp())
@@ -355,6 +355,7 @@ function era5_native_pressure_fts(metadata, grid;
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
     backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid = true,
                              inpainting = nothing, cache_inpainted_data = false)
+    prefetch && (backend = PrefetchingBackend(FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)))
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)
     return fts
@@ -382,7 +383,7 @@ Oceananigans.OutputReaders.FieldTimeSeries(metadata::ERA5PressureMetadata, grid:
 #####
 
 """
-    pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
+$(SIGNATURES)
 
 Return a `Field{Nothing, Nothing, Center}` on the native grid of `metadata`
 holding the pressure value (Pa) at each vertical level. Levels are ordered
@@ -397,4 +398,3 @@ function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3
     fill_halo_regions!(field)
     return field
 end
-
