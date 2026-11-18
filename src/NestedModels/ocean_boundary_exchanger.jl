@@ -2,6 +2,8 @@
 ##### OceanBoundaryExchanger: parent ocean → the boundary bands of a nested ocean
 #####
 
+using Oceananigans.BoundaryConditions: net_inflow_value
+using Oceananigans.Operators: Δxᶜᶠᶜ, Δyᶠᶜᶜ
 using Oceananigans.TimeSteppers: time_step!
 
 using ..Oceans: PrescribedOcean
@@ -30,7 +32,7 @@ function parent_ocean_sources(parent::BoundaryPrescribedComponent, sides)
 end
 
 """
-    OceanBoundaryExchanger(parent, grid, sides; width, time, parent_bottom_height = nothing)
+    OceanBoundaryExchanger(parent, grid, sides; width, time, parent_bottom_height = nothing, net_inflow = nothing)
 
 Mediates the `parent` ocean state to a nested ocean on `grid`: holds, for each open side in `sides`, the
 parent's [`parent_ocean_sources`](@ref) and the [`BoundaryBand`](@ref)s they are sampled onto — `width`
@@ -39,14 +41,31 @@ and the [`ParentTimes`](@ref) of the two states the bands hold, both initially t
 
 When the parent's seafloor `parent_bottom_height` is known, each side also holds the parent's depth mean of its
 boundary-normal velocity, over the parent's own levels above that seafloor ([`sample_parent_depth_mean!`](@ref)),
-on a one-cell band at the boundary face: the barotropic velocity of the Flather exterior.
+on a one-cell band at the boundary face: the barotropic velocity of the Flather exterior. With `net_inflow`
+(m³ s⁻¹, positive into the domain), one depth-uniform velocity common to every open side is added to their depth
+means, so that the exterior transport through the open sides together is `net_inflow` ([`ExteriorNetInflow`](@ref)).
 """
-struct OceanBoundaryExchanger{S, B, D, F, T}
-    sources     :: S
-    bands       :: B
-    depth_means :: D
-    floors      :: F
-    times       :: T
+struct OceanBoundaryExchanger{S, B, D, F, T, N}
+    sources             :: S
+    bands               :: B
+    depth_means         :: D
+    floors              :: F
+    times               :: T
+    exterior_net_inflow :: N
+end
+
+"""
+    ExteriorNetInflow(face_areas, net_inflow, grid)
+
+Shifts the Flather exterior transport `ū H` of every open side by one common depth-uniform velocity, so that together
+the sides carry `net_inflow` (m³ s⁻¹, positive into the domain; a number, or a `Ref` to one).
+`face_areas` holds, for each open side, the area `H Δ` of the child's wet column at each boundary face (`Δ` the
+face's width along the boundary), on the band of the side's depth mean.
+"""
+struct ExteriorNetInflow{A, T, G}
+    face_areas :: A
+    net_inflow :: T
+    grid       :: G
 end
 
 normal_velocity_name(side) = boundary_dimension(side) == 1 ? :u : :v
@@ -78,7 +97,48 @@ sample_depth_mean!(::Nothing, source, floor, side, time) = nothing
 sample_depth_mean!(band, source, floor, side, time) =
     sample_parent_depth_mean!(band.current, depth_mean_location(side), source, floor, time)
 
-function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing)
+inflow_sign(side) = side ∈ (:west, :south) ? 1 : -1
+
+@inline face_width(::Val{1}, face, s, grid) = Δyᶠᶜᶜ(face, s, 1, grid)
+@inline face_width(::Val{2}, face, s, grid) = Δxᶜᶠᶜ(s, face, 1, grid)
+
+@kernel function _compute_face_area!(area, grid, dim, series, face, cell)
+    i, j = @index(Global, NTuple)
+    s = ifelse(dim === Val(1), j, i)
+    _, H = wet_column_integral(dim, series, face, cell, s, s, grid, Time(0))
+    @inbounds area[i, j, 1] = H * face_width(dim, face, s, grid)
+end
+
+function face_area(grid, side, depth_mean, normal_velocity)
+    dim = boundary_dimension(side)
+    N = size(grid, dim)
+    face = boundary_index(Face(), side, N)
+    cell = boundary_index(Center(), side, N)
+    area = band_field(grid, depth_mean_location(side), depth_mean.current.indices)
+    Nx, Ny, _ = size(grid)
+    params = dim == 1 ? KernelParameters((1, Ny), (face - 1, 0)) : KernelParameters((Nx, 1), (0, face - 1))
+    launch!(architecture(grid), grid, params, _compute_face_area!, area, grid, Val(dim), normal_velocity, face, cell)
+    return area
+end
+
+adjust_exterior_transport!(depth_means, ::Nothing) = nothing
+
+# ū ← ū - sᵢ (Q - T) / A on every open side i, with sᵢ = ±1 its inflow sign, Q = Σᵢ sᵢ Σ ū H Δ the exterior net
+# inflow, A = Σᵢ Σ H Δ the wet area of the open sides and T the target net inflow
+function adjust_exterior_transport!(depth_means, correction::ExteriorNetInflow)
+    sides = keys(depth_means)
+    areas = correction.face_areas
+    arch  = architecture(correction.grid)
+    Q = all_reduce(+, sum(side -> inflow_sign(side) * sum(Base.parent(depth_means[side].current) .* Base.parent(areas[side])), sides), arch)
+    A = all_reduce(+, sum(side -> sum(Base.parent(areas[side])), sides), arch)
+    for side in sides
+        Base.parent(depth_means[side].current) .-= inflow_sign(side) * (Q - net_inflow_value(correction.net_inflow)) / A
+    end
+    return nothing
+end
+
+function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing,
+                                net_inflow = nothing)
     sources = map(side_sources -> child_frame_sources(grid, side_sources), parent_ocean_sources(parent, sides))
     times = ParentTimes(time, time)
 
@@ -99,12 +159,16 @@ function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width,
             Base.parent(band.previous) .= Base.parent(band.current)
         end
 
-        depth_mean = depth_means[side]
-        sample_depth_mean!(depth_mean, sources[side][normal_velocity_name(side)], floors[side], side, time)
-        isnothing(depth_mean) || (Base.parent(depth_mean.previous) .= Base.parent(depth_mean.current))
+        sample_depth_mean!(depth_means[side], sources[side][normal_velocity_name(side)], floors[side], side, time)
     end
 
-    return OceanBoundaryExchanger(sources, bands, depth_means, floors, times)
+    exterior_net_inflow = isnothing(net_inflow) ? nothing :
+        ExteriorNetInflow(NamedTuple{sides}(map(side -> face_area(grid, side, depth_means[side], bands[side][normal_velocity_name(side)]), sides)),
+                          net_inflow, grid)
+    adjust_exterior_transport!(depth_means, exterior_net_inflow)
+    foreach(roll_band!, depth_means)
+
+    return OceanBoundaryExchanger(sources, bands, depth_means, floors, times, exterior_net_inflow)
 end
 
 roll_band!(::Nothing) = nothing
@@ -127,6 +191,8 @@ function exchange_state!(exchanger::OceanBoundaryExchanger, time)
         roll_band!(depth_mean)
         sample_depth_mean!(depth_mean, exchanger.sources[side][normal_velocity_name(side)], exchanger.floors[side], side, time)
     end
+
+    adjust_exterior_transport!(exchanger.depth_means, exchanger.exterior_net_inflow)
 
     times.previous = times.current
     times.current = time
