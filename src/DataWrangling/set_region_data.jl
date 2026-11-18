@@ -111,7 +111,7 @@ function region_info(::BoundingBox, target, λc, φc)
     j₁, _ = compute_bounding_indices((φmin, φmax), φc)
 
     Nx, Ny, _ = size(target)
-    check_region_coverage(length(λc), Nx, length(φc), Ny)
+    validate_region_coverage(length(λc), Nx, length(φc), Ny)
 
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
