@@ -17,7 +17,7 @@ Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "dkzdev/oceananigans-breeze-main"}
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 NumericalEarth = {path = ".."}
-Terrarium = {url = "https://github.com/dkytezab/Terrarium.jl", rev = "dkzdev/oceananigans-breeze-main"}
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"}
 
 [compat]
 Breeze = "0.15"
