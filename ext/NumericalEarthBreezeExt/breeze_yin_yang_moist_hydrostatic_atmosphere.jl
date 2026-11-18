@@ -123,6 +123,10 @@ end
 
 exchange_of(model::MoistHydrostaticAtmosphere) = model.radiation :: MoistHydrostaticExchange
 
+# The pressures a panel's radiative transfer reads: those of moist air, at the layers and at the z-faces
+panel_pressures(model::MoistHydrostaticAtmosphere, r) =
+    PanelPressures(getregion(model.dynamics.pressure, r), getregion(model.dynamics.moisture.interface_pressure, r))
+
 #####
 ##### Per-panel gray radiation
 #####
@@ -210,13 +214,11 @@ solve_radiation!(::Nothing, model) = nothing
 function solve_radiation!(radiation::YinYangGrayRadiation, model)
     model.clock.iteration % radiation.interval == 0 || return nothing
     grid = model.grid
-    dynamics = model.dynamics
 
     for r in yin_yang_regions
         region = getregion(grid, r)
         rtm = radiation.panel_models[r]
-        pressures = PanelPressures(getregion(dynamics.pressure, r), getregion(dynamics.moisture.interface_pressure, r))
-        panel = (grid = region, clock = model.clock, dynamics = pressures, temperature = getregion(model.temperature, r))
+        panel = (grid = region, clock = model.clock, dynamics = panel_pressures(model, r), temperature = getregion(model.temperature, r))
         Breeze.AtmosphereModels._update_radiation!(rtm, panel)
 
         launch!(architecture(region), region, :xy, _copy_surface_downwelling!,
@@ -384,13 +386,17 @@ end
 ##### Exchange of state through the latitude-longitude exchange grid
 #####
 
-function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::MoistHydrostaticAtmosphere, exchange_grid;
-                                                                                   correction = nothing)
+NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::MoistHydrostaticAtmosphere, exchange_grid;
+                                                                          correction = nothing) =
+    yin_yang_component_exchanger(atmosphere, exchange_grid, correction)
+
+# Shared by the Breeze atmospheres on a Yin-Yang grid that exchange through a latitude-longitude grid
+function yin_yang_component_exchanger(atmosphere, exchange_grid, correction)
     grid = atmosphere.grid
     grid isa YinYangGrid ||
-        throw(ArgumentError("The surface exchange of a moist hydrostatic Breeze atmosphere is implemented on a YinYangGrid " *
+        throw(ArgumentError("This surface exchange of a Breeze atmosphere is implemented on a YinYangGrid " *
                             "with a latitude-longitude exchange grid; got $(summary(grid))."))
-    isnothing(correction) || throw(ArgumentError("A moist hydrostatic Breeze atmosphere takes no state correction."))
+    isnothing(correction) || throw(ArgumentError("A Breeze atmosphere on a Yin-Yang grid takes no state correction."))
 
     regridder = YinYangRegridder(grid, exchange_grid)
 
@@ -468,6 +474,16 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
                 getregion(dynamics.surface_geopotential, r), g)
     end
 
+    exchange_lowest_level_state!(exchanger, atmosphere, coupled_model)
+
+    return nothing
+end
+
+# From the lowest-level state on the panels (`yin_yang`) to the exchange grid
+function exchange_lowest_level_state!(exchanger, atmosphere, coupled_model)
+    (; regridder, yin_yang, latitude_longitude) = exchanger.regridder
+    state = exchanger.state
+
     transfer_flux!((state.u, state.v), regridder, (yin_yang.u, yin_yang.v))
     transfer_flux!(state.T, regridder, yin_yang.T)
     transfer_flux!(state.p, regridder, yin_yang.p)
@@ -479,7 +495,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     lowest = minimum(height)
     lowest > 0 ||
         throw(DomainError(lowest, "the lowest level of the hydrostatic atmosphere is not above the ground: " *
-                                  "its height (Φ₁ - Φˢ) / g must be positive in every column."))
+                                  "its height must be positive in every column."))
 
     exchange_downwelling_radiation!(exchange_of(atmosphere).radiation, coupled_model, regridder, latitude_longitude)
 
@@ -526,7 +542,10 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmosphere::Mo
     end
 end
 
-function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::MoistHydrostaticAtmosphere)
+NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::MoistHydrostaticAtmosphere) =
+    yin_yang_update_net_fluxes!(coupled_model, atmosphere)
+
+function yin_yang_update_net_fluxes!(coupled_model, atmosphere)
     net = coupled_model.interfaces.net_fluxes.atmosphere
     isnothing(net) && return nothing
 
