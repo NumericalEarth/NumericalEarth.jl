@@ -265,6 +265,15 @@ add_callback!(simulation, progress, TimeInterval(5days))
 # fields using the `indices` keyword argument. We save all the velocity and tracer components.
 # Note, that besides temperature and salinity, the CATKE vertical mixing parameterization
 # also uses a prognostic turbulent kinetic energy, ``e``, to diagnose the vertical mixing length.
+#
+# By default, the writers save the ocean model's Coriolis, buoyancy, and closure to every file.
+# JLD2 cannot store the user-defined `biharmonic_viscosity` function, so we save the closure
+# ourselves, without the biharmonic viscosity, through the writer's `init` function.
+
+using Oceananigans.TurbulenceClosures: ScalarBiharmonicDiffusivity
+
+save_closure_without_biharmonic(file, model) =
+    file["serialized/closure"] = filter(c -> !(c isa ScalarBiharmonicDiffusivity), model.closure)
 
 ocean_outputs = merge(ocean.model.tracers, ocean.model.velocities)
 free_surface = ocean.model.free_surface.displacement
@@ -277,11 +286,15 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             schedule = TimeInterval(1days),
                                             filename = "ocean_one_degree_surface_fields",
                                             indices = (:, :, grid.Nz),
+                                            including = [:coriolis, :buoyancy],
+                                            init = save_closure_without_biharmonic,
                                             overwrite_files = true)
 
 ocean.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η = free_surface);
                                                  schedule = TimeInterval(1days),
                                                  filename = "ocean_one_degree_free_surface",
+                                                 including = [:coriolis, :buoyancy],
+                                                 init = save_closure_without_biharmonic,
                                                  overwrite_files = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
