@@ -31,10 +31,12 @@ mutable struct CompressibleExchange{S, L}
     const surface_fluxes :: S  # net fluxes into the atmosphere on its grid: ρu, ρv (stress), ρE (sensible heat), ρqᵛᵉ (vapor)
     const ledger :: L          # what the sources added to each column, accumulated (two-dimensional)
     radiation                  # YinYangGrayRadiation or nothing
+    column_physics             # nothing, or `column_physics(model, Δt)` applied after the dynamics of each coupling step
 end
 
 Base.summary(exchange::CompressibleExchange) =
-    string("CompressibleExchange(radiation = ", isnothing(exchange.radiation) ? "nothing" : summary(exchange.radiation), ")")
+    string("CompressibleExchange(radiation = ", isnothing(exchange.radiation) ? "nothing" : summary(exchange.radiation),
+           ", column_physics = ", isnothing(exchange.column_physics) ? "nothing" : "after each step", ")")
 
 function surface_coupling(dynamics::CompressibleDynamics, grid::YinYangGrid, microphysics, thermodynamic_constants)
     surface_fluxes = (ρu   = Field{Face, Center, Nothing}(grid),
@@ -46,7 +48,7 @@ function surface_coupling(dynamics::CompressibleDynamics, grid::YinYangGrid, mic
 end
 
 attach_coupled_radiation(model::YinYangCompressibleAtmosphere, coupling) =
-    @set model.radiation = CompressibleExchange(coupling.surface_fluxes, surface_exchange_ledger(model.grid), nothing)
+    @set model.radiation = CompressibleExchange(coupling.surface_fluxes, surface_exchange_ledger(model.grid), nothing, nothing)
 
 # The sources are applied by `time_step!` below, not by the tendencies
 Breeze.AtmosphereModels.update_radiation!(::CompressibleExchange, model) = nothing
@@ -153,14 +155,19 @@ function apply_surface_and_radiative_sources!(model::YinYangCompressibleAtmosphe
 end
 
 # One coupling step: radiation of the state at the start of the step, the sources of the step, the dynamics
-# (whose time stepper applies the microphysics of the model itself).
+# (whose time stepper applies the microphysics of the model itself), and column physics that a driver attached, if any.
 function Oceananigans.TimeSteppers.time_step!(atmosphere::Simulation{<:YinYangCompressibleAtmosphere}, Δt)
     model = atmosphere.model
-    solve_radiation!(exchange_of(model).radiation, model)
+    exchange = exchange_of(model)
+    solve_radiation!(exchange.radiation, model)
     apply_surface_and_radiative_sources!(model, Δt)
     time_step!(model, Δt)
+    apply_column_physics!(exchange.column_physics, model, Δt)
     return nothing
 end
+
+apply_column_physics!(::Nothing, model, Δt) = nothing
+apply_column_physics!(column_physics, model, Δt) = column_physics(model, Δt)
 
 #####
 ##### Exchange of state
