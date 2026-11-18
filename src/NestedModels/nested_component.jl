@@ -29,6 +29,8 @@ EarthSystemModels.interpolate_state!(exchanger, exchange_grid, nm::NestedModel, 
 
 InterfaceComputations.net_fluxes(nm::NestedModel) = InterfaceComputations.net_fluxes(nm.child)
 
+Oceans.forcing_barotropic_potential(nm::NestedModel) = Oceans.forcing_barotropic_potential(nm.child)
+
 EarthSystemModels.update_net_fluxes!(coupled_model, nm::NestedModel) =
     EarthSystemModels.update_net_fluxes!(coupled_model, nm.child)
 
@@ -79,3 +81,13 @@ EarthSystemModels.update_net_fluxes!(coupled_model, sim::NestedModelSimulation) 
 # The advective CFL belongs to the innermost prognostic model (the child).
 Oceananigans.Advection.cell_advection_timescale(esm::EarthSystemModels.EarthSystemModel{<:Any, <:NestedModelSimulation}) =
     Oceananigans.Advection.cell_advection_timescale(component_model(esm.atmosphere))
+
+# A nested ocean: the child ocean's advective timescale, or the sea ice's where that is shorter.
+const NestedOceanEarthSystemModel = EarthSystemModels.EarthSystemModel{<:Any, <:Any, <:Any, <:Any, <:NestedModelSimulation}
+
+sea_ice_advection_timescale(sea_ice::Simulation) = Oceananigans.Advection.cell_advection_timescale(sea_ice.model)
+sea_ice_advection_timescale(sea_ice) = Inf
+
+Oceananigans.Advection.cell_advection_timescale(esm::NestedOceanEarthSystemModel) =
+    min(Oceananigans.Advection.cell_advection_timescale(component_model(esm.ocean)),
+        sea_ice_advection_timescale(esm.sea_ice))

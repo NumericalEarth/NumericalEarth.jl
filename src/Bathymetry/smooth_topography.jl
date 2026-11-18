@@ -51,7 +51,7 @@ smooth_topography!(elevation, passes=1)
 ├── grid: 8×8×1 RectilinearGrid{Float64, Periodic, Periodic, Flat} on CPU with 3×3×0 halo
 ├── boundary conditions: FieldBoundaryConditions
 │   └── west: Periodic, east: Periodic, south: Periodic, north: Periodic, bottom: Nothing, top: Nothing, immersed: Nothing
-└── data: 14×14×1 OffsetArray(::Array{Float64, 3}, -2:11, -2:11, 1:1) with eltype Float64 with indices -2:11×-2:11×1:1
+└── data: 14×14×1 StaticStridesOffsetArray(::Array{Float64, 3}, -2:11, -2:11, 1:1) with eltype Float64 with indices -2:11×-2:11×1:1
     └── max=0.0, min=0.0, mean=0.0
 ```
 """

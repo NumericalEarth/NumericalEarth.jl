@@ -3,7 +3,8 @@ module NestedModels
 export NestedModel, NestedSimulation, nested_atmosphere_model, nested_ocean_model, nested_ocean_simulation,
        parent_tracer_series,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-       exchange_state!, total_density, reconstruct_parent_state, VectorComponent
+       exchange_state!, total_density, reconstruct_parent_state, VectorComponent,
+       nested_sea_ice_boundary_conditions, nested_sea_ice_simulation, parent_sea_ice, set_parent_sea_ice!
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
@@ -38,6 +39,7 @@ using Oceananigans.Fields: location
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
                            BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
+using ..Oceans: Oceans
 
 include("nested_model.jl")
 include("nested_component.jl")
@@ -48,10 +50,12 @@ include("parent_forcings.jl")
 include("parent_terrain.jl")
 include("ocean_boundary_bands.jl")
 include("ocean_open_boundaries.jl")
+include("ocean_inverse_barometer.jl")
 include("ocean_boundary_relaxation.jl")
 include("ocean_boundary_bathymetry.jl")
 include("ocean_boundary_exchanger.jl")
 include("nested_ocean_model.jl")
 include("parent_tracer_series.jl")
+include("sea_ice_open_boundaries.jl")
 
 end # module NestedModels
