@@ -14,8 +14,10 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "dkzdev/oceananigans-breeze-main"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 NumericalEarth = {path = ".."}
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
+Terrarium = {url = "https://github.com/dkytezab/Terrarium.jl", rev = "dkzdev/oceananigans-breeze-main"}
 
 [compat]
 Breeze = "0.15"
