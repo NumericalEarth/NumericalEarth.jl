@@ -301,6 +301,11 @@ source via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qʳ`/`qᶜⁱ`/`q
 `nothing` entry — or the whole `parent_condensates` — is treated as absent (⇒ omitted; with all four
 absent, `qᵗ = qᵛ`).
 
+The child is initialized from the parent at construction, on `ReactantState` as one `@jit` program
+(see `initialize_nested_child!`); `initialize = false` leaves it uninitialized, as it is by default
+for a `BoundaryPrescribedComponent` parent, which holds only the strips. `balancer = true` then runs
+Breeze's adiabatic balance, which is eager and so not for `ReactantState`.
+
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
@@ -361,6 +366,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
     time_indices_in_memory = resident_time_indices(parent_atmosphere),
+    initialize = !(parent_atmosphere isa BoundaryPrescribedComponent),
+    balancer = false,
     kw...)
 
     if !isnothing(terrain)
@@ -464,7 +471,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
                       (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
 
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
+    nested_model = NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
+    initialize && initialize_nested_child!(nested_model; balancer)
+    return nested_model
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -543,7 +552,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        relaxation_width, base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature,
                                                                        parent_surface_elevation = surface_elevation(snapshot),
-                                                                       kw...)
+                                                                       initialize = false, kw...)
 
     if initialize
         initial_state = child_prognostic_state(snapshot, nested_model.exchanger)

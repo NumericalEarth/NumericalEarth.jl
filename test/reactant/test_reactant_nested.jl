@@ -10,10 +10,7 @@ using Breeze
 include("setup.jl")
 include("patches.jl")
 
-const initialize_nested_child! = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt).initialize_nested_child!
-
-# On `ReactantState` construction fills the exchanger's window and `initialize_nested_child!` initializes the
-# child, each as one `@jit` program.
+# On `ReactantState` construction fills the exchanger's window and initializes the child, each as one `@jit` program.
 @testset "Nested atmosphere: jitted initialization and compiled time_step!" begin
     arch  = ReactantState()
     times = [0.0, 4.0, 8.0]
@@ -34,18 +31,14 @@ const initialize_nested_child! = Base.get_extension(NumericalEarth, :NumericalEa
                                        z = (0, 16000), halo = (5, 5, 5),
                                        topology = (Bounded, Bounded, Bounded))
 
-    @info "Constructing the nested atmosphere model..."
+    @info "Constructing and initializing the nested atmosphere model..."
     # A fixed number of acoustic substeps: the adaptive count does not trace.
     dynamics = CompressibleDynamics(SplitExplicitTimeDiscretization(substeps = 3); base_pressure = 1e5)
-    model = @with_stack_size nested_atmosphere_model(parent, child_grid; dynamics,
+    construction_time = @elapsed model = @with_stack_size nested_atmosphere_model(parent, child_grid; dynamics,
                 relaxation_rate = 1/300, relaxation_width = 3,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
 
-    @test all(>(0), Array(interior(model.exchanger.prognostic.ρᵈ[1])))
-
-    @info "Initializing the child..."
-    initialize_time = @elapsed @with_stack_size initialize_nested_child!(model; balancer = false)
-    @info "Initialized the child in $(round(initialize_time, digits=1)) s (peak memory $(peak_memory()))"
+    @info "Constructed in $(round(construction_time, digits=1)) s (peak memory $(peak_memory()))"
     @test all(>(0), Array(interior(model.exchanger.prognostic.ρᵈ[1])))
     @test all(>(0), Array(interior(model.child.dynamics.reference_state.pressure)))
     @test all(isfinite, Array(interior(model.child.momentum.ρu)))
