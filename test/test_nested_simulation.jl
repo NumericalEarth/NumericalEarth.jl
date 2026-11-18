@@ -677,7 +677,7 @@ end
     @test length(moving.exchanger.prognostic.ρᵈ.backend) == 3
 end
 
-@testset "Breeze nested_atmosphere_model forwards time_step_ratio" begin
+@testset "Breeze nested_atmosphere_model forwards parent_Δt" begin
     parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
                                          longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
                                          z = (0, 1), topology = (Bounded, Bounded, Bounded))
@@ -694,9 +694,9 @@ end
 
     condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
     lockstep = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates)
-    refined  = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, time_step_ratio = 3)
-    @test lockstep.time_step_ratio == 1
-    @test refined.time_step_ratio == 3
+    minutely = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, parent_Δt = 60)
+    @test isnothing(lockstep.parent_Δt)
+    @test minutely.parent_Δt == 60
 end
 
 # A closure's own tracers (TKE `ρe`) get the child's bounds-preserving WENO by default. A NamedTuple
@@ -1263,16 +1263,13 @@ end
     @test parent.clock.time == nested.child.clock.time == 4
 end
 
-
 nest_test_model(extent) =
     NonhydrostaticModel(RectilinearGrid(size = (4, 4, 4), x = (-extent, extent), y = (-extent, extent),
                                         z = (0, 1), topology = (Bounded, Bounded, Bounded)))
 
-@testset "NestedModel: the default ratio keeps parent and child in lockstep" begin
+@testset "NestedModel: the default parent_Δt keeps parent and child in lockstep" begin
     Δt = 0.1
     nested = NestedModel(nest_test_model(2), nest_test_model(1))
-
-    @test nested.time_step_ratio == 1
 
     for _ in 1:4
         time_step!(nested, Δt)
@@ -1283,30 +1280,58 @@ nest_test_model(extent) =
     @test nested.parent.clock.time ≈ 4Δt
 end
 
-@testset "NestedModel: time_step_ratio = 2 steps the parent every other child step, by 2Δt" begin
+@testset "NestedModel: parent_Δt = 2Δt steps the parent at the start of each pair" begin
     Δt = 0.1
-    nested = NestedModel(nest_test_model(2), nest_test_model(1); time_step_ratio = 2)
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_Δt = 2Δt)
 
     time_step!(nested, Δt)
     @test nested.child.clock.iteration == 1
-    @test nested.parent.clock.iteration == 0
-    @test nested.parent.clock.time == 0
+    @test nested.parent.clock.iteration == 1
+    @test nested.parent.clock.time == 2Δt
+    @test nested.child.clock.time == Δt
 
+    # Clipped to the runway left by the parent, so the child lands exactly on the parent's state.
     time_step!(nested, Δt)
     @test nested.parent.clock.iteration == 1
-    @test nested.parent.clock.time ≈ 2Δt
+    @test nested.parent.clock.time == 2Δt
+    @test nested.child.clock.time == 2Δt
 
     time_step!(nested, Δt)
+    @test nested.parent.clock.iteration == 2
+    @test nested.parent.clock.time == 4Δt
+
     time_step!(nested, Δt)
     @test nested.child.clock.iteration == 4
     @test nested.parent.clock.iteration == 2
-    @test nested.parent.clock.time ≈ nested.child.clock.time
+    @test nested.parent.clock.time == nested.child.clock.time == 4Δt
 end
 
-@testset "NestedModel: time_step_ratio compounds through a three-level telescope" begin
+@testset "NestedModel: a parent on a TimeStepWizard sizes its own step" begin
+    Δt = 0.1
+    wizard = TimeStepWizard(min_Δt = 0.25, max_Δt = 0.25)
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_Δt = wizard)
+
+    time_step!(nested, Δt)
+    @test nested.parent.clock.iteration == 1
+    @test nested.parent.clock.time == 0.25
+
+    for _ in 1:2
+        time_step!(nested, Δt)
+    end
+
+    @test nested.child.clock.iteration == 3
+    @test nested.parent.clock.iteration == 1
+    @test nested.child.clock.time == nested.parent.clock.time == 0.25
+
+    time_step!(nested, Δt)
+    @test nested.parent.clock.iteration == 2
+    @test nested.parent.clock.time == 0.5
+end
+
+@testset "NestedModel: parent_Δt sets each level's rate in a three-level telescope" begin
     Δt = 0.1
     coarse, medium, fine = nest_test_model(4), nest_test_model(2), nest_test_model(1)
-    telescope = NestedModel(NestedModel(coarse, medium; time_step_ratio = 2), fine; time_step_ratio = 2)
+    telescope = NestedModel(NestedModel(coarse, medium; parent_Δt = 4Δt), fine; parent_Δt = 2Δt)
 
     for _ in 1:4
         time_step!(telescope, Δt)
@@ -1320,18 +1345,37 @@ end
     end
 end
 
-@testset "NestedModel: time_step_ratio = 2 holds under a varying Δt" begin
-    nested = NestedModel(nest_test_model(2), nest_test_model(1); time_step_ratio = 2)
-
+# A ramping Δt does not weaken the invariant: the child is clipped whenever it would overrun, so the
+# parent is never behind.
+@testset "NestedModel: the parent leads every child step, steady or ramping Δt" begin
     Δt = 0.1
-    for _ in 1:6
+    nested = NestedModel(nest_test_model(2), nest_test_model(1); parent_Δt = 3Δt)
+
+    for _ in 1:9
         time_step!(nested, Δt)
+        @test nested.parent.clock.time ≥ nested.child.clock.time
         Δt *= 1.1
     end
 
-    @test nested.child.clock.iteration == 6
+    @test nested.child.clock.iteration == 9
+    @test nested.parent.clock.iteration == 4
+end
+
+# A fixed parent Δt cannot hold a ratio against an adapting child, but a rule relative to the child's
+# step can: the parent still takes one step per three child steps as the child's Δt ramps.
+@testset "NestedModel: a parent_Δt rule holds its ratio as the child's Δt ramps" begin
+    Δt = 0.1
+    nested = NestedModel(nest_test_model(2), nest_test_model(1);
+                         parent_Δt = Δt_child -> 3Δt_child)
+
+    for _ in 1:9
+        time_step!(nested, Δt)
+        @test nested.parent.clock.time ≥ nested.child.clock.time
+        Δt *= 1.1
+    end
+
+    @test nested.child.clock.iteration == 9
     @test nested.parent.clock.iteration == 3
-    @test nested.parent.clock.time ≈ nested.child.clock.time
 end
 
 @testset "time_step_ratio: rounded refinement factor from a pair of grids" begin
@@ -1350,10 +1394,10 @@ end
     @test time_step_ratio(fine, coarse) == 1
 end
 
-@testset "NestedModel: a prescribed parent follows the child's clock whatever the ratio" begin
+@testset "NestedModel: a prescribed parent follows the child's clock whatever its own step" begin
     grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
     parent = PrescribedAtmosphere(grid, [0.0, 10.0])
-    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); time_step_ratio = 3)
+    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); parent_Δt = 3.0)
 
     for _ in 1:3
         time_step!(nested, 1.0)
@@ -1367,7 +1411,7 @@ end
     grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
     parent = BoundaryPrescribedComponent(west = PrescribedAtmosphere(grid, [0.0, 10.0]),
                                          east = PrescribedAtmosphere(grid, [0.0, 10.0]))
-    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); time_step_ratio = 3)
+    nested = NestedModel(parent, HydrostaticFreeSurfaceModel(grid); parent_Δt = 3.0)
 
     for _ in 1:3
         time_step!(nested, 1.0)
@@ -1447,9 +1491,9 @@ end
     end
 end
 
-@testset "nested_atmosphere_model: time_step_ratio refines a live Breeze parent" begin
+@testset "nested_atmosphere_model: parent_Δt refines a live Breeze parent" begin
     parent = live_telescope_root(4.0)
-    nest = telescope_nest(parent, 2.0; time_step_ratio = 2)
+    nest = telescope_nest(parent, 2.0; parent_Δt = 1.0)
 
     run!(Simulation(nest; Δt = 0.5, stop_iteration = 4))
 
@@ -1494,8 +1538,8 @@ land_coupled(nest, extent) = AtmosphereLandModel(Simulation(nest; Δt = 0.5, ver
     ext.initialize_nested_child!(outer; balancer = false)
 
     outer_alm  = land_coupled(outer, 4.0)
-    middle_alm = land_coupled(telescope_nest(outer_alm, 2.0; time_step_ratio = 2), 2.0)
-    inner_alm  = land_coupled(telescope_nest(middle_alm, 1.0; time_step_ratio = 2), 1.0)
+    middle_alm = land_coupled(telescope_nest(outer_alm, 2.0; parent_Δt = 2.0), 2.0)
+    inner_alm  = land_coupled(telescope_nest(middle_alm, 1.0; parent_Δt = 1.0), 1.0)
 
     middle = component_model(middle_alm.atmosphere)
     inner  = component_model(inner_alm.atmosphere)

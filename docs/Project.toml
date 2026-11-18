@@ -39,7 +39,7 @@ ClimaSeaIce = {url = "https://github.com/dkytezab/ClimaSeaIce.jl", rev = "dkzdev
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "dkzdev/oceananigans-breeze-main"}
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 NumericalEarth = {path = ".."}
-Terrarium = {url = "https://github.com/dkytezab/Terrarium.jl", rev = "dkzdev/oceananigans-breeze-main"}
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"
