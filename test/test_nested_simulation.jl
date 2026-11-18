@@ -1312,8 +1312,15 @@ end
 
 @testset "NestedSimulation: picks up from a checkpoint" begin
     dir = mktempdir()
+    function nested_simulation(stop_time)
+        nested = exchange_test_nest(parent_Δt = 0.5, child_Δt = 0.25)
+        set!(nested.parent.model, u = (x, y, z) -> sin(2π * x) * z, v = (x, y, z) -> cos(2π * y))
+        set!(nested.child.model, u = (x, y, z) -> cos(2π * y) * z, v = (x, y, z) -> sin(2π * x))
+        return Simulation(nested; Δt = 1.0, stop_time, verbose = false)
+    end
+
     function checkpointed_simulation(stop_time)
-        simulation = Simulation(exchange_test_nest(parent_Δt = 0.5, child_Δt = 0.25); Δt = 1.0, stop_time, verbose = false)
+        simulation = nested_simulation(stop_time)
         simulation.output_writers[:checkpointer] = Checkpointer(simulation.model; schedule = IterationInterval(1), dir, prefix = "nested")
         return simulation
     end
@@ -1322,10 +1329,20 @@ end
     simulation = checkpointed_simulation(3)
     run!(simulation; pickup = true)
 
+    reference = nested_simulation(3)
+    run!(reference)
+
     nested = simulation.model
     @test nested.clock.iteration == 3
     @test nested.parent.model.clock.time == nested.child.model.clock.time == 3
     @test nested.child.model.clock.iteration == 12
+
+    # The restart is exact: every level matches an uninterrupted run
+    for level in (:parent, :child), name in (:u, :v, :w)
+        restarted = getproperty(nested, level).model
+        uninterrupted = getproperty(reference.model, level).model
+        @test interior(fields(restarted)[name]) == interior(fields(uninterrupted)[name])
+    end
 end
 
 @testset "NestedModel: rejects model callbacks on the outer Simulation" begin

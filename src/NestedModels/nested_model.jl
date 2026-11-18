@@ -23,9 +23,10 @@ using Oceananigans.TimeSteppers: tick!
 """
     NestedModel(parent, child, exchanger=nothing)
 
-Pair a `child` `Simulation` with a `parent`, which is either a `Simulation` or a prescribed component
-(e.g. a 3D `PrescribedAtmosphere`). A `child` model is wrapped in a `Simulation` whose own Δt is
-unbounded, so it takes one step per `NestedModel` step.
+Pair a `parent` (a `Simulation` or a prescribed component, such as a 3D `PrescribedAtmosphere`) with a
+`child` `Simulation`. A `child` given as a model is wrapped in a `Simulation` with unbounded Δt, so
+it takes one step per exchange interval (the `NestedModel`'s Δt), unless outputs or scheduled
+callbacks fall inside the interval.
 
 `time_step!(nested, Δt)` exchanges the parent's state with the child every `Δt`: the parent is brought
 to the next exchange time, then the child steps until it reaches the same time. Each `Simulation` steps
