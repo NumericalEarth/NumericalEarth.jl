@@ -18,7 +18,7 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width, default_relaxation_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
                                    VectorComponent
@@ -75,8 +75,6 @@ function default_nested_microphysics()
     isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
 end
-
-const default_relaxation_width = 5
 
 # Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
 # Contract: ramp(0)=1, ramp(1)=0, monotone between.
