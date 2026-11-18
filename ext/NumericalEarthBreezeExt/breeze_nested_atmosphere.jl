@@ -132,11 +132,11 @@ end
 # Whether each side of this rank's grid is a domain boundary, as opposed to a seam with another rank
 function domain_boundaries(grid)
     NestedModels = NumericalEarth.NestedModels
-    on_domain_boundary(dim, side) = NestedModels.on_physical_boundary(Oceananigans.Grids.topology(grid, dim), side)
-    return (west  = on_domain_boundary(1, NestedModels.LeftBoundary),
-            east  = on_domain_boundary(1, NestedModels.RightBoundary),
-            south = on_domain_boundary(2, NestedModels.LeftBoundary),
-            north = on_domain_boundary(2, NestedModels.RightBoundary))
+    on_boundary(dim, side) = NestedModels.on_domain_boundary(Oceananigans.Grids.topology(grid, dim), side)
+    return (west  = on_boundary(1, NestedModels.LeftBoundary),
+            east  = on_boundary(1, NestedModels.RightBoundary),
+            south = on_boundary(2, NestedModels.LeftBoundary),
+            north = on_boundary(2, NestedModels.RightBoundary))
 end
 
 @kernel function _add_forcing!(G, grid, forcing, clock, model_fields)

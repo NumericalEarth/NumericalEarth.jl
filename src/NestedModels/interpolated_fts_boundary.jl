@@ -124,19 +124,19 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
     # Every rank measures the extent, so all ranks create the same distributed fields in the same
-    # order; only a rank on the physical boundary enforces the bracket.
-    enforce = on_physical_boundary(topology(grid, dim), SideType)
+    # order; only a rank on the domain boundary enforces the bracket.
+    enforce = on_domain_boundary(topology(grid, dim), SideType)
     validate_source_bracket(c.source, grid, dim, SideType, LX, LY, LZ, enforce)
     return Interpolated{dim, SideType, LX, LY, LZ}(c.source, c.source_grid)
 end
 
 # Every rank regularizes the user's boundary conditions on its own local grid, but a rank whose side
 # borders another rank replaces this condition with halo communication — its local edge is interior to
-# the domain, and a source spanning only the physical boundary need not bracket it. A `Connected`
+# the domain, and a source spanning only the domain boundary need not bracket it. A `Connected`
 # left side borders a rank on its left, a `Connected` right side one on its right.
-on_physical_boundary(topology, SideType) = true
-on_physical_boundary(::Type{<:Sides{Connected}}, ::Type{LeftBoundary}) = false
-on_physical_boundary(::Type{<:Sides{<:Any, Connected}}, ::Type{RightBoundary}) = false
+on_domain_boundary(topology, SideType) = true
+on_domain_boundary(::Type{<:Sides{Connected}}, ::Type{LeftBoundary}) = false
+on_domain_boundary(::Type{<:Sides{<:Any, Connected}}, ::Type{RightBoundary}) = false
 
 # `extrema` needs a real array: a view of an operation is a `SubArray`, not a `Field`, and reduces on
 # the host, while reducing the operation as a `Field` would `MPI.Allreduce` across a partitioned grid,

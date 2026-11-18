@@ -32,10 +32,10 @@ function blend_parent_terrain!(elevation, parent_elevation; width)
     Nx, Ny, _ = size(grid)
     # A side that borders another rank is interior to the domain: its wall is placed out of reach
     far = typemax(Int) ÷ 4
-    i₁ = on_physical_boundary(topology(grid, 1), LeftBoundary)  ? 1  : -far
-    i₂ = on_physical_boundary(topology(grid, 1), RightBoundary) ? Nx : far
-    j₁ = on_physical_boundary(topology(grid, 2), LeftBoundary)  ? 1  : -far
-    j₂ = on_physical_boundary(topology(grid, 2), RightBoundary) ? Ny : far
+    i₁ = on_domain_boundary(topology(grid, 1), LeftBoundary)  ? 1  : -far
+    i₂ = on_domain_boundary(topology(grid, 1), RightBoundary) ? Nx : far
+    j₁ = on_domain_boundary(topology(grid, 2), LeftBoundary)  ? 1  : -far
+    j₂ = on_domain_boundary(topology(grid, 2), RightBoundary) ? Ny : far
     launch!(architecture(grid), grid, :xy, _blend_parent_terrain!,
             elevation, parent_elevation, convert(eltype(grid), width), i₁, i₂, j₁, j₂)
     return elevation
