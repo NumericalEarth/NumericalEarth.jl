@@ -2,7 +2,7 @@ module GHSL
 
 export GHSBuiltH, GHSBuiltS, GHSBuiltSResolution, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt
 
-using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF
 using Downloads: Downloads
 
 using Oceananigans: Oceananigans, Center, CPU
@@ -10,6 +10,7 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: dimension_faces
 using Oceananigans.Grids: x_domain, y_domain, λnodes, φnodes
 
+using NumericalEarth: TYPEDSIGNATURES
 using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                                     metadata_path, native_grid, BoundingBox, bounding_box_suffix
 using NumericalEarth.Lands: Lands

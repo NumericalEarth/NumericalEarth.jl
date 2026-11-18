@@ -2,7 +2,6 @@ module OpenLandMap
 
 export OpenLandMapSoilDB
 
-using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 
@@ -12,6 +11,7 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, interior, set!
 using Oceananigans.Grids: λnodes, φnodes
 
+using NumericalEarth: TYPEDSIGNATURES
 using NumericalEarth.DataWrangling: DataWrangling,
     AbstractStaticDataset, Metadatum, BoundingBox, Dataset,
     WeightPercent, GramPerCubicCentimeter,

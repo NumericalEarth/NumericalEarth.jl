@@ -133,5 +133,6 @@ default_south_rows_to_remove(::ORCATwelfth) = 460
 
 # Number of first columns repeated at the east edge of the mesh
 periodic_overlap(::ORCADataset) = 2
+periodic_overlap(::ORCATwo)     = 0
 
 end # module

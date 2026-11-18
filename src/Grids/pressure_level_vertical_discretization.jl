@@ -12,6 +12,8 @@ using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Ce
 using Oceananigans.OrthogonalSphericalShellGrids: ConformalConicGrid, conformal_conic_fractional_indices
 using Oceananigans.OutputReaders: FieldTimeSeries, TimeSeriesInterpolation
 
+using NumericalEarth: SIGNATURES
+
 """
     PressureLevelVerticalDiscretization
 
@@ -46,9 +48,7 @@ struct PressureLevelVerticalDiscretization{G, Geo, S} <: AbstractVerticalCoordin
 end
 
 """
-    PressureLevelVerticalDiscretization(geopotential;
-                                        gravitational_acceleration,
-                                        surface_geopotential = nothing)
+$(SIGNATURES)
 
 Build a discretization backed by per-column `geopotential` (m²/s²). `znode`
 divides by `gravitational_acceleration` at read time.

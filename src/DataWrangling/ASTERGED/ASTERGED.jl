@@ -2,6 +2,7 @@ module ASTERGED
 
 export ASTERGEDv3, ASTERGEDResolution, ASTERGEDHigh100m, ASTERGEDLow1km
 
+using NumericalEarth: SIGNATURES
 using Downloads: Downloads
 
 using Oceananigans: Oceananigans, Center, CPU
@@ -94,7 +95,7 @@ struct ASTERGEDv3 <: AbstractStaticDataset
 end
 
 """
-    ASTERGEDv3(resolution = ASTERGEDLow1km)
+$(SIGNATURES)
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `ASTERGEDLow1km` (1 km,
 default) or `ASTERGEDHigh100m` (100 m); see [`ASTERGEDResolution`](@ref).

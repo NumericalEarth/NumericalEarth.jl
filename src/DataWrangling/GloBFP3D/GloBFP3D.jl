@@ -2,7 +2,6 @@ module GloBFP3D
 
 export GlobalBuildingFootprints3D, building_morphometry
 
-using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 
 using Oceananigans: Oceananigans, Center, CPU, Face
@@ -12,6 +11,7 @@ using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 
+using NumericalEarth: NumericalEarth, SIGNATURES
 using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
                                     BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
 using NumericalEarth.Lands: Lands, building_morphometry
@@ -292,7 +292,7 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
 end
 
 """
-$(TYPEDSIGNATURES)
+$(SIGNATURES)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
