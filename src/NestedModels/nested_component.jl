@@ -29,6 +29,8 @@ EarthSystemModels.interpolate_state!(exchanger, exchange_grid, nm::NestedModel, 
 
 InterfaceComputations.net_fluxes(nm::NestedModel) = InterfaceComputations.net_fluxes(nm.child)
 
+Oceans.forcing_barotropic_potential(nm::NestedModel) = Oceans.forcing_barotropic_potential(nm.child)
+
 EarthSystemModels.update_net_fluxes!(coupled_model, nm::NestedModel) =
     EarthSystemModels.update_net_fluxes!(coupled_model, nm.child)
 

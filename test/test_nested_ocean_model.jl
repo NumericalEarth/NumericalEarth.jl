@@ -6,7 +6,7 @@ using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, re
                                    BoundaryTimeSeries, BarotropicBoundaryTransport, ConsistentBoundaryVelocity,
                                    OceanBoundaryExchanger
 using NumericalEarth.Oceans: fill_prescribed_halo_regions!, forcing_barotropic_potential
-using Oceananigans.Grids: TwoSided, topology
+using Oceananigans.Grids: TwoSided, halo_size, topology
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, ocean_surface_temperature,
                                         ocean_temperature, prognostic_model
 using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, GravityWaveRadiation, NormalFlow, ObliqueRadiation,
@@ -431,6 +431,31 @@ end
     parent(forcing_barotropic_potential(child)) .*= 2
     update_state!(model)
     @test Array(interior(child.free_surface.displacement, :, :, 1)) == η_stepped
+end
+
+@testset "The atmosphere's surface pressure reaches a nested ocean's child on $(arch)" for arch in test_architectures
+    model = nested_ocean_model(nesting_test_parent(arch), nesting_test_child_grid(arch); inverse_barometer = true)
+    ocean = Simulation(model; Δt = 600)
+
+    atmosphere_grid = LatitudeLongitudeGrid(arch; size = (8, 8), longitude = (-2, 2), latitude = (28, 32),
+                                            topology = (Bounded, Bounded, Flat))
+    atmosphere = PrescribedAtmosphere(atmosphere_grid, [0.0, 10days])
+    for n in 1:2
+        set!(atmosphere.pressure[n], (λ, φ) -> 1e5 + 100 * (φ - 30))
+    end
+
+    coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation = nothing)
+    update_state!(coupled_model)
+
+    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+    Nx, Ny, _ = size(model.child.grid)
+    Hx, Hy, _ = halo_size(model.child.grid)
+    potential = Array(parent(forcing_barotropic_potential(model.child)))[Hx+1:Hx+Nx, Hy+1:Hy+Ny, 1]
+    @test forcing_barotropic_potential(model) === forcing_barotropic_potential(model.child)
+    @test all(potential .> 9e4 / ρᵒᶜ)
+
+    time_step!(coupled_model, 600)
+    @test all(isfinite, Array(interior(model.child.free_surface.displacement)))
 end
 
 @testset "Open boundary conditions move to the CPU with the child's fields on $(arch)" for arch in test_architectures

@@ -38,6 +38,7 @@ using Oceananigans.Fields: location
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
                            BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
+using ..Oceans: Oceans
 
 include("nested_model.jl")
 include("nested_component.jl")
