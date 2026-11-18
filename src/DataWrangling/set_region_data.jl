@@ -118,14 +118,6 @@ function region_info(::BoundingBox, target, λc, φc)
     return BoundingBoxOffset(di, dj)
 end
 
-"""
-$(TYPEDSIGNATURES)
-
-Throw an error when a file with `Nλ × Nφ` horizontal points cannot cover a target with `Nx × Ny`
-points. Without this check the reader clamps its indices and silently copies the file's edge
-values across the rest of the target. One latitude fewer than the target is allowed because
-`ShiftSouth` handles staggered latitude axes.
-"""
 function check_region_coverage(Nλ, Nx, Nφ, Ny)
     Nλ < Nx && throw(ArgumentError("The data file has $Nλ longitudes but the target region needs $Nx. " *
                                    "The file was probably downloaded for a different or truncated region; delete it to download it again."))
