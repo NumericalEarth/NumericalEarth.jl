@@ -1,14 +1,12 @@
 [deps]
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
-LoopVectorization = {url = "https://github.com/navidcy/LoopVectorization.jl", rev = "patch-1"} # TODO: remove once JuliaSIMD/LoopVectorization.jl#574 is released
 NumericalEarth = {path = "../.."}
 
 [compat]

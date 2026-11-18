@@ -1,4 +1,4 @@
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Oceananigans.Utils: prettysummary
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -90,7 +90,7 @@ end
     vsgs²(sv.convective, u★, b★, h_bℓ) + vsgs²(sv.mesoscale, u★, b★, h_bℓ)
 
 """
-    mahrt_sun_subgrid_velocity(Δx; threshold = 5e3)
+$(SIGNATURES)
 
 Return the mesoscale subgrid velocity [m/s] for grid spacing `Δx` [m] following
 [Mahrt and Sun (1995)](https://doi.org/10.1175/1520-0493(1995)123<3032:TSVSIT>2.0.CO;2),
@@ -124,18 +124,7 @@ function Base.show(io::IO, fluxes::SimilarityTheoryFluxes)
 end
 
 """
-    SimilarityTheoryFluxes(FT::DataType = Float64;
-                           gravitational_acceleration = 9.81,
-                           von_karman_constant = 0.4,
-                           turbulent_prandtl_number = 1,
-                           subgrid_velocities = ConvectiveGustiness{FT}(),
-                           stability_functions = default_stability_functions(FT),
-                           roughness_lengths = default_roughness_lengths(FT),
-                           zero_plane_displacement = 0,
-                           similarity_form = LogarithmicSimilarityProfile(),
-                           solver_stop_criteria = nothing,
-                           solver_tolerance = 1e-8,
-                           solver_maxiter = 100)
+$(SIGNATURES)
 
 `SimilarityTheoryFluxes` contains parameters and settings to calculate
 air-interface turbulent fluxes using Monin--Obukhov similarity theory.
@@ -812,7 +801,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Stability function evaluated at the roughness height by [`similarity_profile`](@ref).
+Stability function evaluated at the roughness height by `similarity_profile`.
 
 The free-convection matched functions split the profile at ``z = -ζ_m L_★`` and keep
 the Businger--Dyer form below the match, so their roughness-height term is the
@@ -864,7 +853,7 @@ Base.summary(::LinearStableStabilityFunction{FT}) where FT = "LinearStableStabil
 Base.show(io::IO, ::LinearStableStabilityFunction{FT}) where FT = print(io, "LinearStableStabilityFunction{$FT}")
 
 """
-    large_yeager_stability_functions(FT = Float64)
+$(SIGNATURES)
 
 NCAR/Large-Yeager (2004) stability functions combining:
 - Unstable: Paulson (1970) with γ = 16

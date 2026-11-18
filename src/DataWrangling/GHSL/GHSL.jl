@@ -13,7 +13,8 @@ using NumericalEarth.Lands: Lands
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        metadata_path, native_grid, BoundingBox, bounding_box_suffix
 
-using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF
+using NumericalEarth: TYPEDSIGNATURES
 
 import Oceananigans
 
