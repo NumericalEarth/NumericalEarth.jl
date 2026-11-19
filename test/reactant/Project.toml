@@ -8,8 +8,10 @@ Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"} # TODO: remove once a Breeze release includes NumericalEarth/Breeze.jl#1272 (Reactant compile of the batched implicit column solves)
 ClimaSeaIce = {url = "https://github.com/dkytezab/ClimaSeaIce.jl", rev = "patch-2"} # TODO: remove once CliMA/ClimaSeaIce.jl#220 is released with Oceananigans 0.118 compat
 NumericalEarth = {path = "../.."}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"} # TODO: remove with the Breeze pin; Breeze main is developed against Oceananigans main
 
 [compat]
 Breeze = "0.15"
