@@ -506,7 +506,9 @@ margin for the interpolation stencils). A full-domain snapshot of `parent_datase
 toward. Unless given, the default dynamics' `base_pressure` anchor is the domain-mean dataset
 mean-sea-level pressure over the child at `first(dates)`. When `bottom_drag_coefficient` is given,
 `drag_surface_temperature` defaults to the dataset's skin temperature at `first(dates)` regridded onto
-the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_atmosphere` overrides the
+the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_build_kwargs` is forwarded to every
+`PrescribedAtmosphere` this builds, the boundary strips and the full-domain snapshot alike, so a dataset
+that offers a choice of parent grid is asked for the same one on both. `parent_atmosphere` overrides the
 strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the parent in full, at the
 cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
@@ -518,9 +520,11 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     parent_padding = default_horizontal_padding(parent_dataset),
     parent_time_indices_in_memory = nothing,   # nothing ⇒ every date resident; ≥3 streams a moving window
     relaxation_width = default_relaxation_width,
+    parent_build_kwargs = (;),
     parent_atmosphere = BoundaryPrescribedComponent(PrescribedAtmosphere, child_grid, dates, parent_dataset;
                                                     width = relaxation_width, padding = parent_padding, dir,
-                                                    time_indices_in_memory = parent_time_indices_in_memory),
+                                                    time_indices_in_memory = parent_time_indices_in_memory,
+                                                    parent_build_kwargs...),
     base_pressure = nothing,
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
@@ -528,7 +532,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     kw...)
 
     snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
-                                    architecture = architecture(child_grid), dir)
+                                    architecture = architecture(child_grid), dir, parent_build_kwargs...)
 
     if isnothing(base_pressure)
         base_pressure = mean_sea_level_pressure(parent_dataset, child_grid, first(dates), dir)
