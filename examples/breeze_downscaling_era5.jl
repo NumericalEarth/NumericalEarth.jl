@@ -263,7 +263,7 @@ fig_partition
 # model below binds the partition-blended skin temperature, re-read every solve. Hourly solves
 # match the ERA5 cadence.
 
-radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.thermodynamic_constants;
+radiation = RadiativeTransferModel(grid, AllSkyOptics(), nest.child.model.thermodynamic_constants;
                                    solar_position = ApparentSolarPosition(epoch = start_date),
                                    surface_albedo = CopernicusAlbedo(),
                                    schedule = TimeInterval(1hour))
@@ -298,7 +298,7 @@ conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt
 # partition-blended skin temperature Tⁱⁿ the atmosphere sees (2-D already, no slicing needed —
 # the writer stores each output's own grid).
 
-child = nest.child
+child = nest.child.model
 k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
 φ_centers = Array(φnodes(grid, Center(), Center(), Center()))
 j_section = searchsortedfirst(φ_centers, φ₀)
@@ -330,7 +330,7 @@ simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               overwrite_files = true)
 
 function progress(sim)
-    child = sim.model.atmosphere.model.child
+    child = sim.model.atmosphere.model.child.model
     u, v, w = child.velocities
     ρ  = child.dynamics.total_density
     qᵛ = specific_humidity(child)

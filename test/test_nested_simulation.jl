@@ -1,7 +1,9 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: NestedModel, ParentSnapshots, exchange_state!, parent_boundary_conditions, nested_atmosphere_model,
+                                   interpolate_from_parent!, interpolation_node, step_until!
+using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
@@ -9,7 +11,7 @@ using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, OnDi
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, rnode, znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
@@ -270,35 +272,55 @@ end
         bc_types  = (T = ValueBoundaryCondition,))
 end
 
-# A live model parent (rather than a PrescribedAtmosphere or FieldTimeSeries) drives the child
-# through `Interpolated` BCs, including a Center `ValueBoundaryCondition`. On GPU the source
-# field `Adapt`s to a bare data array inside the halo-fill kernel.
-@testset "NestedSimulation: prognostic (live AbstractField) parent on $(arch)" for arch in test_architectures
+# A live parent drives the child through `ParentSnapshots`, including a Center `ValueBoundaryCondition`.
+@testset "NestedSimulation: live parent through ParentSnapshots on $(arch)" for arch in test_architectures
     parent_grid = RectilinearGrid(arch; size = (16, 16, 4),
                                   x = (-1.5, 1.5), y = (-1.5, 1.5), z = (-0.2, 1.2),
                                   topology = (Bounded, Bounded, Bounded))
     parent = NonhydrostaticModel(parent_grid; tracers = :c)
     set!(parent, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
+    snapshots = ParentSnapshots((u = parent.velocities.u, v = parent.velocities.v, c = parent.tracers.c), 0)
 
     child_grid = RectilinearGrid(arch; size = (8, 8, 4),
                                  x = (-1, 1), y = (-1, 1), z = (0, 1),
                                  topology = (Bounded, Bounded, Bounded))
     bcs = parent_boundary_conditions(child_grid;
-                                     variables = (u = parent.velocities.u,   # NormalFlow (Face)
-                                                  v = parent.velocities.v,
-                                                  c = parent.tracers.c),      # Value (Center) — the kind that broke
+                                     variables = snapshots.windows,
                                      sides     = (:west, :east, :south, :north),
                                      bc_types  = (c = ValueBoundaryCondition,))
     child = NonhydrostaticModel(child_grid; tracers = :c, boundary_conditions = bcs)
     set!(child, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
 
-    nested = NestedSimulation(parent, child; Δt = 0.001, stop_iteration = 3, verbose = false)
+    nest = NestedModel(Simulation(parent; Δt = 0.001, verbose = false), child, snapshots)
+    nested = Simulation(nest; Δt = 0.002, stop_iteration = 3, verbose = false)
     run!(nested)
 
-    @test child.clock.iteration == 3
-    @test parent.clock.time ≈ child.clock.time
+    @test parent.clock.time ≈ child.clock.time ≈ 0.006
+    @test snapshots.windows.c.times ≈ range(0.004, 0.006; length = 2)
     @test all(isfinite, Array(interior(child.velocities.u)))
     @test all(isfinite, Array(interior(child.tracers.c)))
+end
+
+@testset "ParentSnapshots interpolate between exchange times" begin
+    grid = RectilinearGrid(size = (2, 2, 2), extent = (1, 1, 1))
+    c = CenterField(grid)
+    set!(c, 1)
+    snapshots = ParentSnapshots((; c), 0)
+    @test interior(snapshots.windows.c[Time(0.5)]) == interior(c)
+
+    set!(c, 3)
+    exchange_state!(snapshots, 2)
+    @test all(interior(snapshots.windows.c[Time(1)]) .≈ 2)
+
+    exchange_state!(snapshots, 2)    # the same time refreshes without shifting
+    @test all(interior(snapshots.windows.c[1]) .≈ 1)
+end
+
+@testset "step_until! lands a Float32 clock on a Float64 time that rounds down" begin
+    grid = RectilinearGrid(Float32; size = (2, 2, 2), extent = (1, 1, 1))
+    simulation = Simulation(NonhydrostaticModel(grid); Δt = Inf, verbose = false)
+    step_until!(simulation, 0.7)
+    @test simulation.model.clock.time == Float32(0.7)
 end
 
 # A "rolling FieldTimeSeries" drives a child from a live parent field: a 2-slot FTS whose slots
@@ -707,7 +729,7 @@ end
 
     nested = nested_atmosphere_model(parent, child_grid; closure,
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
-    child_tke_advection = nested.child.advection[tke_name]
+    child_tke_advection = nested.child.model.advection[tke_name]
     @test child_tke_advection isa WENO
     @test !(child_tke_advection isa Centered)
     @test !isnothing(child_tke_advection.bounds)
@@ -731,13 +753,13 @@ end
 
     default = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
     breeze_damping = Breeze.SplitExplicitTimeDiscretization().damping
-    @test typeof(default.child.dynamics.time_discretization.damping) == typeof(breeze_damping)
+    @test typeof(default.child.model.dynamics.time_discretization.damping) == typeof(breeze_damping)
 
     nested = nested_atmosphere_model(parent, child_grid;
                                      time_discretization_kwargs = (; damping = Breeze.NoDivergenceDamping()),
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
 
-    time_discretization = nested.child.dynamics.time_discretization
+    time_discretization = nested.child.model.dynamics.time_discretization
     @test time_discretization.damping isa Breeze.NoDivergenceDamping
     @test time_discretization.sponge isa UpperSponge
 end
@@ -764,7 +786,7 @@ end
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing),
                                      forcing = (θ = Relaxation(rate = 1/600, target = 300.0),))
 
-    ρθ_forcing = nested.child.forcing.ρθ
+    ρθ_forcing = nested.child.model.forcing.ρθ
     @test ρθ_forcing isa MultipleForcings
     @test length(ρθ_forcing.forcings) == 2                       # boundary relaxation + the caller's θ forcing
     @test all(f -> f isa SpecificForcing, ρθ_forcing.forcings)   # both ρᵈ-weighted at kernel time
@@ -817,9 +839,9 @@ end
     @test prog.ρᵈ.backend.start == 1
     @test all(isfinite, Array(interior(prog.ρθ[1])))
 
-    # Cross to a later interval ⇒ the window cycles forward (start = clamp(n₁-1, 1, N-2)).
-    exchange(exchanger, 2.5)                                    # bracket n₁ = 3 ⇒ start = 2 (levels 2, 3, 4)
-    @test prog.ρᵈ.backend.start == 2
+    # Cross to a later interval ⇒ the window cycles forward (start = clamp(n₁, 1, N-2)).
+    exchange(exchanger, 2.5)                                    # bracket n₁ = 3 ⇒ start = 3 (levels 3, 4, 5)
+    @test prog.ρᵈ.backend.start == 3
     @test all(isfinite, Array(interior(prog.ρθ[3])))
     θ = Array(interior(prog.ρθ[3])) ./ Array(interior(prog.ρᵈ[3]))
     @test all(250 .< θ .< 400)                                 # physical potential temperature
@@ -827,6 +849,11 @@ end
     # Cycle back toward the 1st interval.
     exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1
     @test prog.ρᵈ.backend.start == 1
+
+    # An exchange interval holds levels from the bracket of its start to the level above its end.
+    exchange(exchanger, 1.5, 2.5)                               # levels 2, 3, 4
+    @test prog.ρᵈ.backend.start == 2
+    @test_throws ArgumentError exchange(exchanger, 0.5, 2.5)    # needs levels 1 to 4
 
     # reconstruct_parent_state reads the parent's FULL-memory fields, not the windowed levels: with the
     # window parked forward, a reconstruction at t = 0 still recovers the parent's t = 0 state
@@ -905,7 +932,7 @@ end
     prog      = exchanger.prognostic
     exchange  = NumericalEarth.NestedModels.exchange_state!
 
-    exchange(exchanger, 2.1) # start = 2, resident time indices are 2, 3, 4.
+    exchange(exchanger, 1.1) # start = 2, resident time indices are 2, 3, 4.
     fts = prog.ρθ
     @test fts.backend.start == 2
     @test length(fts.backend) == 3
@@ -977,10 +1004,11 @@ end
     indices = ((1, 1, 1), (2, 2, 2), (8, 8, 4))
 
     for step_end_time in (0.5, 1.1, 2.1, 3.1, 4.1, 5.1)
-        exchange(moving, step_end_time)
-        exchange(full, step_end_time)
+        step_start_time = max(0, step_end_time - 0.2)
+        exchange(moving, step_start_time, step_end_time)
+        exchange(full, step_start_time, step_end_time)
 
-        for query_time in (max(0, step_end_time - 0.2), step_end_time)
+        for query_time in (step_start_time, step_end_time)
             for name in field_names
                 moving_fts = getproperty(moving.prognostic, name)
                 full_fts = getproperty(full.prognostic, name)
@@ -1026,9 +1054,9 @@ end
     θin = Array(interior(prog.ρθ[Time(0.5)])) ./ Array(interior(prog.ρᵈ[Time(0.5)]))
     @test all(isapprox.(θin, θtrue(0.5); rtol = 1e-4))
 
-    # Crossing the node at t = 2: the window advances to start = 2 (times [1, 2, 3]), so the child's
-    # start-of-step query at t = 1.9 still falls inside the resident levels.
-    exchange(exchanger, 2.1)
+    # A step from t = 1.9 to 2.1 crosses the node at t = 2: the window advances to start = 2 (times
+    # [1, 2, 3]), so the child's start-of-step query at t = 1.9 still falls inside the resident levels.
+    exchange(exchanger, 1.9, 2.1)
     @test prog.ρᵈ.backend.start == 2
 
     ρθq = Array(interior(prog.ρθ[Time(1.9)]))
@@ -1070,7 +1098,7 @@ end
                 relaxation_rate = 1/300, relaxation_width = 3, base_pressure = 1e5,
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing,
                 time_indices_in_memory = 3)
-    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
     conjure_time_step_wizard!(sim, IterationInterval(1); cfl = 0.3, max_Δt = 2.0)
@@ -1078,7 +1106,7 @@ end
 
     @test model.exchanger.prognostic.ρᵈ.backend.start > 1        # actually crossed the window move
     @test model.clock.time ≥ 10.0 - 2.0                          # reached the end (no NaN Δt stall)
-    for (name, field) in pairs(prognostic_fields(model.child))
+    for (name, field) in pairs(prognostic_fields(model.child.model))
         @test all(isfinite, Array(interior(field)))
     end
 end
@@ -1109,12 +1137,12 @@ end
 
     model = nested_atmosphere_model(parent, child_grid; terrain, terrain_smoothing_passes = 0,
                                     base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
-    ext.initialize_nested_child!(model, nothing, 0.0, ""; balancer = false)
+    ext.initialize_nested_child!(model; balancer = false)
 
     expected_u = XFaceField(child_grid); set!(expected_u, (λ, φ, z) -> parent_u(z))
     expected_v = YFaceField(child_grid); set!(expected_v, (λ, φ, z) -> parent_v(z))
-    @test maximum(abs, Array(interior(model.child.velocities.u)) .- Array(interior(expected_u))) < 0.05
-    @test maximum(abs, Array(interior(model.child.velocities.v)) .- Array(interior(expected_v))) < 0.05
+    @test maximum(abs, Array(interior(model.child.model.velocities.u)) .- Array(interior(expected_u))) < 0.05
+    @test maximum(abs, Array(interior(model.child.model.velocities.v)) .- Array(interior(expected_v))) < 0.05
 end
 
 # `terrain_blend_length` is a physical length converted to a cell count per grid, so the blend slope is
@@ -1180,14 +1208,14 @@ end
                       unrelaxed_model.exchanger.prognostic)
 
     for (model, prognostic) in zip((full_model, strip_model, unrelaxed_model), initial_states)
-        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        ext.initialize_nested_child!(model; balancer = false, prognostic)
         for _ in 1:8
             time_step!(model, 0.5)
         end
     end
 
-    for (name, full_field) in pairs(prognostic_fields(full_model.child))
-        difference(model) = maximum(abs, Field(prognostic_fields(model.child)[name] - full_field))
+    for (name, full_field) in pairs(prognostic_fields(full_model.child.model))
+        difference(model) = maximum(abs, Field(prognostic_fields(model.child.model)[name] - full_field))
         scale = maximum(abs, full_field)
         @test difference(strip_model) ≤ 1e-12 * scale
         name in (:ρθ, :ρu, :ρv) && @test difference(unrelaxed_model) > 1e-6 * scale
@@ -1195,14 +1223,14 @@ end
 
     # Running the strip child in two `run!` calls reproduces its continuous run.
     rerun_model = nest(strips, 1/30)
-    ext.initialize_nested_child!(rerun_model, nothing, first(times), ""; balancer = false, prognostic = initial_states[2])
+    ext.initialize_nested_child!(rerun_model; balancer = false, prognostic = initial_states[2])
     simulation = Simulation(rerun_model; Δt = 0.5, stop_iteration = 4, verbose = false)
     run!(simulation)
     simulation.stop_iteration = 8
     run!(simulation)
 
-    for (name, field) in pairs(prognostic_fields(strip_model.child))
-        @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
+    for (name, field) in pairs(prognostic_fields(strip_model.child.model))
+        @test maximum(abs, Field(prognostic_fields(rerun_model.child.model)[name] - field)) == 0
     end
 end
 
@@ -1232,11 +1260,236 @@ end
     for _ in 1:3
         time_step!(nested, 1.0)
     end
-    @test parent.clock.time == nested.child.clock.time == 3
-    @test parent.clock.iteration == nested.child.clock.iteration == 3
+    @test parent.clock.time == nested.child.model.clock.time == 3
+    @test parent.clock.iteration == nested.child.model.clock.iteration == 3
 
     parent.clock.time = 7
     time_step!(nested, 1.0)
-    @test parent.clock.time == nested.child.clock.time == 4
+    @test parent.clock.time == nested.child.model.clock.time == 4
 end
 
+# A live parent and its child each step with their own Δt and meet at every exchange time.
+function exchange_test_nest(; parent_Δt, child_Δt)
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = Simulation(NonhydrostaticModel(grid); Δt = parent_Δt, verbose = false)
+    child = Simulation(NonhydrostaticModel(grid); Δt = child_Δt, verbose = false)
+    return NestedModel(parent, child)
+end
+
+@testset "NestedModel: parent and child subcycle to each exchange time" begin
+    nested = exchange_test_nest(parent_Δt = 0.5, child_Δt = 0.25)
+    parent_clock = nested.parent.model.clock
+    child_clock = nested.child.model.clock
+
+    for n in 1:3
+        time_step!(nested, 1.0)
+        @test parent_clock.time == child_clock.time == nested.clock.time == n
+    end
+    @test parent_clock.iteration == 6
+    @test child_clock.iteration == 12
+    @test nested.clock.iteration == 3
+end
+
+@testset "NestedModel: an incommensurate child Δt still lands on the exchange time" begin
+    nested = exchange_test_nest(parent_Δt = 1.0, child_Δt = 0.3)
+    child = nested.child
+
+    time_step!(nested, 1.0)
+    @test child.model.clock.time == 1
+    @test child.model.clock.iteration == 4
+    @test child.Δt == 0.3
+end
+
+@testset "NestedModel: three levels meet at every exchange time" begin
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    coarse = Simulation(NonhydrostaticModel(grid); Δt = 1.0, verbose = false)
+    medium = Simulation(NonhydrostaticModel(grid); Δt = 0.5, verbose = false)
+    fine = Simulation(NonhydrostaticModel(grid); Δt = 0.25, verbose = false)
+
+    nest = NestedModel(NestedSimulation(coarse, medium; Δt = 1.0, verbose = false), fine)
+    for _ in 1:2
+        time_step!(nest, 1.0)
+    end
+
+    @test coarse.model.clock.time == medium.model.clock.time == fine.model.clock.time == 2
+    @test (coarse.model.clock.iteration, medium.model.clock.iteration, fine.model.clock.iteration) == (2, 4, 8)
+end
+
+@testset "NestedSimulation: stop_time lands every level" begin
+    nested = exchange_test_nest(parent_Δt = 0.4, child_Δt = 0.15)
+    simulation = Simulation(nested; Δt = 0.4, stop_time = 1.0, verbose = false)
+    run!(simulation)
+
+    @test nested.parent.model.clock.time == nested.child.model.clock.time == 1
+end
+
+@testset "NestedSimulation: picks up from a checkpoint" begin
+    dir = mktempdir()
+    function nested_simulation(stop_time)
+        nested = exchange_test_nest(parent_Δt = 0.5, child_Δt = 0.25)
+        set!(nested.parent.model, u = (x, y, z) -> sin(2π * x) * z, v = (x, y, z) -> cos(2π * y))
+        set!(nested.child.model, u = (x, y, z) -> cos(2π * y) * z, v = (x, y, z) -> sin(2π * x))
+        return Simulation(nested; Δt = 1.0, stop_time, verbose = false)
+    end
+
+    function checkpointed_simulation(stop_time)
+        simulation = nested_simulation(stop_time)
+        simulation.output_writers[:checkpointer] = Checkpointer(simulation.model; schedule = IterationInterval(1), dir, prefix = "nested")
+        return simulation
+    end
+
+    run!(checkpointed_simulation(2))
+    simulation = checkpointed_simulation(3)
+    run!(simulation; pickup = true)
+
+    reference = nested_simulation(3)
+    run!(reference)
+
+    nested = simulation.model
+    @test nested.clock.iteration == 3
+    @test nested.parent.model.clock.time == nested.child.model.clock.time == 3
+    @test nested.child.model.clock.iteration == 12
+
+    # The restart is exact: every level matches an uninterrupted run
+    for level in (:parent, :child), name in (:u, :v, :w)
+        restarted = getproperty(nested, level).model
+        uninterrupted = getproperty(reference.model, level).model
+        @test interior(fields(restarted)[name]) == interior(fields(uninterrupted)[name])
+    end
+end
+
+@testset "NestedModel: rejects model callbacks on the outer Simulation" begin
+    nested = exchange_test_nest(parent_Δt = 1.0, child_Δt = 1.0)
+    callback = Callback(model -> nothing, IterationInterval(1); callsite = Oceananigans.TendencyCallsite())
+    @test_throws ArgumentError time_step!(nested, 1.0; callbacks = (callback,))
+end
+
+# `interpolate` locates the vertical through the source grid's `znodes`, which on a terrain-following
+# grid are the reference levels, so a terrain-following source is queried at the reference node.
+@testset "interpolation_node samples a terrain-following source in its own vertical coordinate" begin
+    plateau = 400.0
+    z = collect(range(0, 12000, length = 25))
+    horizontal = (size = (6, 6, length(z) - 1), longitude = (-100, -96), latitude = (34, 38), halo = (5, 5, 5),
+                  topology = (Bounded, Bounded, Bounded))
+    grid = LatitudeLongitudeGrid(; horizontal..., z = TerrainFollowingVerticalDiscretization(z))
+    Breeze.materialize_terrain!(grid, (λ, φ) -> plateau)
+    flat_grid = LatitudeLongitudeGrid(; horizontal..., z)
+
+    reference = interpolation_node(3, 3, 1, grid, Center(), Center(), Center(), grid)
+    physical  = interpolation_node(3, 3, 1, grid, Center(), Center(), Center(), flat_grid)
+    @test reference[3] ≈ rnode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3]  ≈ znode(3, 3, 1, grid, Center(), Center(), Center())
+    @test physical[3] - reference[3] ≈ plateau rtol = 0.05
+
+    source = CenterField(grid)
+    set!(source, (λ, φ, z) -> z)
+    target = interpolate_from_parent!(CenterField(grid), source)
+    @test Array(interior(target)) ≈ Array(interior(source))
+end
+
+telescope_vertical_levels = collect(range(0, 12000, length = 17))
+ridge(λ, φ) = 400 * exp(-((λ + 98)^2 + (φ - 36)^2) / 0.5)
+
+telescope_grid(extent; arch = CPU()) =
+    LatitudeLongitudeGrid(arch; size = (8, 8, length(telescope_vertical_levels) - 1),
+                          longitude = (-98 - extent / 2, -98 + extent / 2),
+                          latitude = (36 - extent / 2, 36 + extent / 2),
+                          z = TerrainFollowingVerticalDiscretization(telescope_vertical_levels), halo = (5, 5, 5),
+                          topology = (Bounded, Bounded, Bounded))
+
+function telescope_terrain(grid)
+    terrain = Field{Center, Center, Nothing}(grid)
+    set!(terrain, ridge)
+    return terrain
+end
+
+function live_telescope_root(extent; arch = CPU())
+    grid = telescope_grid(extent; arch)
+    Breeze.materialize_terrain!(grid, ridge)
+    root = atmosphere_model(grid)
+    set!(root; θ = 300, u = 8, qᵗ = 4e-3)
+    update_state!(root)
+    return root
+end
+
+function telescope_nest(parent, extent; arch = CPU(), kw...)
+    grid = telescope_grid(extent; arch)
+    return nested_atmosphere_model(parent, grid; terrain = telescope_terrain(grid), terrain_blend_width = 2,
+                                   relaxation_rate = 1/300, relaxation_width = 2, balancer = false, kw...)
+end
+
+@testset "nested_atmosphere_model in a live parent inherits its state and steps with it" begin
+    parent = live_telescope_root(4.0)
+    nest = telescope_nest(parent, 2.0)
+
+    child = nest.child.model
+    @test maximum(abs, Array(interior(child.velocities.u)) .- 8) < 0.1
+
+    run!(Simulation(nest; Δt = 0.5, stop_iteration = 3))
+
+    @test parent.clock.iteration == 3
+    @test parent.clock.time ≈ child.clock.time
+    for field in prognostic_fields(child)
+        @test all(isfinite, Array(interior(field)))
+    end
+end
+
+function telescope_land(extent)
+    grid = LatitudeLongitudeGrid(size = (8, 8), longitude = (-98 - extent / 2, -98 + extent / 2),
+                                 latitude = (36 - extent / 2, 36 + extent / 2), halo = (5, 5),
+                                 topology = (Bounded, Bounded, Flat))
+    land = SlabLand(grid)
+    set!(land.temperature, 295)
+    set!(land.water_storage, 50)
+    update_state!(land)
+    return land
+end
+
+land_coupled(nest, extent) = AtmosphereLandModel(Simulation(nest; Δt = 0.5, verbose = false), telescope_land(extent))
+
+# A prescribed parent drives three Breeze nests, each coupled to its own land and each the live parent
+# of the next; every level steps once per exchange.
+@testset "Three-level telescope of land-coupled nests steps every level and every land" begin
+    root_grid = LatitudeLongitudeGrid(size = (12, 12, 16), longitude = (-101, -95), latitude = (33, 39),
+                                      z = (0, 16000), halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+    root = PrescribedAtmosphere(root_grid, [0.0, 3600.0])
+    set!(root.temperature,       (λ, φ, z, t) -> 300 - 6.5e-3 * z)
+    set!(root.specific_humidity, (λ, φ, z, t) -> 4e-3)
+    set!(root.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(root.velocities.v,      (λ, φ, z, t) -> 0)
+    set!(root.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    outer_grid = telescope_grid(4.0)
+    outer = nested_atmosphere_model(root, outer_grid; terrain = telescope_terrain(outer_grid),
+                                    terrain_blend_width = 2, base_pressure = 1e5, parent_condensates = nothing,
+                                    relaxation_rate = 1/300, relaxation_width = 2)
+    ext.initialize_nested_child!(outer; balancer = false)
+
+    outer_alm  = land_coupled(outer, 4.0)
+    middle_alm = land_coupled(telescope_nest(outer_alm, 2.0), 2.0)
+    inner_alm  = land_coupled(telescope_nest(middle_alm, 1.0), 1.0)
+
+    middle = component_model(middle_alm.atmosphere)
+    inner  = component_model(inner_alm.atmosphere)
+    @test middle.parent.model === outer_alm
+    @test inner.parent.model === middle_alm
+
+    Δt = 0.5
+    run!(Simulation(inner_alm; Δt, stop_iteration = 4))
+
+    for alm in (inner_alm, middle_alm, outer_alm)
+        child = component_model(alm.atmosphere).child.model
+        @test alm.clock.iteration == 4
+        @test child.clock.iteration == 4
+        @test alm.land.clock.iteration == 4
+        @test alm.clock.time ≈ 4Δt
+        @test child.clock.time ≈ 4Δt
+        @test alm.land.clock.time ≈ 4Δt
+        for field in prognostic_fields(child)
+            @test all(isfinite, Array(interior(field)))
+        end
+        @test all(isfinite, Array(interior(alm.land.temperature)))
+    end
+    @test root.clock.time ≈ 4Δt
+end

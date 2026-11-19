@@ -12,14 +12,13 @@ dispatch.
 const NestedSimulation = Simulation{<:NestedModel}
 
 """
-    NestedSimulation(parent, child_model::AbstractModel; simulation_kwargs...)
+    NestedSimulation(parent, child; simulation_kwargs...)
 
-Convenience for `Simulation(NestedModel(parent, child_model); simulation_kwargs...)`.
+Convenience for `Simulation(NestedModel(parent, child); simulation_kwargs...)`.
 
 `simulation_kwargs` are forwarded to the `Simulation` constructor (`Δt`,
-`stop_time`, `stop_iteration`, `verbose`, etc.). Parent-sync is handled by
-`NestedModel`'s `time_step!`, so no callback is installed — the result is a
-plain Oceananigans `Simulation` whose model happens to be a `NestedModel`.
+`stop_time`, `stop_iteration`, `verbose`, etc.). Its `Δt` is the exchange interval:
+each step brings the parent, then the child, to the next exchange time.
 """
-NestedSimulation(parent, child_model::AbstractModel; simulation_kwargs...) =
-    Simulation(NestedModel(parent, child_model); simulation_kwargs...)
+NestedSimulation(parent, child; simulation_kwargs...) =
+    Simulation(NestedModel(parent, child); simulation_kwargs...)
