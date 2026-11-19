@@ -170,3 +170,26 @@ end
               scalar(unresisted.interfaces.atmosphere_land_interface.bare.fluxes.water_vapor)
     end
 end
+
+@testset "Bare tile soil resistance: drier soil evaporates less, dew is unresisted" begin
+    for arch in test_architectures
+        resisted   = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
+                                     wet_soil_resistance = ExponentialSoilResistance(Float64))
+        unresisted = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64))
+        bare_vapor_flux(canopy; kw...) =
+            scalar(tiled_land_model(arch; vegetated = canopy, cover_fraction = 0.0, kw...).interfaces.atmosphere_land_interface.bare.fluxes.water_vapor)
+
+        # Saturations 0.9 to 0.1 of a 150 kg m⁻² bucket, across the dry-layer onset at 0.5.
+        evaporation = [bare_vapor_flux(resisted; water) for water in (135.0, 90.0, 75.0, 60.0, 45.0, 15.0)]
+        @test all(evaporation .> 0)
+        @test issorted(evaporation, rev = true)
+
+        # A clear night under nearly saturated air: vapor condenses on the cold skin.
+        ℂ = AtmosphereThermodynamicsParameters(Float64)
+        night = (; shortwave = 0.0, longwave = 260.0, air_temperature = 285.0, land_temperature = 282.0, wind = 2.0, water = 75.0,
+                   air_specific_humidity = 0.97 * saturation_specific_humidity(ℂ, 285.0, 101325.0, AtmosphericThermodynamics.Liquid()))
+        dew = bare_vapor_flux(resisted; night...)
+        @test dew < 0
+        @test dew ≈ bare_vapor_flux(unresisted; night...)
+    end
+end

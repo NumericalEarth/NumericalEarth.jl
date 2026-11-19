@@ -330,12 +330,13 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Specific humidity above a soil surface whose moist-soil branch evaporates through
-`wet_soil_resistance`: the saturated skin of `soil_humidity` (a [`DryLayerHumidity`](@ref))
-reaches the air through the soil surface resistance `rˢᵒⁱ` (an
-[`ExponentialSoilResistance`](@ref)) in series with the aerodynamic conductance. The
-dry-layer branch is that of `soil_humidity`, and `wet_soil_resistance = nothing` leaves the
-skin saturated.
+Specific humidity above a soil surface that evaporates through `wet_soil_resistance`, the
+surface resistance `rˢᵒⁱ` of moist soil (an [`ExponentialSoilResistance`](@ref)), in series
+with the aerodynamic conductance. On the moist branch of `soil_humidity` (a
+[`DryLayerHumidity`](@ref)) vapor leaves the saturated skin through `rˢᵒⁱ`. Below the
+dry-layer onset saturation `𝒮ᶜ`, `rˢᵒⁱ` holds its value at `𝒮ᶜ` and the dry layer adds its
+diffusion resistance in series, so evaporation falls as the soil dries. Dew deposits without
+`rˢᵒⁱ`. `wet_soil_resistance = nothing` leaves `soil_humidity` unchanged.
 """
 struct SoilResistanceHumidity{S, W}
     soil_humidity       :: S
@@ -355,13 +356,20 @@ land_state_accessors(q::SoilResistanceHumidity) = land_state_accessors(q.soil_hu
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳⁿᵈ⁺, _, _ = dry_layer_terms(q.soil_humidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
 
+    ρᵃᵗ  = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     Gᵃ   = aerodynamic_vapor_conductance(Ψⁱⁿ, Ψₐ, ℂᵃᵗ)
+
+    𝒮ᶜ   = convert(FT, q.soil_humidity.dry_layer_depth.dry_layer_onset_saturation)
+    rˢᵒⁱ = soil_surface_resistance(q.wet_soil_resistance, max(Ψˡᵃ.𝒮, 𝒮ᶜ))
+
+    # Each branch condenses without rˢᵒⁱ, so its flux stays continuous through zero.
+    # Dry branch: the dry layer and rˢᵒⁱ in series, then the aerodynamic conductance.
+    Gᵉ   = ifelse(qᵉ > Ψₐ.q, ρᵃᵗ * Gᵉ / (ρᵃᵗ + Gᵉ * rˢᵒⁱ), Gᵉ)
     qⁱⁿ★ = conductance_weighted_node(Ψⁱⁿ.specific_humidity, (Gᵉ, Gᵃ), (qᵉ, Ψₐ.q))
 
     # Moist branch: (ρᵃᵗ / rˢᵒⁱ) (qᵍʳⁿᵈ⁺ - qⁱⁿ⁺) = Gᵃ (qⁱⁿ⁺ - qᵃᵗ), so the humidity drops from
     # qᵍʳⁿᵈ⁺ by the soil's share of the series resistance.
-    ρᵃᵗ  = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
-    rˢᵒⁱ = soil_surface_resistance(q.wet_soil_resistance, Ψˡᵃ.𝒮)
+    rˢᵒⁱ = ifelse(qᵍʳⁿᵈ⁺ > Ψₐ.q, rˢᵒⁱ, zero(rˢᵒⁱ))
     qⁱⁿ⁺ = qᵍʳⁿᵈ⁺ - Gᵃ * rˢᵒⁱ / (ρᵃᵗ + Gᵃ * rˢᵒⁱ) * (qᵍʳⁿᵈ⁺ - Ψₐ.q)
 
     return convert(FT, qⁱⁿ⁺ + fᵈᵇʳ * (qⁱⁿ★ - qⁱⁿ⁺))
