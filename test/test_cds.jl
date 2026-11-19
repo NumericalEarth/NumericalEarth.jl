@@ -378,11 +378,11 @@ end
         @test haskey(req, "area")
         @test req["area"] == [50.5, -10.5, 39.5, 5.5]
 
-        # A global longitude span is not padded past 360°
-        for longitude in ((0, 360), (-180, 180))
+        # A longitude span that padding would push past 360° requests the full circle
+        for (longitude, expected) in (((0, 360), (0, 360)), ((-180, 180), (-180, 180)), ((0, 359.5), (0, 360)))
             arctic = NumericalEarth.DataWrangling.BoundingBox(; longitude, latitude = (50, 90))
             req = CDSExt.build_era5_request(:temperature, sl, dt; region=arctic)
-            @test req["area"] == [90.0, longitude[1], 49.5, longitude[2]]
+            @test req["area"] == [90.0, expected[1], 49.5, expected[2]]
         end
     end
 
