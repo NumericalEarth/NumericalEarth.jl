@@ -102,7 +102,7 @@ Step `simulation` with its own Δt until its clock reaches `time`, shortening th
 """
 function step_until!(simulation::Simulation, time)
     simulation.stop_time = time
-    while component_model(simulation).clock.time < time
+    while component_model(simulation).clock.time < simulation.stop_time
         time_step!(simulation)
     end
     return nothing

@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth
 using NumericalEarth.NestedModels: NestedModel, ParentSnapshots, exchange_state!, parent_boundary_conditions, nested_atmosphere_model,
-                                   interpolate_from_parent!, interpolation_node
+                                   interpolate_from_parent!, interpolation_node, step_until!
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
@@ -314,6 +314,13 @@ end
 
     exchange_state!(snapshots, 2)    # the same time refreshes without shifting
     @test all(interior(snapshots.windows.c[1]) .≈ 1)
+end
+
+@testset "step_until! lands a Float32 clock on a Float64 time that rounds down" begin
+    grid = RectilinearGrid(Float32; size = (2, 2, 2), extent = (1, 1, 1))
+    simulation = Simulation(NonhydrostaticModel(grid); Δt = Inf, verbose = false)
+    step_until!(simulation, 0.7)
+    @test simulation.model.clock.time == Float32(0.7)
 end
 
 # A "rolling FieldTimeSeries" drives a child from a live parent field: a 2-slot FTS whose slots
