@@ -52,6 +52,16 @@ function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     return land
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Return a `PrescribedLand` holding the freshwater components of `land` and `other`, e.g. GloFAS rivers
+and GEUS icebergs. Components of `other` replace those of `land` with the same name.
+"""
+Base.merge(land::PrescribedLand, other::PrescribedLand) =
+    PrescribedLand(merge(land.freshwater_flux, other.freshwater_flux);
+                   river_routing = merge(land.river_routing, other.river_routing))
+
 @inline function Oceananigans.TimeSteppers.update_state!(land::PrescribedLand)
     time = Time(land.clock.time)
     ftses = extract_field_time_series(land)
