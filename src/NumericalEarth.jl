@@ -87,6 +87,8 @@ export
     JRA55PrescribedLand,
     GloFASPrescribedLand,
     GloFASReanalysis,
+    GEUSPrescribedLand,
+    GEUSSolidIceDischarge,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     FreezingLimitedOceanTemperature,
@@ -314,6 +316,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
+using .DataWrangling.GEUS
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED
