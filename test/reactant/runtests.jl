@@ -7,6 +7,9 @@
 #   julia --project=test/reactant test/reactant/runtests.jl                 # every group
 #   julia --project=test/reactant test/reactant/runtests.jl unit nested     # some of them
 #   julia --project=test/reactant test/reactant/test_reactant_unit.jl       # one file
+#
+# test_reactant_nested_gradient.jl, the gradient through an hour of a nested atmosphere, is not a group: it runs
+# on the GPU in its own workflow (.github/workflows/nested-gradient.yml), or locally with NESTED_GRADIENT_CPU=true.
 
 reactant_test_groups = ("unit", "coupled", "nested")
 selected_groups = isempty(ARGS) ? reactant_test_groups : ARGS
