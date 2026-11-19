@@ -669,8 +669,8 @@ end
                                         halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
     condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
-    resident = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates)
-    moving = nested_atmosphere_model(parent, child_grid; parent_condensates = condensates, time_indices_in_memory = 3)
+    resident = nested_atmosphere_model(parent, child_grid; initialize = false, parent_condensates = condensates)
+    moving = nested_atmosphere_model(parent, child_grid; initialize = false, parent_condensates = condensates, time_indices_in_memory = 3)
     @test length(times) > 3
     @test length(resident.exchanger.prognostic.ρᵈ.backend) == length(times)
     @test length(moving.exchanger.prognostic.ρᵈ.backend) == 3
@@ -705,7 +705,7 @@ end
     @test default[tke_name].bounds.maximum_value == Inf
     @test !haskey(ext.default_nested_scalar_advection(microphysics), tke_name)   # no closure, no TKE entry
 
-    nested = nested_atmosphere_model(parent, child_grid; closure,
+    nested = nested_atmosphere_model(parent, child_grid; initialize = false, closure,
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
     child_tke_advection = nested.child.advection[tke_name]
     @test child_tke_advection isa WENO
@@ -729,11 +729,11 @@ end
                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
-    default = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    default = nested_atmosphere_model(parent, child_grid; initialize = false, parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
     breeze_damping = Breeze.SplitExplicitTimeDiscretization().damping
     @test typeof(default.child.dynamics.time_discretization.damping) == typeof(breeze_damping)
 
-    nested = nested_atmosphere_model(parent, child_grid;
+    nested = nested_atmosphere_model(parent, child_grid; initialize = false,
                                      time_discretization_kwargs = (; damping = Breeze.NoDivergenceDamping()),
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
 
@@ -759,7 +759,7 @@ end
                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
-    nested = nested_atmosphere_model(parent, child_grid;
+    nested = nested_atmosphere_model(parent, child_grid; initialize = false,
                                      relaxation_rate = 1/300,
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing),
                                      forcing = (θ = Relaxation(rate = 1/600, target = 300.0),))
