@@ -342,6 +342,7 @@ ClimaSeaIce's `ice_concentration` is set with `set!(sea_ice.model, ℵ = ...)`.
 | ``\Psi^{\mathrm{in}}`` | `Ψⁱⁿ` | iterated interface state | The `AbstractInterfaceState` updated at each iteration of `compute_interface_state` |
 | ``\Psi^{\mathrm{at}}``, ``\Psi^{\mathrm{la}}`` | `Ψᵃᵗ`, `Ψˡᵃ` | atmosphere, land state | Pointwise `NamedTuple`s of atmosphere and land quantities read by the interface solver; ``\Psi^{\mathrm{la}}`` holds the keys of `land_state_accessors`, e.g. ``(T, 𝒮)`` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
+| ``\gamma`` | `γ` | convective gustiness ratio | Convective gustiness per unit friction velocity at stability ``\zeta``, ``\beta (-\zeta h_{b\ell} / ϰ Δh^d)^{1/3}`` (–) |
 | ``\Delta h^d`` | `Δhᵈ` | displaced profile height | Height ``\Delta h - d`` above the zero-plane displacement at which the similarity profiles are evaluated (m) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |

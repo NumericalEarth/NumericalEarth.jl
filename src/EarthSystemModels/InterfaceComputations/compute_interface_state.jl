@@ -30,12 +30,12 @@ end
 
 @inline iterating(Ψⁿ, Ψ⁻, iteration, fixed::FixedIterations) = iteration < fixed.iterations
 
-# Whether the trial temperatures Tᵃ and Tᵇ of a root search are still further apart than
-# the tolerance and the floating-point spacing.
-@inline bracketing(Tᵃ, Tᵇ, iteration, convergence::ConvergenceStopCriteria) =
-    (abs(Tᵇ - Tᵃ) > max(convergence.tolerance, eps(Tᵇ))) & (iteration < convergence.maxiter)
+# Whether the trials xᵃ and xᵇ of a root search are still further apart than the tolerance
+# and the floating-point spacing.
+@inline bracketing(xᵃ, xᵇ, iteration, convergence::ConvergenceStopCriteria) =
+    (abs(xᵇ - xᵃ) > max(convergence.tolerance, eps(xᵇ))) & (iteration < convergence.maxiter)
 
-@inline bracketing(Tᵃ, Tᵇ, iteration, fixed::FixedIterations) = iteration < fixed.iterations
+@inline bracketing(xᵃ, xᵇ, iteration, fixed::FixedIterations) = iteration < fixed.iterations
 
 #####
 ##### The solver
