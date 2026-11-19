@@ -8,7 +8,7 @@ using KernelAbstractions: @kernel, @index
 using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 
 """
-    PrescribedOcean(grid, times=[zero(grid)];
+    PrescribedOcean(grid, times=range(zero(grid), step=one(grid), length=1);
                     density = 1025,
                     heat_capacity = 4000,
                     clock = Clock{FT}(time=0),
@@ -27,7 +27,7 @@ Arguments
 =========
 
 - `grid`: An Oceananigans grid for the ocean domain.
-- `times`: Time instances for the prescribed data. Default: `[zero(grid)]` (constant).
+- `times`: Time instances for the prescribed data. Default: `range(zero(grid), step=one(grid), length=1)` (constant).
 
 Keyword Arguments
 =================
@@ -70,7 +70,7 @@ function default_prescribed_velocities(grid, times)
     return (; u, v)
 end
 
-function PrescribedOcean(grid, times=[zero(grid)];
+function PrescribedOcean(grid, times=range(zero(grid), step=one(grid), length=1);
                          FT = eltype(grid),
                          density = 1025,
                          heat_capacity = 4000,
