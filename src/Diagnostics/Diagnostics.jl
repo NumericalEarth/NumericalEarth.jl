@@ -7,15 +7,17 @@ export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
 
 using NumericalEarth: SIGNATURES
 using KernelAbstractions: @index, @kernel
+using SeawaterPolynomials: BoussinesqEquationOfState
 
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: Integral
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BuoyancyFormulations: BuoyancyForce, SeawaterBuoyancy, get_temperature_and_salinity
 using Oceananigans.Fields: Field, FieldStatus, ZeroField
 using Oceananigans.Grids: new_data, inactive_cell, znode, Face, Center, OrthogonalSphericalShellGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
-using Oceananigans.Models: buoyancy_operation
+using Oceananigans.Models: buoyancy_operation, seawater_density
 using Oceananigans.Utils: launch!
 
 using ..EarthSystemModels: EarthSystemModel, NoSeaIceInterfaceModel,

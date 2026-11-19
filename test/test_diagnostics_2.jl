@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Diagnostics: Diagnostics
+using SeawaterPolynomials: TEOS10EquationOfState
 
 for arch in test_architectures
     A = typeof(arch)
@@ -112,5 +113,27 @@ for arch in test_architectures
                 @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
             end
         end
+    end
+end
+
+for arch in test_architectures
+    A = typeof(arch)
+
+    @testset "MixedLayerDepthField on columns with a known mixed layer [$A]" begin
+        grid = RectilinearGrid(arch; size = 100, z = (-1000, 0), topology = (Flat, Flat, Bounded))
+        buoyancy = SeawaterBuoyancy(equation_of_state = TEOS10EquationOfState())
+        T = CenterField(grid)
+        S = CenterField(grid)
+        set!(S, 35)
+
+        # One water mass from the surface to the bottom
+        set!(T, 0)
+        h = compute!(Diagnostics.MixedLayerDepthField(buoyancy, grid, (; T, S)))
+        @test @allowscalar h[1, 1, 1] == 1000
+
+        # Mixed down to 200 m, between the cells centered at 195 m and 205 m
+        set!(T, z -> z > -200 ? 10 : 9)
+        h = compute!(Diagnostics.MixedLayerDepthField(buoyancy, grid, (; T, S)))
+        @test 195 < @allowscalar(h[1, 1, 1]) < 205
     end
 end
