@@ -43,13 +43,13 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
 
         compute!(h)
         if dataset isa ECCO4Monthly
-            @test @allowscalar h[1, 1, 1] ≈ 28.8026943 # m
+            @test Array(interior(h))[1, 1, 1] ≈ 28.8026943 # m
         end
 
         h = MixedLayerDepthField(sb, grid, (T=Tt[2], S=St[2]))
         compute!(h)
         if dataset isa ECCO4Monthly
-            @test @allowscalar h[1, 1, 1] ≈ 16.5178053 # m
+            @test Array(interior(h))[1, 1, 1] ≈ 16.5178053 # m
         end
     end
 end

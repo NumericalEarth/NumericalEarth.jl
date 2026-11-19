@@ -129,11 +129,11 @@ for arch in test_architectures
         # One water mass from the surface to the bottom
         set!(T, 0)
         h = compute!(Diagnostics.MixedLayerDepthField(buoyancy, grid, (; T, S)))
-        @test @allowscalar h[1, 1, 1] == 1000
+        @test Array(interior(h))[1, 1, 1] == 1000
 
         # Mixed down to 200 m, between the cells centered at 195 m and 205 m
         set!(T, z -> z > -200 ? 10 : 9)
         h = compute!(Diagnostics.MixedLayerDepthField(buoyancy, grid, (; T, S)))
-        @test 195 < @allowscalar(h[1, 1, 1]) < 205
+        @test 195 < Array(interior(h))[1, 1, 1] < 205
     end
 end

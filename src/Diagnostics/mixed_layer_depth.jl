@@ -14,6 +14,14 @@ end
 
 Base.summary(mldo::MixedLayerDepthOperand) = "MixedLayerDepthOperand"
 
+@inline function potential_buoyancyᶜᶜᶜ(i, j, k, grid, bm, tracers)
+    T, S = get_temperature_and_salinity(bm, tracers)
+    θ, sᴬ = θ_and_sᴬ(i, j, k, T, S)
+    equation_of_state = bm.equation_of_state
+    ρ′₀ = ρ′(θ, sᴬ, zero(grid), equation_of_state)
+    return - bm.gravitational_acceleration * ρ′₀ / equation_of_state.reference_density
+end
+
 """
 $(SIGNATURES)
 
@@ -22,13 +30,8 @@ compressibility that makes the buoyancy perturbation of a single water mass vary
 """
 potential_buoyancy(bm, grid, tracers) = buoyancy_operation(bm, grid, tracers)
 potential_buoyancy(bm::BuoyancyForce, grid, tracers) = potential_buoyancy(bm.formulation, grid, tracers)
-
-function potential_buoyancy(bm::SeawaterBuoyancy{<:Any, <:BoussinesqEquationOfState}, grid, tracers)
-    T, S = get_temperature_and_salinity(bm, tracers)
-    equation_of_state = bm.equation_of_state
-    potential_density = seawater_density(grid, equation_of_state, T, S, ZeroField())
-    return - bm.gravitational_acceleration / equation_of_state.reference_density * potential_density
-end
+potential_buoyancy(bm::SeawaterBuoyancy{<:Any, <:BoussinesqEquationOfState}, grid, tracers) =
+    KernelFunctionOperation{Center, Center, Center}(potential_buoyancyᶜᶜᶜ, grid, bm, tracers)
 
 function MixedLayerDepthOperand(bm, grid, tracers;
                                 difference_criterion = DR003_BUOYANCY_CRITERION,
@@ -124,10 +127,11 @@ const f = Face()
     bN = b⁻ + w * (b⁺ - b⁻)
 
     # Descend from `k⁻` (first cell below `zʳ`) to the first wet cell where Δb reaches Δb★, and
-    # interpolate between that cell and the level above it. Without such a cell the column is mixed.
-    h = static_column_depthᶜᶜᵃ(i, j, grid)
-    previous_height = zᵣ
-    previous_deficit = zero(FT)
+    # interpolate between that cell and the level above it, which for `k⁻` is the reference level.
+    # Without such a cell the column is mixed.
+    h = η + static_column_depthᶜᶜᵃ(i, j, grid)
+    zₖ₊₁ = min(zᵣ, z⁺)
+    Δbₖ₊₁ = zero(FT)
     mixed = true
 
     @inbounds for k in k⁻:-1:1
@@ -135,11 +139,11 @@ const f = Face()
         Δb = bN - b[i, j, k]
         wet = !inactive_cell(i, j, k, grid)
         crossing = mixed & wet & (Δb ≥ Δb★)
-        z★ = previous_height + (zₖ - previous_height) * (Δb★ - previous_deficit) / (Δb - previous_deficit)
+        z★ = zₖ₊₁ + (zₖ - zₖ₊₁) * (Δb★ - Δbₖ₊₁) / (Δb - Δbₖ₊₁)
         h = ifelse(crossing, η - z★, h)
         mixed = mixed & wet & !crossing
-        previous_height = ifelse(mixed, zₖ, previous_height)
-        previous_deficit = ifelse(mixed, Δb, previous_deficit)
+        zₖ₊₁ = ifelse(mixed, zₖ, zₖ₊₁)
+        Δbₖ₊₁ = ifelse(mixed, Δb, Δbₖ₊₁)
     end
 
     @inbounds mld[i, j, 1] = h
