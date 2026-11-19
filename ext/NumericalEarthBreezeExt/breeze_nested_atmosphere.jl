@@ -21,7 +21,7 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width, default_relaxation_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent, initialize_exchanger!, initialize_on!
+                                   VectorComponent, initialize_on!
 
 using Oceananigans:
     Oceananigans,
@@ -597,9 +597,9 @@ function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Cent
     return field
 end
 
-# Initialize the nested model from its parent, in one call: fill the exchanger's window, then set the child
-# from the parent-derived `prognostic` (by default the exchanger's, the SAME
-# state that drives the lateral boundaries), interpolated straight into the child's prognostic fields — so
+# Initialize the nested model from its parent, in one call: set the child from the parent-derived
+# `prognostic` (by default the exchanger's, filled when the exchanger is built: the SAME state that drives
+# the lateral boundaries), interpolated straight into the child's prognostic fields — so
 # the interior IC and the prescribed boundary agree at the walls (no standing pressure/density jump). `set!`
 # of those same fields reconciles the densities and recomputes the Exner reference from the domain-mean
 # state; then graft ρw ← ρw − ρw̃ so the flow follows the terrain. Kernels only up to the balancer (on a
@@ -619,9 +619,6 @@ end
 
 # Positional, so `prognostic` reaches a `@jit` program as an argument rather than a constant keyword.
 function initialize_nested_child!(nested_model, balancer, prognostic)
-    # Refills the window construction filled, from the same levels
-    initialize_exchanger!(nested_model.exchanger)
-
     child = nested_model.child
     fields = prognostic_fields(child)
     moisture_name = moisture_prognostic_name(child.microphysics)
