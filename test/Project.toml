@@ -43,8 +43,12 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
+ClimaSeaIce = {url = "https://github.com/dkytezab/ClimaSeaIce.jl", rev = "dkzdev/oceananigans-breeze-main"}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "dkzdev/oceananigans-breeze-main"}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 NumericalEarth = {path = ".."}
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
+OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "dkzdev/oceananigans-breeze-main"}
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"
