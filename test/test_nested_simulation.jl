@@ -582,6 +582,18 @@ end
     @test moisture_prognostic_name(μ) == :ρqᵉ
 end
 
+@testset "nested child microphysics follows a Float32 child grid" begin
+    parent_grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                                  topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+
+    child_grid = RectilinearGrid(Float32; size = (8, 8, 8), x = (-0.5, 0.5), y = (-0.5, 0.5), z = (0, 1),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    model = nested_atmosphere_model(parent, child_grid; parent_condensates = nothing, coriolis = nothing)
+    @test model.child.microphysics.solver.abstol isa Float32
+end
+
 @testset "state exchanger: Float32 parent, Float64 constants" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     constants = ThermodynamicConstants(Float64)
