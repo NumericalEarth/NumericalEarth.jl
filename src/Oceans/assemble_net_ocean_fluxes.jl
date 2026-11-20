@@ -11,13 +11,16 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 #####
 
 # Fallback for an ocean-only model (it has no interfaces!)
-EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansOceanModels) = nothing
 
-function EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations)
-    update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
-    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.model.biogeochemistry, ocean, ocean.model.grid)
+function EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansOceanModels)
+    update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+    update_net_ocean_biogeochemical_fluxes!(coupled_model, ocean.biogeochemistry, ocean, ocean.grid)
     return nothing
 end
+
+EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
+    EarthSystemModels.update_net_fluxes!(coupled_model, ocean.model)
 
 update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry, ocean, grid) = nothing
 

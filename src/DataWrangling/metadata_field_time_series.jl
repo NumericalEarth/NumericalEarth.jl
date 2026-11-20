@@ -25,6 +25,8 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 
+- `start_time`: The date at time `0` of the series. Default: the first date of `metadata`.
+
 - `prefetch`: If `true`, the next window is loaded on a background task, so that reloading it costs one copy.
               Doubles the memory the series holds, needs at least two Julia threads, and is not available
               on a distributed grid. Default: `false`.
@@ -40,12 +42,13 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
                                                     cache_inpainted_data = true,
+                                                    start_time = first(metadata).dates,
                                                     prefetch = false)
 
     Downloads.download(metadata)
 
     # Float64 like the model clock: past 2^28 s a Float32 axis rounds the nodes by up to 32 s
-    times = native_times(metadata)
+    times = native_times(metadata; start_time)
 
     # A window-averaged series repeats over the span its windows tile, not over the span of its
     # nodes, which sit half a window inside it at each end. Oceananigans infers the latter.
