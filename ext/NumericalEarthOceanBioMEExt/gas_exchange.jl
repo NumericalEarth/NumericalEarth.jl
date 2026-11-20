@@ -32,12 +32,16 @@ surface_wind_speed(exchanger) = Field(sqrt(exchanger.atmosphere.state.u^2 + exch
 # prescribed atmosphere pressure is in Pa, the gas exchange takes atm
 surface_atmospheric_pressure(exchanger) = Field(exchanger.atmosphere.state.p / ATM)
 
+# the ocean's salinity is TEOS-10 Absolute Salinity (g/kg), the gas exchange takes practical
+surface_practical_salinity(ocean) = Field(ocean.model.tracers.S * (35 / 35.16504); indices = (:, :, size(ocean.model.grid, 3)))
+
 # `warm_start` (storing the surface pH to start the next carbon chemistry solve from) only applies
 # to the carbon chemistry, so is not passed on to the other exchanges. The grid is always available
 # here so it defaults to on
 function biogeochemical_interface(exchanger, ocean, biogeochemistry::DiscreteBiogeochemistry{<:NutrientsPlanktonDetritus}; warm_start = true, kwargs...)
     gas_exchange_state = (wind_speed = surface_wind_speed(exchanger),
-                          atmospheric_pressure = surface_atmospheric_pressure(exchanger))
+                          atmospheric_pressure = surface_atmospheric_pressure(exchanger),
+                          practical_salinity = surface_practical_salinity(ocean))
 
     return merge(
         (; gas_exchange_state),
@@ -92,18 +96,21 @@ function update_net_ocean_biogeochemical_fluxes!(coupled_model, biogeochemistry:
 
     compute!(properties.gas_exchange_state.wind_speed)
     compute!(properties.gas_exchange_state.atmospheric_pressure)
+    compute!(properties.gas_exchange_state.practical_salinity)
 
     exchangers = gas_transfer_parametrisations(biogeochemistry, properties)
 
     ℵ = coupled_model.sea_ice.model.ice_concentration
 
-    required_ocean_tracers = (:T, :S,
-                              if_phosphate_available(ocean.model.tracers)...,
+    required_ocean_tracers = (if_phosphate_available(ocean.model.tracers)...,
                               if_silicon_available(ocean.model.tracers)...,
                               required_biogeochemical_tracers(biogeochemistry.underlying_biogeochemistry.oxygen)...,
                               required_biogeochemical_tracers(biogeochemistry.underlying_biogeochemistry.inorganic_carbon)...)
 
-    ocean_tracers = ocean.model.tracers[required_ocean_tracers]
+    # the exchanger's temperature is the potential temperature
+    ocean_tracers = merge((T = coupled_model.interfaces.exchanger.ocean.state.T,
+                           S = properties.gas_exchange_state.practical_salinity),
+                          ocean.model.tracers[required_ocean_tracers])
 
     fluxes = tracer_fluxes(biogeochemistry, coupled_model.interfaces.net_fluxes.ocean)
 
