@@ -62,7 +62,8 @@ end
                                      z = (-1, 0), topology = (Flat, Flat, Bounded))
         atmosphere = PrescribedAtmosphere(grid, [0.0, 1.0e8])
         land = SlabLand(grid)
-        fluxes = SimilarityTheoryFluxes(; solver_stop_criteria=FixedIterations(8))
+        stability_functions = NumericalEarth.EarthSystemModels.InterfaceComputations.atmosphere_land_stability_functions()
+        fluxes = SimilarityTheoryFluxes(; stability_functions, solver_stop_criteria=FixedIterations(8))
         model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes=fluxes, atmosphere_land_interface_state=(; temperature, specific_humidity=BulkHumidity()))
         interface = model.interfaces.atmosphere_land_interface
         set!(land; T=290)

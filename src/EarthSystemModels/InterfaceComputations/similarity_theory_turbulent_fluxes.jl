@@ -245,6 +245,7 @@ struct COARELogarithmicSimilarityProfile end
 
 @inline function similarity_profile(::LogarithmicSimilarityProfile, stability_function, h, ℓ, L)
     Φn = log(h / ℓ)
+    L  = bounded_obukhov_length(stability_function, h, L)
     ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
     ψℓ = inner_stability_profile(stability_function, ℓ / L)
@@ -895,7 +896,8 @@ unstable functions of [zeng1998intercomparison](@citet)
 ([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)),
 bounded at ``|ζ| ≤`` `maximum_stability_parameter`, and the linear stable function
 ``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter` (CLM4.5 bounds it at 2,
-CLM5 at 0.5, Noah-MP at 1).
+CLM5 at 0.5, Noah-MP at 1). The bounds limit the Obukhov length, so the profile sees the same length at
+the roughness height.
 """
 function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
                                              maximum_stability_parameter = 100,
@@ -910,6 +912,15 @@ function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
                    FreeConvectionScalarStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
     return SimilarityScales(momentum, scalar, scalar)
 end
+
+# The Obukhov length that both heights of a similarity profile see. The land stability functions bound
+# the stability parameter h / L through it, as CLM does.
+@inline bounded_obukhov_length(ψ, h, L) = L
+
+@inline bounded_obukhov_length(ψ::SplitStabilityFunction{<:LinearStableStabilityFunction,
+                                                         <:Union{FreeConvectionMomentumStabilityFunction,
+                                                                 FreeConvectionScalarStabilityFunction}}, h, L) =
+    h / clamp(h / L, -ψ.unstable.maximum_stability_parameter, ψ.stable.maximum_stability_parameter)
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()
