@@ -5,7 +5,7 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NumericalEarth.DataWrangling: metadata_path, BoundingBox
+using NumericalEarth.DataWrangling: metadata_path, inpainted_metadata_path, NearestNeighborInpainting, BoundingBox
 using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
 using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
@@ -137,6 +137,24 @@ end
         Nx, Ny, Nz = size(grid)
         @test all(Tᵉˣ[i, j, 1] == θ_from_Θ(max(0, S[i, j, Nz]), T[i, j, Nz]) for i in 0:Nx+1, j in 0:Ny+1)
     end
+end
+
+@testset "Distributed inpainted-data cache" begin
+    # one data directory for all ranks
+    dir = MPI.bcast(mktempdir(), MPI.COMM_WORLD)
+    metadatum  = Metadatum(:temperature; dataset = SyntheticOcean(), dir)
+    inpainting = NearestNeighborInpainting(10)
+    @root download(metadatum)
+
+    # Only rank 0 needs this field: it inpaints it and caches it without waiting for the other ranks
+    MPI.Comm_rank(MPI.COMM_WORLD) == 0 && Field(metadatum; inpainting)
+    @test MPI.Allreduce(1, +, MPI.COMM_WORLD) == MPI.Comm_size(MPI.COMM_WORLD)
+    @test isfile(inpainted_metadata_path(metadatum))
+
+    cached = Field(metadatum; inpainting)
+    fresh  = Field(metadatum; inpainting, cache_inpainted_data = false)
+    @test interior(cached) == interior(fresh)
+    MPI.Barrier(MPI.COMM_WORLD)    # the directory goes when rank 0 exits
 end
 
 # Every rank regularizes the west boundary condition, but only the westmost ranks keep it, so a source
