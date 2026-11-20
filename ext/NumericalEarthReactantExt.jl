@@ -3,10 +3,11 @@ module NumericalEarthReactantExt
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
-using Oceananigans.TimeSteppers: update_state!, time_step!
+using Oceananigans.TimeSteppers: Clock, update_state!, time_step!
 
 using NumericalEarth: EarthSystemModel
 using NumericalEarth.EarthSystemModels: EarthSystemModels, compute_land_fluxes!, initialize_land_surface!
+using NumericalEarth.NestedModels: NestedModels
 
 using Reactant: Reactant, @jit, @trace
 
@@ -47,5 +48,38 @@ end
 EarthSystemModels.same_time_type(::Reactant.ConcreteRNumber{FT}, ::TT) where {FT,TT} = FT == TT
 EarthSystemModels.same_time_type(::Reactant.ConcreteRNumber{FT}, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
 EarthSystemModels.same_time_type(::FT, ::Reactant.ConcreteRNumber{TT}) where {FT,TT} = FT == TT
+
+# Reactant's `tick!` advances the time, the iteration and the last Δt of a device clock as device numbers, so
+# `Clock{TT}(time = 0)`, which leaves the iteration a host `Int`, cannot be ticked inside a compiled step. The kernel
+# time type is the time's own, as `Clock{TT}` gives a host clock, and the numbers are placed as the atmosphere's are.
+function Base.zero(clock::Clock{<:Reactant.ConcreteRNumber{FT}}) where FT
+    sharding = Reactant.Sharding.is_sharded(clock.time) ? clock.time.sharding : Reactant.Sharding.NoSharding()
+    device_number(x) = Reactant.ConcreteRNumber(x; sharding)
+    return Clock(; time = device_number(zero(FT)), iteration = device_number(0), stage = 1,
+                   last_Δt = device_number(convert(FT, Inf)), last_stage_Δt = device_number(convert(FT, Inf)),
+                   kernel_time_type = FT)
+end
+
+# The device clock `Clock(grid)` gives on ReactantState, for constructors that build their clock before the grid
+EarthSystemModels.default_clock(::ReactantState, FT) =
+    Clock(; time = Reactant.ConcreteRNumber(0.0), iteration = Reactant.ConcreteRNumber(0),
+            stage = 1, last_Δt = Reactant.ConcreteRNumber(Inf),
+            last_stage_Δt = Reactant.ConcreteRNumber(Inf), kernel_time_type = FT)
+
+# A nested parent following the child's clock inside a compiled step: write the child's values into the
+# parent's own traced numbers, as Oceananigans' traced `tick!` does, rather than rebinding the parent's
+# fields to the child's. Rebinding leaves both clocks holding one result buffer after the call, which the
+# next call refuses to donate twice.
+const TracedClock = Clock{<:Reactant.TracedRNumber}
+
+function NestedModels.copy_clock!(clock::TracedClock, source)
+    assign!(clock.time, source.time)
+    assign!(clock.iteration, source.iteration)
+    assign!(clock.last_Δt, source.last_Δt)
+    assign!(clock.last_stage_Δt, source.last_stage_Δt)
+    return nothing
+end
+
+assign!(number::Reactant.TracedRNumber, value) = (number.mlir_data = Reactant.promote_to(typeof(number), value).mlir_data)
 
 end # module NumericalEarthReactantExt

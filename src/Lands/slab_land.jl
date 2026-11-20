@@ -145,7 +145,7 @@ SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
                  fluxes, diagnostics, prognostic, energy, hydrology, surface_storage)
 
 """
-$(TYPEDSIGNATURES)
+$(SIGNATURES)
 
 Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
@@ -158,7 +158,7 @@ function SlabLand(grid;
                   energy    = SlabEnergy(eltype(grid)),
                   hydrology = BucketHydrology(eltype(grid)),
                   surface_storage = nothing,
-                  clock     = Clock{eltype(grid)}(time = 0))
+                  clock     = Clock(grid))
 
     surface_storage = materialize_surface_storage(surface_storage, grid)
     temperature   = CenterField(grid)
@@ -224,7 +224,8 @@ and every `FieldTimeSeries` among them is brought into memory at that time.
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     prepare_time_step!(land.hydrology, land)
     tick!(land.clock, Δt)
-    time = land.clock.time
+    # The clock accumulates in Float64; the closures' kernels see the time at the grid's precision
+    time = clock_convert(kernel_time_type(land.clock), land.clock.time)
 
     for fts in extract_field_time_series(land)
         update_field_time_series!(fts, Time(time))
@@ -257,7 +258,7 @@ function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
 end
 
 """
-    set!(land::SlabLand; T=nothing, M=nothing, extra_prognostics...)
+$(SIGNATURES)
 
 Set the slab's prognostic bulk temperature `T` and water storage `M` and refresh
 diagnostics in one call (so `saturation` is consistent with `M` afterward).

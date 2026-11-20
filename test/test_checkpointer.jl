@@ -247,3 +247,19 @@ end
         test_clock_time_and_iteration(simulation, 2)
     end
 end
+
+@testset "PrescribedOcean checkpointing" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        grid = RectilinearGrid(arch; size = (4, 4), x = (0, 1), y = (0, 1), topology = (Periodic, Periodic, Flat))
+
+        ocean = PrescribedOcean(grid, [0.0, 100.0])
+        Oceananigans.TimeSteppers.time_step!(ocean, 30)
+
+        restored = PrescribedOcean(grid, [0.0, 100.0])
+        Oceananigans.restore_prognostic_state!(restored, Oceananigans.prognostic_state(ocean))
+
+        @test restored.clock.time == 30
+        @test restored.clock.iteration == 1
+    end
+end

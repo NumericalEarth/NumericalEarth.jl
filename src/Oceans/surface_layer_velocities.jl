@@ -1,3 +1,4 @@
+using Oceananigans.Grids: peripheral_node
 using Oceananigans.Operators: Δz
 
 #####
@@ -30,8 +31,13 @@ function EarthSystemModels.surface_layer_velocities(ocean::OceananigansModelSimu
     u, v = ocean.model.velocities.u, ocean.model.velocities.v
     H = convert(eltype(grid), reference_depth)
 
-    uˢˡ = Field(KernelFunctionOperation{Face, Center, Nothing}(surface_layer_uᶠᶜᵃ, grid, u, H))
-    vˢˡ = Field(KernelFunctionOperation{Center, Face, Nothing}(surface_layer_vᶜᶠᵃ, grid, v, H))
+    u_boundary_conditions = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    v_boundary_conditions = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+
+    uˢˡ = Field(KernelFunctionOperation{Face, Center, Nothing}(surface_layer_uᶠᶜᵃ, grid, u, H);
+                boundary_conditions = u_boundary_conditions)
+    vˢˡ = Field(KernelFunctionOperation{Center, Face, Nothing}(surface_layer_vᶜᶠᵃ, grid, v, H);
+                boundary_conditions = v_boundary_conditions)
 
     compute!(uˢˡ)
     compute!(vˢˡ)

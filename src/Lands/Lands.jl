@@ -4,7 +4,7 @@ export AbstractLand,
        PrescribedLand,
        RiverRouting,
        build_river_routing,
-       coastal_outlet_indices,
+       river_mouth_indices,
        routable_grid,
        # Composable container
        SlabLand, PrognosticCanopyAir, PrognosticSkin,
@@ -48,7 +48,8 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
-using DocStringExtensions: TYPEDEF, TYPEDSIGNATURES
+using Distances: haversine
+using DocStringExtensions: TYPEDEF
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -57,17 +58,17 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField, interior, regrid!, compute!,
                            dimension_faces
 using Oceananigans.Grids: grid_name, Center, Face, LatitudeLongitudeGrid, Bounded, Flat,
-                          znodes, λnode, φnode, hack_cosd, hack_sind
+                          znodes, λnode, φnode, λnodes, φnodes, hack_cosd, hack_sind
 using Oceananigans.Operators: Δxᶜᶜᶜ, Δyᶜᶜᶜ
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
-using Oceananigans.TimeSteppers: Clock, tick!, update_state!
-using Oceananigans.Units: Time
+using Oceananigans.TimeSteppers: Clock, tick!, update_state!, clock_convert, kernel_time_type
+using Oceananigans.Units: Time, days, kilometers
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 using Base: ForwardOrdering
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES, TYPEDSIGNATURES
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
-using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations,
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations,
                                                  CanopyInterface, EnergyBalanceTemperature,
                                                  ConstantTortuosity, PowerLawTortuosity,
                                                  effective_vapor_diffusivity,

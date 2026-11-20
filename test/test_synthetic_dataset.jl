@@ -3,7 +3,7 @@ include("download_utils.jl")
 
 using NumericalEarth.DataWrangling: NearestNeighborInpainting, native_times
 using Oceananigans.Grids: topology, λnodes, φnodes, znodes
-using Oceananigans.OutputReaders: time_indices
+using Oceananigans.OutputReaders: time_indices, update_field_time_series!
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units
 
@@ -92,5 +92,27 @@ for arch in test_architectures
         @test all(Array(interior(atmosphere.pressure[1])) .== 101325)
         @test all(Array(interior(radiation.downwelling_longwave[1])) .== 250)
         @test all(Array(interior(land.freshwater_flux.rivers[1])) .== 1f-5)
+    end
+
+    @testset "$A prefetching FieldTimeSeries" begin
+        metadata = Metadata(:temperature; dataset = SyntheticAtmosphere(), dir = mktempdir())
+        Downloads.download(metadata)
+        for (n, metadatum) in enumerate(metadata)
+            NCDataset(metadata_path(metadatum), "a") do ds
+                ds["temperature"][:, :] .= n
+            end
+        end
+
+        fts = FieldTimeSeries(metadata, arch; time_indices_in_memory = 3, inpainting = nothing, prefetch = true)
+        Nt = length(fts.times)
+
+        # Forward through the cycle and past its end, then a jump the background load does not anticipate
+        for n in [1:Nt; 1:3; 7]
+            update_field_time_series!(fts, n, mod1(n + 1, Nt))
+            @test all(Array(interior(fts[n])) .== n)
+        end
+
+        restoring = DatasetRestoring(metadata, arch; rate = 1, inpainting = nothing, prefetch = true)
+        @test contains(sprint(show, restoring), "SyntheticAtmosphere")
     end
 end
