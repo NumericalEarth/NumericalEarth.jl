@@ -1,7 +1,7 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: znode
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
+using ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient, update_external_stress!
 
 using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
@@ -63,6 +63,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     if !isnothing(dynamics)
         kernel_parameters = interface_kernel_parameters(grid)
         τₛ = dynamics.external_momentum_stresses.bottom
+        update_external_stress!(τₛ, grid)
         launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
                 fluxes, grid, clock, hˢⁱ, ℵˢⁱ, uˢⁱ, vˢⁱ, τₛ)
     else
