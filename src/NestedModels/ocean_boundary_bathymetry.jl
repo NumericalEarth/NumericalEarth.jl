@@ -1,11 +1,6 @@
 #####
 ##### Blending a nested ocean's bathymetry toward its parent's along the open sides
 #####
-#
-# The barotropic transport through an open side is ∫u dz over the child's own water column, so where the
-# child's seafloor differs from the parent's, the parent transport it is driven with does not fit the
-# geometry it enters. Blending the child bathymetry toward the parent's over the outermost cells of each
-# open side removes that mismatch while leaving the interior at the child's own resolution.
 
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.ImmersedBoundaries: AbstractGridFittedBottom, GridFittedBottom, PartialCellBottom, ImmersedBoundaryGrid,
@@ -14,36 +9,8 @@ using KernelAbstractions: @kernel, @index
 
 const GridFittedBottomGrid = ImmersedBoundaryGrid{<:Any, <:Any, <:Any, <:Any, <:Any, <:AbstractGridFittedBottom}
 
-"""
-    blend_parent_bathymetry(grid, parent_bottom_height, sides; width, minimum_depth)
-
-Return a copy of `grid` whose immersed bottom is blended toward `parent_bottom_height` (a bottom height `Field`,
-interpolated onto `grid`) within `width` cells of each side in `sides`, with a minimum `width` of 2. The weight of
-the parent's seafloor is 1 in the boundary cell and the first cell inward, and falls as a raised cosine to 0 `width`
-cells inward. The boundary cell then takes the seafloor of the first cell inward, so that the boundary does not sit
-in a trench or behind a sill: a boundary cell deeper than its neighbor would be a pocket closed on its inward side.
-Columns that are land in either bathymetry keep the child's seafloor, so the blend moves no coastline, and the
-blended seafloor is at least `minimum_depth` deep. The copy keeps the immersed boundary of `grid` (a
-`PartialCellBottom` its minimum fractional cell height) and
-rebuilds any active cells map for the blended seafloor; `grid` itself is not changed. A grid without a grid-fitted
-bottom, or a parent without a known seafloor (`nothing`), is returned as it is.
-"""
+# The child's bottom blended toward the parent's with a raised cosine within `width` cells (at least 2) of `sides`
 blend_parent_bathymetry(grid, parent_bottom_height, sides; kw...) = grid
-
-# The parent's seafloor at the points of `field`. `interpolate!` cannot read a field on an
-# `OrthogonalSphericalShellGrid`: a seafloor on one is taken to be on the grid of `field`, and is averaged onto its points.
-interpolate_bottom_height!(field, bottom_height, grid) = interpolate!(field, bottom_height)
-
-@inline bottom_height_at(i, j, k, grid, ::Center, ::Center, h) = @inbounds h[i, j, 1]
-@inline bottom_height_at(i, j, k, grid, ::Face, ::Center, h) = @inbounds (h[i - 1, j, 1] + h[i, j, 1]) / 2
-@inline bottom_height_at(i, j, k, grid, ::Center, ::Face, h) = @inbounds (h[i, j - 1, 1] + h[i, j, 1]) / 2
-
-function interpolate_bottom_height!(field, bottom_height, ::OrthogonalSphericalShellGrid)
-    LX, LY, _ = location(field)
-    field .= KernelFunctionOperation{LX, LY, Nothing}(bottom_height_at, field.grid, LX(), LY(), bottom_height)
-    return field
-end
-
 blend_parent_bathymetry(grid::GridFittedBottomGrid, ::Nothing, sides; kw...) = grid
 
 function blend_parent_bathymetry(grid::GridFittedBottomGrid, parent_bottom_height, sides; width, minimum_depth)
@@ -56,18 +23,19 @@ function blend_parent_bathymetry(grid::GridFittedBottomGrid, parent_bottom_heigh
     set!(bottom_height, bottom_height_field(grid))
 
     parent_height = Field{Center, Center, Nothing}(underlying_grid)
-    interpolate_bottom_height!(parent_height, parent_bottom_height, parent_bottom_height.grid)
+    interpolate!(parent_height, parent_bottom_height)
 
     Nx, Ny, _ = size(underlying_grid)
     open = map(side -> side in sides, lateral_sides)
+    west, east, south, north = open
     FT = eltype(underlying_grid)
 
     launch!(architecture(grid), underlying_grid, :xy, _blend_parent_bathymetry!,
             bottom_height, parent_height, width, Nx, Ny, open, convert(FT, minimum_depth))
 
     # South and north first, so that the corners end up level with both of their neighbors
-    launch!(architecture(grid), underlying_grid, :xy, _level_south_north_boundary_cells!, bottom_height, Ny, open)
-    launch!(architecture(grid), underlying_grid, :xy, _level_west_east_boundary_cells!, bottom_height, Nx, open)
+    launch!(architecture(grid), underlying_grid, :xy, _level_boundary_cells!, bottom_height, Val(2), Ny, south, north)
+    launch!(architecture(grid), underlying_grid, :xy, _level_boundary_cells!, bottom_height, Val(1), Nx, west, east)
 
     immersed_boundary = with_bottom_height(grid.immersed_boundary, bottom_height)
 
@@ -98,26 +66,16 @@ with_bottom_height(ib::PartialCellBottom, bottom_height) = PartialCellBottom(bot
     end
 end
 
-@inline level_with(hᵇ, hⁱ, boundary_cell) = ifelse(boundary_cell & (hᵇ < 0) & (hⁱ < 0), hⁱ, hᵇ)
-
-@kernel function _level_south_north_boundary_cells!(bottom_height, Ny, open)
+# Level the boundary cells of the sides normal to dimension `dim`, `N` cells apart, with their inward neighbors
+@kernel function _level_boundary_cells!(bottom_height, dim, N, left_open, right_open)
     i, j = @index(Global, NTuple)
-    _, _, south, north = open
+    n, s = horizontal_indices(dim, i, j)
 
     @inbounds begin
-        inward = ifelse(j == 1, 2, Ny - 1)
-        boundary_cell = (south & (j == 1)) | (north & (j == Ny))
-        bottom_height[i, j, 1] = level_with(bottom_height[i, j, 1], bottom_height[i, inward, 1], boundary_cell)
-    end
-end
-
-@kernel function _level_west_east_boundary_cells!(bottom_height, Nx, open)
-    i, j = @index(Global, NTuple)
-    west, east, _, _ = open
-
-    @inbounds begin
-        inward = ifelse(i == 1, 2, Nx - 1)
-        boundary_cell = (west & (i == 1)) | (east & (i == Nx))
-        bottom_height[i, j, 1] = level_with(bottom_height[i, j, 1], bottom_height[inward, j, 1], boundary_cell)
+        inward = ifelse(n == 1, 2, N - 1)
+        boundary_cell = (left_open & (n == 1)) | (right_open & (n == N))
+        hᵇ = bottom_height[i, j, 1]
+        hⁱ = bottom_height[horizontal_indices(dim, inward, s)..., 1]
+        bottom_height[i, j, 1] = ifelse(boundary_cell & (hᵇ < 0) & (hⁱ < 0), hⁱ, hᵇ)
     end
 end

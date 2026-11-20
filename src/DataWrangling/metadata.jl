@@ -46,35 +46,13 @@ function BoundingBox(grid::AbstractGrid; padding = 0)
                        latitude  = (all_reduce(min, φ₁, arch) - δφ, all_reduce(max, φ₂, arch) + δφ))
 end
 
-"""
-    BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0, i = 1:Nx+1, j = 1:Ny+1)
-
-Create a `BoundingBox` spanning the cell corners `i × j` of `grid`. A patch whose edge circles a pole spans every
-longitude and reaches that pole; a patch across the antimeridian is labeled in [0, 360).
-"""
-function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0,
-                     i = 1:size(grid, 1)+1, j = 1:size(grid, 2)+1)
+function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
     δλ, δφ = axis_padding(padding)
-    λ = on_architecture(CPU(), grid.λᶠᶠᵃ)[i, j]
-    φ = on_architecture(CPU(), grid.φᶠᶠᵃ)[i, j]
-    φ₁, φ₂ = extrema(φ)
-
-    edge(a) = vcat(a[:, 1], a[end, 2:end], a[end-1:-1:1, end], a[1, end-1:-1:1])
-    winding = sum(δ -> mod(δ + 180, 360) - 180, diff(edge(λ)))
-
-    if abs(winding) > 180 && !(topology(grid, 1) <: Periodic)
-        φᵉ = edge(φ)
-        holds_north_pole = φ[(end+1)÷2, (end+1)÷2] > sum(φᵉ) / length(φᵉ)
-        latitude = holds_north_pole ? (φ₁ - δφ, 90) : (-90, φ₂ + δφ)
-        return BoundingBox(; longitude = (-180, 180), latitude)
-    end
-
-    # The narrower of the spans with the longitudes labeled in [-180, 180) and in [0, 360)
-    λ₁, λ₂ = extrema(mod.(λ .+ 180, 360) .- 180)
-    λ₃, λ₄ = extrema(mod.(λ, 360))
-    longitude = λ₂ - λ₁ ≤ λ₄ - λ₃ ? (λ₁ - δλ, λ₂ + δλ) : (λ₃ - δλ, λ₄ + δλ)
-
-    return BoundingBox(; longitude, latitude = (φ₁ - δφ, φ₂ + δφ))
+    Nx, Ny, _ = size(grid)
+    λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    return BoundingBox(longitude = (minimum(λ) - δλ, maximum(λ) + δλ),
+                       latitude  = (minimum(φ) - δφ, maximum(φ) + δφ))
 end
 
 axis_padding(padding::Number) = (padding, padding)
@@ -897,12 +875,7 @@ cadence — e.g. the surface companion of a pressure-level reanalysis product.
 """
 function matching_single_level_dataset end
 
-"""
-    matching_bathymetry(dataset; region = nothing, dir)
-
-Return the `Metadatum` of the seafloor `dataset` was produced over, for example the static sea floor depth of an
-ocean reanalysis, or `nothing` when `dataset` carries none.
-"""
+# The `Metadatum` of the seafloor `dataset` was produced over, or `nothing`
 matching_bathymetry(dataset; kw...) = nothing
 
 """

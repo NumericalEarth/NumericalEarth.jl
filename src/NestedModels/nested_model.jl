@@ -87,15 +87,8 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # parent to the child's new time (`advance_parent!`). `Simulation` calls
 # `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; callbacks=())
-    nested_time_step!(nm, nm.exchanger, Δt, (callbacks..., nm.child_callbacks...))
-    return nothing
-end
-
-# The exchanger decides the order: this default steps the child and then the parent; an exchanger that
-# needs the parent's state at the end of the step (e.g. `OceanBoundaryExchanger`) steps the parent first.
-function nested_time_step!(nm, exchanger, Δt, callbacks)
-    exchange_state!(exchanger, nm.clock.time + Δt)
-    time_step!(nm.child, Δt; callbacks)
+    exchange_state!(nm.exchanger, nm.clock.time + Δt)
+    time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
     advance_parent!(nm.parent, nm.child.clock)
     return nothing
 end

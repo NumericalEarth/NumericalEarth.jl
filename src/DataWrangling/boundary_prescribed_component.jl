@@ -15,13 +15,6 @@ function EarthSystemModels.BoundaryPrescribedComponent(Component, grid::Abstract
                                                        padding = default_horizontal_padding(dataset),
                                                        sides = (:west, :east, :south, :north),
                                                        kw...)
-    regions = boundary_strip_regions(grid, width, padding)
-    strips = map(region -> Component(region, dates, dataset; architecture = architecture(grid), kw...), regions[sides])
-
-    return BoundaryPrescribedComponent(; strips...)
-end
-
-function boundary_strip_regions(grid, width, padding)
     box = BoundingBox(grid)
     λ₁, λ₂ = box.longitude
     φ₁, φ₂ = box.latitude
@@ -30,17 +23,12 @@ function boundary_strip_regions(grid, width, padding)
     λ = (λ₁ - δλ, λ₂ + δλ)
     φ = (φ₁ - δφ, φ₂ + δφ)
 
-    return (west  = BoundingBox(longitude = (λ₁ - δλ, λ₁ + w + δλ), latitude = φ),
-            east  = BoundingBox(longitude = (λ₂ - w - δλ, λ₂ + δλ), latitude = φ),
-            south = BoundingBox(longitude = λ, latitude = (φ₁ - δφ, φ₁ + w + δφ)),
-            north = BoundingBox(longitude = λ, latitude = (φ₂ - w - δφ, φ₂ + δφ)))
-end
+    regions = (west  = BoundingBox(longitude = (λ₁ - δλ, λ₁ + w + δλ), latitude = φ),
+               east  = BoundingBox(longitude = (λ₂ - w - δλ, λ₂ + δλ), latitude = φ),
+               south = BoundingBox(longitude = λ, latitude = (φ₁ - δφ, φ₁ + w + δφ)),
+               north = BoundingBox(longitude = λ, latitude = (φ₂ - w - δφ, φ₂ + δφ)))
 
-# The sides of a curvilinear grid are not lines of longitude or latitude: each strip bounds the corners of its band.
-function boundary_strip_regions(grid::OrthogonalSphericalShellGrid, width, padding)
-    Nx, Ny, _ = size(grid)
-    return (west  = BoundingBox(grid; padding, i = 1:width+1),
-            east  = BoundingBox(grid; padding, i = Nx-width+1:Nx+1),
-            south = BoundingBox(grid; padding, j = 1:width+1),
-            north = BoundingBox(grid; padding, j = Ny-width+1:Ny+1))
+    strips = map(region -> Component(region, dates, dataset; architecture = architecture(grid), kw...), regions[sides])
+
+    return BoundaryPrescribedComponent(; strips...)
 end

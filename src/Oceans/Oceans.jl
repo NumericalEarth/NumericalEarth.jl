@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, ocean_model, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
+export ocean_simulation, river_mouth_vertical_diffusivity, SlabOcean, PrescribedOcean,
        TwoColorRadiation, ChlorophyllOptics, absorption_coefficient, equivalent_chlorophyll
 
 using Adapt: Adapt, adapt
@@ -78,8 +78,6 @@ include("assemble_net_ocean_fluxes.jl")
 ##### Extend utility functions to grab the state of the ocean
 #####
 
-# The interface is implemented on the ocean models; a `Simulation` couples like its model, and so does a
-# `NestedModel` whose child is an ocean model (see `NestedModels/nested_component.jl`).
 
 # An ocean is not a sea ice model — used to catch swapped positional
 # args in the convenience constructors (e.g. `OceanSeaIceModel`).

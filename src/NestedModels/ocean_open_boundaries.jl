@@ -7,14 +7,7 @@ using Oceananigans.BoundaryConditions: BoundaryConditions, GravityWaveRadiationB
                                        ValueBoundaryCondition
 using Oceananigans.Operators: Δzᶠᶜᶜ, Δzᶜᶠᶜ
 
-"""
-    BoundaryTimeSeries{Dim}(series, index, along)
-
-Boundary-condition value read from a [`BoundaryBand`](@ref) at the boundary row (`Dim = 1`, at
-`i = index`) or column (`Dim = 2`, at `j = index`) of one open side, interpolated in time only. The
-along-boundary index is clamped to `along = (first, last)`, the points along the boundary that hold the parent: halo
-fills, such as the barotropic ones on a grid with extended halos, reach beyond the series' own halos.
-"""
+# The band's boundary row or column, clamped along the boundary to `along` for halo fills that reach past the band
 struct BoundaryTimeSeries{Dim, S}
     series :: S
     index  :: Int
@@ -29,16 +22,7 @@ Adapt.adapt_structure(to, b::BoundaryTimeSeries{Dim}) where Dim =
 Oceananigans.Architectures.on_architecture(to, b::BoundaryTimeSeries{Dim}) where Dim =
     BoundaryTimeSeries{Dim}(on_architecture(to, b.series), b.index, b.along)
 
-"""
-    BarotropicBoundaryTransport{Dim}(velocity, depth_mean, face, cell, along)
-
-The exterior barotropic transport `Uᵉˣᵗ` of a `GravityWaveRadiationBoundaryCondition` (Flather) on one open
-side, at the boundary `face` over the child's wet column (wet at the boundary-adjacent `cell`), with the live `Δz`.
-With the parent's `depth_mean` velocity (a one-cell [`BoundaryBand`](@ref)), `Uᵉˣᵗ = ū H`, the parent's depth mean
-over its own column times the child's wet depth `H`, as in the reference Mid-Atlantic Bight configuration; without
-it (`nothing`), `Uᵉˣᵗ = Σₖ uₖ Δzₖ`, the boundary-normal `velocity` series summed over the child's wet column.
-The series are read at the along-boundary index clamped to `along`, as for a [`BoundaryTimeSeries`](@ref).
-"""
+# Flather's exterior transport: `ū H` with the parent's depth mean `ū`, or `Σₖ uₖ Δzₖ` over the child's wet column
 struct BarotropicBoundaryTransport{Dim, U, M}
     velocity   :: U
     depth_mean :: M
@@ -56,15 +40,7 @@ Adapt.adapt_structure(to, U::BarotropicBoundaryTransport{Dim}) where Dim =
 Oceananigans.Architectures.on_architecture(to, U::BarotropicBoundaryTransport{Dim}) where Dim =
     BarotropicBoundaryTransport{Dim}(on_architecture(to, U.velocity), on_architecture(to, U.depth_mean), U.face, U.cell, U.along)
 
-"""
-    ConsistentBoundaryVelocity{Dim}(series, depth_mean, index, cell, along)
-
-The boundary-normal velocity of one open side read from a [`BoundaryBand`](@ref) `series`, plus the depth-uniform
-velocity that makes its integral over the child's wet column equal the Flather exterior transport
-`ū H` of a [`BarotropicBoundaryTransport`](@ref) with the same `depth_mean`, as the reference Mid-Atlantic Bight
-configuration does (its "consistent normal flow"): without it, the difference between the two appears in the last
-interior column as a spurious vertical velocity.
-"""
+# The boundary-normal velocity plus the depth-uniform correction that integrates it to `ū H`
 struct ConsistentBoundaryVelocity{Dim, S, M}
     series     :: S
     depth_mean :: M
@@ -86,38 +62,27 @@ Oceananigans.Architectures.on_architecture(to, b::ConsistentBoundaryVelocity{Dim
 @inline boundary_time(clock) = Time(clock.time)
 @inline boundary_time(::Nothing) = Time(0)
 
-@inline BoundaryConditions.getbc(b::BoundaryTimeSeries{1}, j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) =
-    band_value(b.series, b.index, clamp(j, b.along...), k, boundary_time(clock))
+@inline band_value_at(dim, band, normal, along, k, t) = band_value(band, horizontal_indices(dim, normal, along)..., k, t)
 
-@inline BoundaryConditions.getbc(b::BoundaryTimeSeries{2}, i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) =
-    band_value(b.series, clamp(i, b.along...), b.index, k, boundary_time(clock))
+@inline BoundaryConditions.getbc(b::BoundaryTimeSeries{Dim}, s::Integer, k::Integer, grid::AbstractGrid,
+                                 clock=nothing, args...) where Dim =
+    band_value_at(Val(Dim), b.series, b.index, clamp(s, b.along...), k, boundary_time(clock))
 
-# The wet depth of the child's column at boundary face `i` (`Dim = 1`) or `j` (`Dim = 2`), and the integral over it
-# of the boundary-normal velocity `series`
-@inline function wet_column_integral(::Val{1}, series, face, cell, s, sᵇ, grid, t)
+@inline boundary_face_thickness(::Val{1}, face, s, k, grid) = Δzᶠᶜᶜ(face, s, k, grid)
+@inline boundary_face_thickness(::Val{2}, face, s, k, grid) = Δzᶜᶠᶜ(s, face, k, grid)
+
+# The wet depth of the child's column at boundary `face`, and the integral over it of the boundary-normal velocity `series`
+@inline function wet_column_integral(dim, series, face, cell, s, sᵇ, grid, t)
     H = zero(grid)
     U = zero(grid)
     for k in 1:size(grid, 3)
-        Δ = ifelse(inactive_cell(cell, s, k, grid), zero(grid), Δzᶠᶜᶜ(face, s, k, grid))
+        inactive = inactive_cell(horizontal_indices(dim, cell, s)..., k, grid)
+        Δ = ifelse(inactive, zero(grid), boundary_face_thickness(dim, face, s, k, grid))
         H += Δ
-        U += Δ * band_value(series, face, sᵇ, k, t)
+        U += Δ * band_value_at(dim, series, face, sᵇ, k, t)
     end
     return U, H
 end
-
-@inline function wet_column_integral(::Val{2}, series, face, cell, s, sᵇ, grid, t)
-    H = zero(grid)
-    U = zero(grid)
-    for k in 1:size(grid, 3)
-        Δ = ifelse(inactive_cell(s, cell, k, grid), zero(grid), Δzᶜᶠᶜ(s, face, k, grid))
-        H += Δ
-        U += Δ * band_value(series, sᵇ, face, k, t)
-    end
-    return U, H
-end
-
-@inline band_value_at(::Val{1}, band, face, sᵇ, k, t) = band_value(band, face, sᵇ, k, t)
-@inline band_value_at(::Val{2}, band, face, sᵇ, k, t) = band_value(band, sᵇ, face, k, t)
 
 # The exterior transport: the parent's depth mean times the child's wet depth, or the series summed over it.
 @inline exterior_transport(dim, ::Nothing, U, H, face, sᵇ, t) = U
@@ -149,56 +114,28 @@ const free_surface_location = (Center(), Center(), nothing)
 boundary_location(name) = name ∈ keys(velocity_locations) ? velocity_locations[name] :
                           name === :η ? free_surface_location : tracer_location
 
-"""
-    ocean_open_boundary_conditions(grid, bands; depth_means, inverse_barometer, normal_velocity_scheme,
-                                   tangential_velocity_scheme, tracer_scheme)
-
-Build the open lateral boundary conditions of a regional ocean on `grid` from its boundary `bands`, a
-`NamedTuple` keyed by open side of `NamedTuple`s of [`BoundaryBand`](@ref)s holding the parent's velocities
-`u` and `v`, free surface `η`, and tracers (every other entry). Each open side gets five conditions:
-
-- the boundary-normal velocity: `NormalFlowBoundaryCondition` with `normal_velocity_scheme`, made consistent with
-  the Flather exterior transport when the side has a parent `depth_means` band ([`ConsistentBoundaryVelocity`](@ref)),
-- the boundary-tangential velocity: `ValueBoundaryCondition` with `tangential_velocity_scheme`
-  (the default, a no-flux wall, is wrong on an open side),
-- the barotropic transport: `GravityWaveRadiationBoundaryCondition` (Flather) toward the parent's
-  transport through the child's wet column ([`BarotropicBoundaryTransport`](@ref)) and sea surface height, plus
-  the child's inverse-barometer sea level `inverse_barometer` when it is not `nothing` ([`InverseBarometerSeaLevel`](@ref)),
-- the free surface: `SurfaceWaveRadiationBoundaryCondition` (Chapman),
-- each tracer: `ValueBoundaryCondition` with `tracer_scheme`.
-
-Each scheme is either one scheme for every side or a `NamedTuple` of schemes keyed by side, such as
-`(south = TracerReservoir(inflow_length_scale = 20kilometers), north = TracerReservoir(inflow_length_scale = 50kilometers))`,
-which must name every open side.
-
-Returns a `NamedTuple` of `FieldBoundaryConditions` for `u`, `v`, `U`, `V`, `η`, and the tracers.
-"""
-side_scheme(scheme, side) = scheme
-
-function side_scheme(schemes::NamedTuple, side)
-    haskey(schemes, side) || throw(ArgumentError("the per-side schemes $(keys(schemes)) have no scheme for the open side :$side"))
-    return schemes[side]
+# The indices along `side` of `data`, at location `loc` on `grid`, that hold the parent
+function along_bounds(grid, data, loc, side)
+    dim = 3 - boundary_dimension(side)
+    return parent_index_bounds(loc[dim], topology(grid, dim), size(grid, dim), axes(data, dim))
 end
 
+side_scheme(scheme, side) = scheme
+
+side_scheme(schemes::NamedTuple, side) = schemes[side]
+
 function ocean_open_boundary_conditions(grid, bands;
-                                        depth_means = map(Returns(nothing), bands),
-                                        inverse_barometer = nothing,
+                                        depth_means,
                                         normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     sides = keys(bands)
     tracer_names = isempty(sides) ? () : filter(name -> name ∉ (:u, :v, :η), keys(first(bands)))
 
-    along_dimension(side) = 3 - boundary_dimension(side)
-    function along_bounds(band, name, side)
-        dim = along_dimension(side)
-        ℓ = boundary_location(name)[dim]
-        return parent_index_bounds(ℓ, topology(grid, dim), size(grid, dim), axes(band.previous.data, dim))
-    end
-
     function boundary_value(band, name, side)
         dim = boundary_dimension(side)
-        index = boundary_index(boundary_location(name)[dim], side, size(grid, dim))
-        return BoundaryTimeSeries{dim}(band, index, along_bounds(band, name, side))
+        loc = boundary_location(name)
+        index = boundary_index(loc[dim], side, size(grid, dim))
+        return BoundaryTimeSeries{dim}(band, index, along_bounds(grid, band.previous.data, loc, side))
     end
 
     u_bcs = Pair{Symbol, Any}[]
@@ -218,18 +155,18 @@ function ocean_open_boundary_conditions(grid, bands;
         face = boundary_index(Face(), side, N)
         cell = boundary_index(Center(), side, N)
         depth_mean = depth_means[side]
+        along = along_bounds(grid, side_bands[normal].previous.data, boundary_location(normal), side)
 
         normal_value = isnothing(depth_mean) ? boundary_value(side_bands[normal], normal, side) :
-                       ConsistentBoundaryVelocity{dim}(side_bands[normal], depth_mean, face, cell, along_bounds(side_bands[normal], normal, side))
+                       ConsistentBoundaryVelocity{dim}(side_bands[normal], depth_mean, face, cell, along)
 
         push!(normal_bcs, side => NormalFlowBoundaryCondition(normal_value; scheme = side_scheme(normal_velocity_scheme, side)))
         push!(tangential_bcs, side => ValueBoundaryCondition(boundary_value(side_bands[tangential], tangential, side);
                                                              scheme = side_scheme(tangential_velocity_scheme, side)))
 
         # Flather is the only route by which the parent's η reaches the child: Chapman on η only radiates.
-        transport = BarotropicBoundaryTransport{dim}(side_bands[normal], depth_mean, face, cell, along_bounds(side_bands[normal], normal, side))
-        sea_level = with_inverse_barometer(boundary_value(side_bands.η, :η, side), inverse_barometer)
-        push!(transport_bcs, side => GravityWaveRadiationBoundaryCondition((transport, sea_level)))
+        transport = BarotropicBoundaryTransport{dim}(side_bands[normal], depth_mean, face, cell, along)
+        push!(transport_bcs, side => GravityWaveRadiationBoundaryCondition((transport, boundary_value(side_bands.η, :η, side))))
         push!(η_bcs, side => SurfaceWaveRadiationBoundaryCondition())
 
         for name in tracer_names

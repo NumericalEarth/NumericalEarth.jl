@@ -100,13 +100,7 @@ default unwraps a `Simulation`; the identity fallback covers bare models.
 @inline component_model(sim::Simulation) = sim.model
 @inline component_model(component) = component
 
-"""
-    prognostic_model(component)
-
-Return the model that carries the prognostic state of `component`: a `Simulation` unwraps to its model,
-and a nested model (e.g. a `NestedModel`) to its child. Use it to reach a component's own fields, grid
-and clock, which a wrapper does not have.
-"""
+# The model holding `component`'s prognostic state: a `Simulation`'s model, a nested model's child
 @inline prognostic_model(sim::Simulation) = prognostic_model(sim.model)
 @inline prognostic_model(component) = component
 

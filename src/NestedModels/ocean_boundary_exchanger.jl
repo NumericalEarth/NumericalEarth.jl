@@ -2,22 +2,14 @@
 ##### OceanBoundaryExchanger: parent ocean → the boundary bands of a nested ocean
 #####
 
-using Oceananigans.TimeSteppers: time_step!
-
 using ..Oceans: PrescribedOcean
 using ..EarthSystemModels: BoundaryPrescribedComponent
 
-"""
-    parent_ocean_sources(parent)
-
-Return the parent state a nested ocean samples, a `NamedTuple` with the velocities `u` and `v`, the free
-surface `η`, and the tracers `T` and `S`: the `FieldTimeSeries` of a [`PrescribedOcean`](@ref).
-"""
 parent_ocean_sources(ocean::PrescribedOcean) = (u = ocean.velocities.u,
                                                v = ocean.velocities.v,
                                                η = ocean.free_surface,
-                                               T = ocean.temperature,
-                                               S = ocean.salinity)
+                                               T = ocean.sea_surface_temperature,
+                                               S = ocean.sea_surface_salinity)
 
 # A strip parent supplies each side from its own strip; any other parent supplies every side.
 parent_ocean_sources(parent, sides) = NamedTuple{sides}(ntuple(Returns(parent_ocean_sources(parent)), length(sides)))
@@ -29,18 +21,7 @@ function parent_ocean_sources(parent::BoundaryPrescribedComponent, sides)
     return NamedTuple{sides}(map(side -> parent_ocean_sources(getproperty(parent, side)), sides))
 end
 
-"""
-    OceanBoundaryExchanger(parent, grid, sides; width, time, parent_bottom_height = nothing)
-
-Mediates the `parent` ocean state to a nested ocean on `grid`: holds, for each open side in `sides`, the
-parent's [`parent_ocean_sources`](@ref) and the [`BoundaryBand`](@ref)s they are sampled onto — `width`
-cells wide for the velocities and tracers (the boundary relaxation zone), one cell for the free surface —
-and the [`ParentTimes`](@ref) of the two states the bands hold, both initially the parent at `time`.
-
-When the parent's seafloor `parent_bottom_height` is known, each side also holds the parent's depth mean of its
-boundary-normal velocity, over the parent's own levels above that seafloor ([`sample_parent_depth_mean!`](@ref)),
-on a one-cell band at the boundary face: the barotropic velocity of the Flather exterior.
-"""
+# The parent's sources and bands on each open side, and its depth-mean normal velocity where its seafloor is known
 struct OceanBoundaryExchanger{S, B, D, F, T}
     sources     :: S
     bands       :: B
@@ -55,7 +36,7 @@ normal_velocity_name(side) = boundary_dimension(side) == 1 ? :u : :v
 function boundary_floor(grid, name, parent_bottom_height)
     LX, LY, _ = typeof.(boundary_location(name))
     floor = Field{LX, LY, Nothing}(underlying_grid(grid))
-    interpolate_bottom_height!(floor, parent_bottom_height, parent_bottom_height.grid)
+    interpolate!(floor, parent_bottom_height)
     fill_halo_regions!(floor)
     return floor
 end
@@ -78,8 +59,29 @@ sample_depth_mean!(::Nothing, source, floor, side, time) = nothing
 sample_depth_mean!(band, source, floor, side, time) =
     sample_parent_depth_mean!(band.current, depth_mean_location(side), source, floor, time)
 
+# Sample the parent at `time` into the current state of every band
+function sample_bands!(exchanger, time)
+    for side in keys(exchanger.bands)
+        sources = exchanger.sources[side]
+        for (name, band) in pairs(exchanger.bands[side])
+            sample_parent!(band.current, boundary_location(name), sources[name], time)
+        end
+        sample_depth_mean!(exchanger.depth_means[side], sources[normal_velocity_name(side)], exchanger.floors[side], side, time)
+    end
+    return nothing
+end
+
+roll_band!(::Nothing) = nothing
+roll_band!(band) = (Base.parent(band.previous) .= Base.parent(band.current); nothing)
+
+function roll_bands!(exchanger)
+    foreach(side_bands -> foreach(roll_band!, side_bands), exchanger.bands)
+    foreach(roll_band!, exchanger.depth_means)
+    return nothing
+end
+
 function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing)
-    sources = map(side_sources -> child_frame_sources(grid, side_sources), parent_ocean_sources(parent, sides))
+    sources = parent_ocean_sources(parent, sides)
     times = ParentTimes(time, time)
 
     function side_bands(side)
@@ -92,41 +94,20 @@ function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width,
     floors = boundary_floors(grid, sides, parent_bottom_height)
     depth_means = NamedTuple{sides}(map(side -> depth_mean_band(grid, side, floors[side], times), sides))
 
-    for side in sides
-        for name in keys(bands[side])
-            band = bands[side][name]
-            sample_parent!(band.current, boundary_location(name), sources[side][name], time)
-            Base.parent(band.previous) .= Base.parent(band.current)
-        end
+    exchanger = OceanBoundaryExchanger(sources, bands, depth_means, floors, times)
+    sample_bands!(exchanger, time)
+    roll_bands!(exchanger)
 
-        depth_mean = depth_means[side]
-        sample_depth_mean!(depth_mean, sources[side][normal_velocity_name(side)], floors[side], side, time)
-        isnothing(depth_mean) || (Base.parent(depth_mean.previous) .= Base.parent(depth_mean.current))
-    end
-
-    return OceanBoundaryExchanger(sources, bands, depth_means, floors, times)
+    return exchanger
 end
 
-roll_band!(::Nothing) = nothing
-roll_band!(band) = (Base.parent(band.previous) .= Base.parent(band.current); nothing)
-
-# Sample the parent at `time` into the bands, keeping the state they held as the earlier time level.
-# Idempotent at the current time, so `update_state!` can call it freely.
+# Sample the parent at `time` into the bands, keeping their state as the earlier time level; idempotent at the current time
 function exchange_state!(exchanger::OceanBoundaryExchanger, time)
     times = exchanger.times
     time > times.current || return nothing
 
-    for side in keys(exchanger.bands)
-        for name in keys(exchanger.bands[side])
-            band = exchanger.bands[side][name]
-            roll_band!(band)
-            sample_parent!(band.current, boundary_location(name), exchanger.sources[side][name], time)
-        end
-
-        depth_mean = exchanger.depth_means[side]
-        roll_band!(depth_mean)
-        sample_depth_mean!(depth_mean, exchanger.sources[side][normal_velocity_name(side)], exchanger.floors[side], side, time)
-    end
+    roll_bands!(exchanger)
+    sample_bands!(exchanger, time)
 
     times.previous = times.current
     times.current = time
@@ -134,16 +115,15 @@ function exchange_state!(exchanger::OceanBoundaryExchanger, time)
     return nothing
 end
 
-# The parent steps first, so that the bands bracket the child's step with parent states at its start and
-# end, and a streaming parent has loaded the samples that bracket them.
-function nested_time_step!(nested, exchanger::OceanBoundaryExchanger, Δt, callbacks)
+# The parent steps first, so that the bands bracket the child's step with parent states at its start and end
+function time_step!(nested::NestedModel{<:Any, <:Any, <:OceanBoundaryExchanger}, Δt; callbacks=())
     time = nested.clock.time + Δt
 
     Δt_parent = time - nested.parent.clock.time
     Δt_parent > 0 && time_step!(nested.parent, Δt_parent)
 
-    exchange_state!(exchanger, time)
-    time_step!(nested.child, Δt; callbacks)
+    exchange_state!(nested.exchanger, time)
+    time_step!(nested.child, Δt; callbacks = (callbacks..., nested.child_callbacks...))
 
     return nothing
 end

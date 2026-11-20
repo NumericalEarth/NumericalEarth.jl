@@ -194,8 +194,7 @@ function native_bottom_height(metadata::Metadatum{<:GLORYSStatic}, arch, FT; hei
     return native_z
 end
 
-# Any other dataset holds a three-dimensional ocean state, whose missing values mark the seafloor:
-# read without inpainting, so the mask survives.
+# Any other dataset is a three-dimensional ocean state whose missing values, read without inpainting, mark the seafloor
 function native_bottom_height(metadata::Metadatum, arch, FT; height_above_water)
     is_three_dimensional(metadata) ||
         throw(ArgumentError("cannot derive a seafloor from $(metadata.name) of $(summary(metadata.dataset)): " *
