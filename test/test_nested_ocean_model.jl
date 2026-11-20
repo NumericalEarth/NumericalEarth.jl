@@ -13,7 +13,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, GravityWaveRad
                                        SurfaceWaveRadiation, TracerReservoir, Value
 using Oceananigans.Grids: MutableVerticalDiscretization, inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
-using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
+using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ, rotation_angle
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: days
@@ -264,6 +264,21 @@ end
     @test prognostic_model(model) === child
 end
 
+@testset "nested_ocean_model: schemes can be set per side on $(arch)" for arch in test_architectures
+    narrow = TracerReservoir(inflow_length_scale = 5e3, outflow_length_scale = 0)
+    wide   = TracerReservoir(inflow_length_scale = 5e4, outflow_length_scale = 0)
+    tracer_scheme = (west = narrow, east = wide, south = narrow, north = wide)
+    child = nested_ocean_model(nesting_test_parent(arch), nesting_test_child_grid(arch); tracer_scheme).child
+
+    for side in lateral_sides, name in (:T, :S)
+        scheme = getproperty(child.tracers[name].boundary_conditions, side).classification.scheme
+        @test scheme.inflow_length_scale == tracer_scheme[side].inflow_length_scale
+    end
+
+    @test_throws ArgumentError nested_ocean_model(nesting_test_parent(arch), nesting_test_child_grid(arch);
+                                                  tracer_scheme = (west = narrow, east = wide))
+end
+
 @testset "nested_ocean_model: a quiescent parent leaves the child unchanged on $(arch)" for arch in test_architectures
     T₀, S₀ = 15.0, 35.0
     model = nested_ocean_model(nesting_test_parent(arch; u = 0, T = T₀, S = S₀), nesting_test_child_grid(arch))
@@ -350,6 +365,20 @@ end
 
     @test !any(isnan, Array(interior(nested.child.velocities.u)))
     @test maximum(abs, Array(interior(nested.child.tracers.T)) .- 15) < 1e-10
+
+    # A few degrees from the pole the axes turn by degrees per cell, so a face needs its own angle, not a centre's
+    nested = rotated_nested_ocean(arch; north_pole = (180, 0), longitude = (172, 176), latitude = (-2, 2), uₑ, vₑ)
+    grid = on_architecture(CPU(), nested.child.grid)
+    u★, v★ = velocities_along_grid_axes(grid, uₑ, vₑ)
+    u = Array(interior(nested.child.velocities.u))[:, :, Nz]
+    v = Array(interior(nested.child.velocities.v))[:, :, Nz]
+
+    θ = [rotation_angle(i, j, grid, Center(), Center()) for i in 1:Nx+1, j in 1:Ny+1]
+    uᶜ = [uₑ * cos(θ[i, j]) - vₑ * sin(θ[i, j]) for i in 1:Nx+1, j in 1:Ny]
+    vᶜ = [uₑ * sin(θ[i, j]) + vₑ * cos(θ[i, j]) for i in 1:Nx, j in 1:Ny+1]
+    @info "max error of face velocities rotated by face / centre angles near the pole" maximum(abs, u .- u★) maximum(abs, uᶜ .- u★) maximum(abs, v .- v★) maximum(abs, vᶜ .- v★)
+    @test maximum(abs, u .- u★) < maximum(abs, uᶜ .- u★) / 10
+    @test maximum(abs, v .- v★) < maximum(abs, vᶜ .- v★) / 10
 
     # The x axis of this grid points south at its center, and its y axis east
     nested = rotated_nested_ocean(arch; north_pole = (90, 0), longitude = (-122, -118), latitude = (-2, 2), uₑ, vₑ)

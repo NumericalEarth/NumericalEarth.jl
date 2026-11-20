@@ -167,8 +167,19 @@ Build the open lateral boundary conditions of a regional ocean on `grid` from it
 - the free surface: `SurfaceWaveRadiationBoundaryCondition` (Chapman),
 - each tracer: `ValueBoundaryCondition` with `tracer_scheme`.
 
+Each scheme is either one scheme for every side or a `NamedTuple` of schemes keyed by side, such as
+`(south = TracerReservoir(inflow_length_scale = 20kilometers), north = TracerReservoir(inflow_length_scale = 50kilometers))`,
+which must name every open side.
+
 Returns a `NamedTuple` of `FieldBoundaryConditions` for `u`, `v`, `U`, `V`, `η`, and the tracers.
 """
+side_scheme(scheme, side) = scheme
+
+function side_scheme(schemes::NamedTuple, side)
+    haskey(schemes, side) || throw(ArgumentError("the per-side schemes $(keys(schemes)) have no scheme for the open side :$side"))
+    return schemes[side]
+end
+
 function ocean_open_boundary_conditions(grid, bands;
                                         depth_means = map(Returns(nothing), bands),
                                         inverse_barometer = nothing,
@@ -211,9 +222,9 @@ function ocean_open_boundary_conditions(grid, bands;
         normal_value = isnothing(depth_mean) ? boundary_value(side_bands[normal], normal, side) :
                        ConsistentBoundaryVelocity{dim}(side_bands[normal], depth_mean, face, cell, along_bounds(side_bands[normal], normal, side))
 
-        push!(normal_bcs, side => NormalFlowBoundaryCondition(normal_value; scheme = normal_velocity_scheme))
+        push!(normal_bcs, side => NormalFlowBoundaryCondition(normal_value; scheme = side_scheme(normal_velocity_scheme, side)))
         push!(tangential_bcs, side => ValueBoundaryCondition(boundary_value(side_bands[tangential], tangential, side);
-                                                             scheme = tangential_velocity_scheme))
+                                                             scheme = side_scheme(tangential_velocity_scheme, side)))
 
         # Flather is the only route by which the parent's η reaches the child: Chapman on η only radiates.
         transport = BarotropicBoundaryTransport{dim}(side_bands[normal], depth_mean, face, cell, along_bounds(side_bands[normal], normal, side))
@@ -222,7 +233,7 @@ function ocean_open_boundary_conditions(grid, bands;
         push!(η_bcs, side => SurfaceWaveRadiationBoundaryCondition())
 
         for name in tracer_names
-            push!(tracer_bcs[name], side => ValueBoundaryCondition(boundary_value(side_bands[name], name, side); scheme = tracer_scheme))
+            push!(tracer_bcs[name], side => ValueBoundaryCondition(boundary_value(side_bands[name], name, side); scheme = side_scheme(tracer_scheme, side)))
         end
     end
 

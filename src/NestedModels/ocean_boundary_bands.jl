@@ -10,7 +10,7 @@
 # boundary, not with the length of the run.
 
 using Oceananigans.Fields: Field, interpolate
-using Oceananigans.Grids: Center, Closed, Connected, Face, Open, TwoSided, inactive_cell, new_data, topology,
+using Oceananigans.Grids: Center, Closed, Connected, Face, Open, TwoSided, halo_size, inactive_cell, new_data, topology,
                           validate_indices, λnode, φnode, rnode, ξnode, ηnode
 using Oceananigans.Operators: Δz, rotation_angle
 using Oceananigans.OutputReaders: FlavorOfFTS
@@ -177,8 +177,26 @@ child_frame_sources(::OrthogonalSphericalShellGrid, sources) =
 @inline function parent_value(source::ParentVelocity{C}, X, source_loc, source_grid, time, i, j, grid, ℓx, ℓy) where C
     uₑ = interpolate(X, time, source.eastward,  source_loc[1], source_grid[1])
     vₑ = interpolate(X, time, source.northward, source_loc[2], source_grid[2])
-    sinθ, cosθ = sincos(rotation_angle(i, j, grid, ℓx, ℓy))
+    sinθ, cosθ = velocity_point_sincos(i, j, grid, ℓx, ℓy)
     return ifelse(C === :u, uₑ * cosθ - vₑ * sinθ, uₑ * sinθ + vₑ * cosθ)
+end
+
+# `rotation_angle` is the cell-centre angle, so a face takes the mean direction of the two centres it separates
+@inline velocity_point_sincos(i, j, grid, ℓx, ℓy) = sincos(rotation_angle(i, j, grid, ℓx, ℓy))
+
+@inline velocity_point_sincos(i, j, grid, ::Face, ::Center) =
+    mean_sincos(rotation_angle(max(i - 1, 1 - halo_size(grid)[1]), j, grid, Center(), Center()),
+                rotation_angle(i, j, grid, Center(), Center()))
+
+@inline velocity_point_sincos(i, j, grid, ::Center, ::Face) =
+    mean_sincos(rotation_angle(i, max(j - 1, 1 - halo_size(grid)[2]), grid, Center(), Center()),
+                rotation_angle(i, j, grid, Center(), Center()))
+
+@inline function mean_sincos(θ₁, θ₂)
+    s = sin(θ₁) + sin(θ₂)
+    c = cos(θ₁) + cos(θ₂)
+    r = hypot(s, c)
+    return s / r, c / r
 end
 
 # The parent's depths are below its free surface, so a z★ child samples it at its reference depth `rnode`, not its

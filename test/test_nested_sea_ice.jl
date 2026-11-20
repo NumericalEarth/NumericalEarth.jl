@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.NestedModels: SeaIceBoundarySeries, SeaIceBoundaryVelocity, boundary_ice_velocity
+using NumericalEarth.NestedModels: SeaIceBoundarySeries, SeaIceBoundaryVelocity, boundary_ice_velocity,
+                                   consistent_ice_concentration, consistent_ice_thickness
 using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, NormalFlow, TracerReservoir, Value
 using Oceananigans.Grids: halo_size
 using Oceananigans.Units: days, minutes
@@ -35,6 +36,18 @@ function nested_sea_ice_test_parent(grid)
     end
 
     return (; h, ℵ, u, v)
+end
+
+@testset "The parent's thickness and concentration are made consistent" begin
+    @test consistent_ice_thickness(1.0, 0.5) == 1.0
+    @test consistent_ice_thickness(1.0, 0.0) == 0.0      # no thickness without concentration
+    @test consistent_ice_thickness(1.0, NaN) == 0.0
+    @test consistent_ice_thickness(-0.1, 0.5) == 0.0
+    @test consistent_ice_thickness(NaN, 0.5) == 0.0
+    @test consistent_ice_concentration(0.0, 0.5) == 0.0  # no concentration without thickness
+    @test consistent_ice_concentration(1.0, 1.2) == 1.0
+    @test consistent_ice_concentration(1.0, -0.1) == 0.0
+    @test consistent_ice_concentration(1.0f0, 0.5f0) isa Float32
 end
 
 @testset "boundary_ice_velocity: ice leaves, is not pulled in, and follows the interior without parent ice" begin
@@ -118,6 +131,11 @@ end
 
     @test all(isfinite, Array(interior(ℵ)))
     @test maximum(Array(interior(ℵ))) ≤ 0.9
+
+    # The parent has thickness everywhere but concentration only south of 30.5°N
+    hⁱ, ℵⁱ = Array(interior(h)), Array(interior(ℵ))
+    @test any(iszero, ℵⁱ) && any(>(0), ℵⁱ)
+    @test (hⁱ .> 0) == (ℵⁱ .> 0)
 
     # A coupled step with the default reservoir scheme
     bcs = nested_sea_ice_boundary_conditions(ocean, parent_ice)
