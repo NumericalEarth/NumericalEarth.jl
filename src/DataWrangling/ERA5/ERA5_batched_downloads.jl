@@ -30,20 +30,6 @@ coord_vars(::ERA5PressureLevelsDataset) = ERA5PL_COORD_VARS
 nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
 nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
 
-"""
-$(TYPEDSIGNATURES)
-
-Group an iterable of `DateTime`s by `(year, month)`. Returns a `Dict` whose
-keys are `Tuple{Int, Int}` `(year, month)` pairs and whose values are the
-datetimes that fall in that month. The `00:00` instant of a day belongs to
-that day (not the previous one).
-"""
-function group_by_calendar_month(datetimes)
-    keys = unique([(Dates.year(dt), Dates.month(dt)) for dt in datetimes])
-    return Dict(k => filter(dt -> (Dates.year(dt), Dates.month(dt)) == k, datetimes)
-                for k in keys)
-end
-
 fields_per_datetime(dataset::ERA5Dataset)               = 1
 fields_per_datetime(dataset::ERA5PressureLevelsDataset) = length(dataset.pressure_levels)
 
@@ -81,19 +67,6 @@ function batch_datetimes_for_cds(datetimes, dataset, num_vars;
         end
     end
     return batches
-end
-
-#####
-##### ZIP detection — CDS returns a ZIP when mixing step types (inst/accum/avg)
-#####
-
-const ZIP_MAGIC = UInt8[0x50, 0x4b, 0x03, 0x04]
-
-function is_zip(path)
-    open(path, "r") do io
-        magic = read(io, 4)
-        return length(magic) ≥ 4 && magic == ZIP_MAGIC
-    end
 end
 
 """

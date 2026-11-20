@@ -1,8 +1,8 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, is_three_dimensional, z_interfaces
-using NumericalEarth.DataWrangling.GLORYS: GLORYS_surface_variables, dataset_location, GLORYSMonthly, GLORYSDaily
+using NumericalEarth.DataWrangling: BoundingBox, dataset_location, is_three_dimensional, z_interfaces
+using NumericalEarth.DataWrangling.GLORYS: GLORYS_surface_variables, GLORYSMonthly, GLORYSDaily
 
 const GLORYS_TEST_DIR = mktempdir()
 
