@@ -21,6 +21,11 @@ const ReactantESM{R, A, L, I, O, F, C} = Union{
     EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
 }
 
+function NestedModels.initialize_on!(::ReactantState, initialize!, args...)
+    @jit initialize!(args...)
+    return nothing
+end
+
 function Oceananigans.TimeSteppers.reconcile_state!(model::ReactantESM)
     @jit Oceananigans.initialize!(model.interfaces.exchanger, model)
     @jit Oceananigans.TimeSteppers.update_state!(model)

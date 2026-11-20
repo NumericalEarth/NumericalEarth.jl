@@ -21,10 +21,11 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width, default_relaxation_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-                                   VectorComponent
+                                   VectorComponent, initialize_on!
 
 using Oceananigans:
     Oceananigans,
+    prognostic_fields,
     WENO,
     KernelFunctionOperation,
     @at,
@@ -61,8 +62,7 @@ using Breeze:
     SpecificForcing,
     TKEBasedTurbulenceClosure,
     materialize_terrain!,
-    moisture_prognostic_name,
-    moisture_specific_name
+    moisture_prognostic_name
 
 using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
 
@@ -301,6 +301,11 @@ source via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qʳ`/`qᶜⁱ`/`q
 `nothing` entry — or the whole `parent_condensates` — is treated as absent (⇒ omitted; with all four
 absent, `qᵗ = qᵛ`).
 
+The child is initialized from the parent at construction, on `ReactantState` as one `@jit` program
+(see `initialize_nested_child!`); `initialize = false` leaves it uninitialized, as it is by default
+for a `BoundaryPrescribedComponent` parent, which holds only the strips. `balancer = true` then runs
+Breeze's adiabatic balance, which is eager and so not for `ReactantState`.
+
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
 prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a compressible split-explicit
@@ -361,6 +366,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     boundary_conditions = NamedTuple(),
     forcing = NamedTuple(),
     time_indices_in_memory = resident_time_indices(parent_atmosphere),
+    initialize = !(parent_atmosphere isa BoundaryPrescribedComponent),
+    balancer = false,
     kw...)
 
     if !isnothing(terrain)
@@ -464,7 +471,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     child_callbacks = isnothing(relaxation_rate) || !boundary_parent ? () :
                       (boundary_relaxation(child, prognostic, relaxation_rate, relax_mask, relaxation_width),)
 
-    return NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
+    nested_model = NestedModel(parent_atmosphere, child, exchanger, child_callbacks)
+    initialize && initialize_nested_child!(nested_model; balancer)
+    return nested_model
 end
 
 # Domain-mean dataset mean-sea-level pressure at `date`, regridded onto the child grid.
@@ -508,7 +517,9 @@ the child grid (a static snapshot, not the dataset's diurnal cycle). `parent_atm
 strips: pass a `PrescribedAtmosphere` over the whole padded box to hold the parent in full, at the
 cost of its memory and of reading the interior the child never relaxes toward. `balancer` controls the
 post-initialization adiabatic (DFI) balance: `true` (default) runs it, `false` skips it, and an
-`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. Remaining keyword arguments flow to
+`AdiabaticBalancer(Δt=…)` runs a custom (e.g. gentler) excursion. On `ReactantState` the initialization
+runs as one `@jit` program; the balance is eager there, so pass `balancer = false`. With `initialize = false`
+the child is left uninitialized. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
@@ -523,6 +534,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
     bottom_drag_coefficient = nothing,
     drag_surface_temperature = nothing,
     balancer = true,
+    initialize = true,
     kw...)
 
     snapshot = PrescribedAtmosphere(BoundingBox(child_grid; padding = parent_padding), [first(dates)], parent_dataset;
@@ -540,10 +552,12 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
                                                                        relaxation_width, base_pressure,
                                                                        bottom_drag_coefficient, drag_surface_temperature,
                                                                        parent_surface_elevation = surface_elevation(snapshot),
-                                                                       kw...)
+                                                                       initialize = false, kw...)
 
-    initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer, prognostic = initial_state)
+    if initialize
+        initial_state = child_prognostic_state(snapshot, nested_model.exchanger)
+        initialize_nested_child!(nested_model; balancer, prognostic = initial_state)
+    end
     return nested_model
 end
 
@@ -560,17 +574,21 @@ vector_component(::Val{C}, eastward::NamedTuple, northward::NamedTuple) where C 
 @inline rotated_x_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[1]
 @inline rotated_y_component(i, j, k, grid, uᵉ, vᵉ) = @inbounds intrinsic_vector(i, j, k, grid, uᵉ, vᵉ)[2]
 
-child_momentum(prognostic, child_grid, t₀) =
-    (interpolate_to_child(prognostic.ρu, child_grid, t₀, (Face, Center, Center)),
-     interpolate_to_child(prognostic.ρv, child_grid, t₀, (Center, Face, Center)))
+function interpolate_child_momentum!(ρu, ρv, prognostic, child_grid, t₀)
+    interpolate!(ρu, prognostic.ρu[Time(t₀)])
+    interpolate!(ρv, prognostic.ρv[Time(t₀)])
+    return nothing
+end
 
 # Rotate at cell centers with `intrinsic_vector`, then interpolate to the staggered locations.
-function child_momentum(prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
+function interpolate_child_momentum!(ρu, ρv, prognostic, child_grid::OrthogonalSphericalShellGrid, t₀)
     ρuᵉ = interpolate_to_child(prognostic.ρu, child_grid, t₀)
     ρvᵉ = interpolate_to_child(prognostic.ρv, child_grid, t₀)
     ρuᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_x_component, child_grid, ρuᵉ, ρvᵉ)
     ρvᶜ = KernelFunctionOperation{Center, Center, Center}(rotated_y_component, child_grid, ρuᵉ, ρvᵉ)
-    return Field(@at (Face, Center, Center) ρuᶜ), Field(@at (Center, Face, Center) ρvᶜ)
+    set!(ρu, Field(@at (Face, Center, Center) ρuᶜ))
+    set!(ρv, Field(@at (Center, Face, Center) ρvᶜ))
+    return nothing
 end
 
 function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Center))
@@ -579,29 +597,42 @@ function interpolate_to_child(fts, child_grid, t₀, loc = (Center, Center, Cent
     return field
 end
 
-# Initialize the nested child from the parent-derived `prognostic` (by default the exchanger's, the SAME
-# state that drives the lateral boundaries), interpolated to the child interior — so the interior IC and the prescribed
-# boundary agree at the walls (no standing pressure/density jump). Recompute the Exner reference from the
-# domain-mean state, graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic
-# balance. `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
-# memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
-function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true,
-                                  prognostic = nested_model.exchanger.prognostic)
+# Initialize the nested model from its parent, in one call: set the child from the parent-derived
+# `prognostic` (by default the exchanger's, filled when the exchanger is built: the SAME state that drives
+# the lateral boundaries), interpolated straight into the child's prognostic fields — so
+# the interior IC and the prescribed boundary agree at the walls (no standing pressure/density jump). `set!`
+# of those same fields reconciles the densities and recomputes the Exner reference from the domain-mean
+# state; then graft ρw ← ρw − ρw̃ so the flow follows the terrain. Kernels only up to the balancer (on a
+# grid whose momentum needs no rotation), so on `ReactantState` it runs as one `@jit` program.
+# `balancer = true` then spins ρw into nonhydrostatic balance with Breeze's adiabatic (FV3 `na_init`)
+# balance on a stripped, memory-sharing twin (no microphysics/sponge/forcing) at an
+# automatically-derived acoustic-CFL step — eager.
+#
+# This is not `Oceananigans.initialize!(nested_model)`: `run!` calls that at every start (every call of a
+# compiled `run!`), and putting the initial condition there would reset the child to the parent each time,
+# losing whatever was set on it before the run (a perturbation, a control variable) and a run continued in
+# chunks. `initialize!` keeps to what is safe to repeat: the exchanger's window and the child's own setup.
+function initialize_nested_child!(nested_model; balancer = true, prognostic = nested_model.exchanger.prognostic)
+    initialize_on!(architecture(nested_model.child.grid), initialize_nested_child!, nested_model, balancer, prognostic)
+    return nested_model
+end
+
+# Positional, so `prognostic` reaches a `@jit` program as an argument rather than a constant keyword.
+function initialize_nested_child!(nested_model, balancer, prognostic)
     child = nested_model.child
-    child_grid = child.grid
+    fields = prognostic_fields(child)
+    moisture_name = moisture_prognostic_name(child.microphysics)
     t₀ = @allowscalar first(prognostic.ρᵈ.times)
 
-    ρᵈ   = interpolate_to_child(prognostic.ρᵈ, child_grid, t₀)
-    ρθ   = interpolate_to_child(prognostic.ρθ, child_grid, t₀)
-    ρqᵛᵉ = interpolate_to_child(prognostic.ρqᵛᵉ, child_grid, t₀)
-    ρu, ρv = child_momentum(prognostic, child_grid, t₀)
+    ρᵈ, ρu, ρv, ρθ = fields.ρᵈ, fields.ρu, fields.ρv, fields.ρθ
+    ρqᵛᵉ = fields[moisture_name]
+    interpolate!(ρᵈ,   prognostic.ρᵈ[Time(t₀)])
+    interpolate!(ρθ,   prognostic.ρθ[Time(t₀)])
+    interpolate!(ρqᵛᵉ, prognostic.ρqᵛᵉ[Time(t₀)])
+    interpolate_child_momentum!(ρu, ρv, prognostic, child.grid, t₀)
 
-    ρ   = Field(ρᵈ + ρqᵛᵉ)
-    qᵛᵉ = Field(ρqᵛᵉ / ρ)
-    θˡⁱ = Field(ρθ / ρᵈ)
-
-    moisture = NamedTuple{(moisture_specific_name(child.microphysics),)}((qᵛᵉ,))
-    set!(nested_model; ρ, ρu, ρv, θˡⁱ, moisture..., compute_reference_state = true)
+    moisture = NamedTuple{(moisture_name,)}((ρqᵛᵉ,))
+    set!(nested_model; ρᵈ, ρu, ρv, ρθ, moisture..., compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
@@ -614,7 +645,7 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
     # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a
     # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
-    set!(nested_model; balancer)
+    balancer === false || set!(nested_model; balancer)
 
-    return nested_model
+    return nothing
 end

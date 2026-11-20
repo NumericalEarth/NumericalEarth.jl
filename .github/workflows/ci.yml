@@ -255,12 +255,15 @@ jobs:
       - name: Run tests
         timeout-minutes: 45
         run: |
+          julia --project=test/reactant --color=yes -e 'using Pkg; Pkg.instantiate()'
+          # The runner's memory every 30 s, so an out-of-memory kill (exit 137) shows where the memory went
+          (while true; do free -m | awk -v t="$(date -u +%H:%M:%S)" '/^Mem:/ {print t " memory: " $3 " MiB used, " $7 " MiB available"}'; sleep 30; done) &
+          memory_monitor=$!
+          status=0
           julia --project=test/reactant --color=yes --check-bounds=auto -O0 \
-                --code-coverage=@${PWD}/src -e '
-              using Pkg
-              Pkg.instantiate()
-              include("test/reactant/test_reactant.jl")
-          '
+                --code-coverage=@${PWD}/src test/reactant/runtests.jl || status=$?
+          kill "$memory_monitor"
+          exit "$status"
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v7
         with:
