@@ -53,11 +53,11 @@ export
     ThreeEquationHeatFlux,
     # Friction velocity formulations
     MomentumBasedFrictionVelocity,
-    default_stop_time
+    default_stop_time,
+    TotalWaterNormalization
 
 import Dates
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
@@ -71,6 +71,8 @@ using Oceananigans.Simulations: reset_clock!, Simulation
 using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
 using Oceananigans.Grids: x_domain, y_domain
 using Oceananigans.Utils: launch!, prettytime
+
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
 default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)
@@ -94,6 +96,7 @@ using .InterfaceComputations
 
 include("earth_system_model.jl")
 include("time_step_earth_system_model.jl")
+include("total_water_normalization.jl")
 
 #####
 #####  Fallbacks for no-interface models

@@ -1,17 +1,7 @@
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 """
-    nonhydrostatic_ocean_model(grid;
-                               clock = Clock(grid),
-                               closure = nothing,
-                               tracers = (:T, :S),
-                               coriolis = nothing,
-                               reference_density = 1020,
-                               gravitational_acceleration = default_gravitational_acceleration,
-                               equation_of_state = TEOS10EquationOfState(; reference_density),
-                               advection = WENO(order=9),
-                               forcing = NamedTuple(),
-                               boundary_conditions::NamedTuple = NamedTuple())
+$(SIGNATURES)
 
 Construct and return a nonhydrostatic ocean model suitable for Large Eddy
 Simulation (LES). Called by `ocean_model(grid; model=:nonhydrostatic, ...)`, and wrapped in a

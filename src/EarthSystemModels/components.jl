@@ -49,7 +49,7 @@ ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
 $(TYPEDSIGNATURES)
 
 Ocean velocities averaged over the top `reference_depth` meters, the reference velocities of the sea ice-ocean drag;
-`reference_depth = nothing` returns [`ocean_surface_velocities`](@ref).
+`reference_depth = nothing` returns `ocean_surface_velocities`.
 """
 surface_layer_velocities(ocean, reference_depth) = ocean_surface_velocities(ocean)
 temperature_units(ocean) = DegreesCelsius()
