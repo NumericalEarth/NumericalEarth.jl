@@ -91,6 +91,7 @@ jobs:
                      test_ghsl_downloading
                      test_esaworldcover_downloading
                      test_glofas_downloading
+                     test_geus_downloading
                      test_openlandmap_downloading
                      test_soilgrids_downloading)
           # ASTER GED needs NASA Earthdata credentials

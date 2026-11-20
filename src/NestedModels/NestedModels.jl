@@ -36,6 +36,7 @@ using DocStringExtensions: TYPEDEF, TYPEDFIELDS, TYPEDSIGNATURES
 using Oceananigans.Architectures: CPU, architecture, on_architecture
 using Oceananigans.Fields: location
 
+using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
                            BoundaryPrescribedComponent, boundary_strips
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger

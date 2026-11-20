@@ -225,19 +225,25 @@ end
 $(TYPEDSIGNATURES)
 
 Set the thickness and concentration of the sea ice in `sea_ice` (a `Simulation`) to those of `parent_ice`
-(see [`parent_sea_ice`](@ref)) at the sea ice's time, with open water as no ice.
+(see [`parent_sea_ice`](@ref)) at the sea ice's time, with open water as no ice. Since `h` and `ℵ` are interpolated
+separately, the result is made consistent: `0 ≤ ℵ ≤ 1`, `h ≥ 0`, and a cell has either both or neither.
 """
 function set_parent_sea_ice!(sea_ice::Simulation, parent_ice::NamedTuple)
     model = sea_ice.model
     t = Time(model.clock.time)
     set!(model, h = parent_ice.h[t], ℵ = parent_ice.ℵ[t])
 
-    for φ in (model.ice_thickness, model.ice_concentration)
-        parent(φ) .= zero_nan.(parent(φ))
-    end
+    h = parent(model.ice_thickness)
+    ℵ = parent(model.ice_concentration)
+    h .= consistent_ice_thickness.(h, ℵ)
+    ℵ .= consistent_ice_concentration.(h, ℵ)
 
     return sea_ice
 end
+
+@inline bounded_concentration(ℵ) = clamp(zero_nan(ℵ), zero(ℵ), one(ℵ))
+@inline consistent_ice_thickness(h, ℵ) = ifelse(bounded_concentration(ℵ) > 0, max(zero_nan(h), zero(h)), zero(h))
+@inline consistent_ice_concentration(h, ℵ) = ifelse(h > 0, bounded_concentration(ℵ), zero(ℵ))
 
 """
 $(TYPEDSIGNATURES)

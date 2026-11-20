@@ -131,11 +131,11 @@ add_callback!(simulation, progress, TimeInterval(1days))
 outputs = (; u = child.velocities.u, v = child.velocities.v,
              T = child.tracers.T, S = child.tracers.S)
 
-ocean.output_writers[:surface] = JLD2Writer(child, outputs;
-                                            schedule = TimeInterval(6hours),
-                                            filename = "bouvet_nested_surface_fields",
-                                            indices = (:, :, Nz),
-                                            overwrite_files = true)
+ocean.output_writers[:surface_fields] = JLD2Writer(child, outputs;
+                                                   schedule = TimeInterval(6hours),
+                                                   filename = "bouvet_nested_surface_fields",
+                                                   indices = (:, :, Nz),
+                                                   overwrite_files = true)
 
 ocean.output_writers[:free_surface] = JLD2Writer(child, (; η = child.free_surface.displacement);
                                                  schedule = TimeInterval(6hours),

@@ -28,7 +28,7 @@ function Base.show(io::IO, pl::PrescribedLand)
 end
 
 """
-    PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
+$(SIGNATURES)
 
 Return a `PrescribedLand` from a `NamedTuple` of `FieldTimeSeries` freshwater fluxes (e.g. rivers, icebergs).
 
@@ -36,7 +36,7 @@ Keyword Arguments
 =================
 - `clock`: the component's `Clock`. Default: `nothing`, a `Clock` matching the element type of `freshwater_flux`.
 - `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), one per component, scattering each onto coastal ocean cells conserving volume
-  (see [`GloFASPrescribedLand`](@ref), [`JRA55PrescribedLand`](@ref)). Default: `nothing`, which interpolates the flux pointwise onto the ocean grid.
+  (see [`GloFASPrescribedLand`](@ref NumericalEarth.DataWrangling.GloFAS.GloFASPrescribedLand), [`JRA55PrescribedLand`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedLand)). Default: `nothing`, which interpolates the flux pointwise onto the ocean grid.
 """
 function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     first_flux = first(freshwater_flux)
@@ -51,6 +51,16 @@ function PrescribedLand(freshwater_flux; clock=nothing, river_routing=nothing)
     update_state!(land)
     return land
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return a `PrescribedLand` holding the freshwater components of `land` and `other`, e.g. GloFAS rivers
+and GEUS icebergs. Components of `other` replace those of `land` with the same name.
+"""
+Base.merge(land::PrescribedLand, other::PrescribedLand) =
+    PrescribedLand(merge(land.freshwater_flux, other.freshwater_flux);
+                   river_routing = merge(land.river_routing, other.river_routing))
 
 @inline function Oceananigans.TimeSteppers.update_state!(land::PrescribedLand)
     time = Time(land.clock.time)

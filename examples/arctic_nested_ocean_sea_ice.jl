@@ -73,11 +73,11 @@ function progress(sim)
 end
 add_callback!(simulation, progress, TimeInterval(10days))
 
-Nz = size(grid, 3)
 u, v, w = child.velocities
 outputs = (T = view(child.tracers.T, :, :, Nz),
            S = view(child.tracers.S, :, :, Nz),
-           u = view(u, :, :, Nz), v = view(v, :, :, Nz),
+           u = view(u, :, :, Nz),
+           v = view(v, :, :, Nz),
            η = child.free_surface.displacement,
            h = sea_ice.model.ice_thickness,
            ℵ = sea_ice.model.ice_concentration)

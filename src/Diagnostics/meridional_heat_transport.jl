@@ -1,8 +1,7 @@
 using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 
 """
-    meridional_heat_transport(esm::EarthSystemModel;
-                              reference_temperature = 0)
+$(SIGNATURES)
 
 Return the meridional heat transport for the coupled `esm::EarthSystemModel` by computing
 the meridional heat flux.

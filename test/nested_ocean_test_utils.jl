@@ -13,7 +13,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, GravityWaveRad
                                        SurfaceWaveRadiation, TracerReservoir, Value
 using Oceananigans.Grids: MutableVerticalDiscretization, inactive_cell
 using Oceananigans.ImmersedBoundaries: bottom_height_field, has_active_cells_map
-using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ
+using Oceananigans.Operators: Azᶜᶜᶜ, Δzᶠᶜᶜ, rotation_angle
 using Oceananigans.OrthogonalSphericalShellGrids: RotatedLatitudeLongitudeGrid
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.OutputReaders: InMemory, OnDisk
