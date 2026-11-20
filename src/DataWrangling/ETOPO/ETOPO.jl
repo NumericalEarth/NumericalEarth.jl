@@ -29,7 +29,7 @@ const ETOPOMetadatum = Metadatum{<:ETOPO2022}
 DataWrangling.dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[data.name]
 
 const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
-    "ETOPO_2022_v1_60s_N90W180_surface.nc?rlkey=2t7890ruyk4nd5t5eov5768lt&st=yfxsy1lu&dl=0"
+    "ETOPO_2022_v1_60s_N90W180_surface.nc?rlkey=2t7890ruyk4nd5t5eov5768lt&st=yfxsy1lu&dl=1"
 
 DataWrangling.metadata_url(::ETOPOMetadatum) = ETOPO_url
 DataWrangling.metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"

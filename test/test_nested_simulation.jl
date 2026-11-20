@@ -729,12 +729,16 @@ end
                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
+    default = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    breeze_damping = Breeze.SplitExplicitTimeDiscretization().damping
+    @test typeof(default.child.dynamics.time_discretization.damping) == typeof(breeze_damping)
+
     nested = nested_atmosphere_model(parent, child_grid;
-                                     time_discretization_kwargs = (; damping = ThermalDivergenceDamping()),
+                                     time_discretization_kwargs = (; damping = Breeze.NoDivergenceDamping()),
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
 
     time_discretization = nested.child.dynamics.time_discretization
-    @test time_discretization.damping isa ThermalDivergenceDamping
+    @test time_discretization.damping isa Breeze.NoDivergenceDamping
     @test time_discretization.sponge isa UpperSponge
 end
 
@@ -1217,3 +1221,22 @@ end
     ρᵈ = Array(interior(exchanger.prognostic.ρᵈ[1]))
     @test all(isfinite, ρᵈ) && all(>(0), ρᵈ)
 end
+
+# A prescribed parent takes the child's clock after every step, with no branch on the gap between
+# the clocks (issue #816), and follows it back when it starts ahead.
+@testset "NestedModel: a prescribed parent follows the child's clock" begin
+    grid = RectilinearGrid(size = (4, 4, 4), extent = (1, 1, 1), topology = (Periodic, Periodic, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 10.0])
+    nested = NumericalEarth.NestedModels.NestedModel(parent, HydrostaticFreeSurfaceModel(grid))
+
+    for _ in 1:3
+        time_step!(nested, 1.0)
+    end
+    @test parent.clock.time == nested.child.clock.time == 3
+    @test parent.clock.iteration == nested.child.clock.iteration == 3
+
+    parent.clock.time = 7
+    time_step!(nested, 1.0)
+    @test parent.clock.time == nested.child.clock.time == 4
+end
+

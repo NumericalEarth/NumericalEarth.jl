@@ -12,7 +12,6 @@ export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
 using Dates: Dates, DateTime, Month, Hour
-using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
@@ -25,12 +24,14 @@ using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
 
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity, prescribed_radiation,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
-                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
+                       first_date, last_date, native_times, set_metadata_field!, DatasetBackend, PrefetchingBackend,
                        instantiate, DatewiseFilename, window_span, validate_time_coverage, unzip
 using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
+using ...EarthSystemModels: default_clock
 
 download_ERA5_cache::String = ""
 
