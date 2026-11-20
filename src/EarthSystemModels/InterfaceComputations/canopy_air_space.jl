@@ -131,8 +131,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Empirical ground-surface resistance for the moist-soil (vanishing dry layer) evaporation
-branch of a [`CanopyInterface`](@ref),
+Empirical surface resistance of evaporating moist soil under a [`CanopyInterface`](@ref),
 
 ```math
 rˢᵒⁱ = e^{a - b 𝒮},
@@ -255,10 +254,11 @@ Fields:
 - `undercanopy_transfer_velocity` : ground↔canopy-air transfer velocity `wᵘᶜᵃⁿ` → `gᵍʳⁿᵈᵀ = ρcᵖᵐ·wᵘᶜᵃⁿ`;
   a constant `Number` (m s⁻¹), an [`AreaIndexUndercanopyVelocity`](@ref), or a
   [`FrictionVelocityUndercanopyVelocity`](@ref).
-- `wet_soil_resistance` : soil surface resistance on the moist-soil (vanishing dry layer)
-  vapor branch (a [`ExponentialSoilResistance`](@ref)), or `nothing` (the default: above the
-  dry-layer onset the soil itself does not limit evaporation, and the ground-surface
-  resistance and undercanopy path carry it).
+- `wet_soil_resistance` : surface resistance `rˢᵒⁱ` of evaporating moist soil (an
+  [`ExponentialSoilResistance`](@ref)) in series on both ground vapor branches, or `nothing`
+  (the default: the ground-surface resistance and undercanopy path alone carry the vapor).
+  Below the dry-layer onset saturation `rˢᵒⁱ` holds its onset value and the dry layer adds
+  in series; condensing ground bypasses it.
 - `ground_surface_resistance` : bulk ground-surface resistance in series on both ground
   vapor branches (a [`GroundSurfaceResistance`](@ref), the default, whose `Cᵍʳⁿᵈ` may be a
   per-cell `Field`, or a constant `Number` in s m⁻¹), or `nothing` for none.
@@ -423,10 +423,14 @@ end
 
 # Ground vapor conductance `gᵍʳⁿᵈᵛ`, source humidity `qᵍʳⁿᵈ`, and the source's slope `dqᵍʳⁿᵈ` in the
 # ground temperature `Tᵍʳⁿᵈ`: the dry-layer branch (front humidity qᵉ through Gᵉ in series with the
-# ground-surface + undercanopy path `gᵈᵇʳ`) blended with the saturated-skin branch (qᵍʳⁿᵈ⁺ through gᵍʳⁿᵈᵛ⁺)
-# by the soil model's weight `fᵈᵇʳ`.
-@inline function soil_vapor_terms(soil, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+# ground path `gᵈᵇʳ`) blended with the saturated-skin branch (qᵍʳⁿᵈ⁺ through the ground path `gᵍʳⁿᵈᵛ⁺`)
+# by the soil model's weight `fᵈᵇʳ`. A branch whose source is moister than the canopy air `qᵃᶜᵃⁿ`
+# evaporates through `evaporating_conductance`; otherwise it condenses through `condensing_conductance`,
+# so its flux stays continuous through zero.
+@inline function soil_vapor_terms(soil, Tᵍʳⁿᵈ, qᵃᶜᵃⁿ, evaporating_conductance, condensing_conductance, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
     Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳⁿᵈ⁺, dqᵉ, dqᵍʳⁿᵈ⁺ = dry_layer_terms(soil, Tᵍʳⁿᵈ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+    gᵈᵇʳ    = ifelse(qᵉ > qᵃᶜᵃⁿ, evaporating_conductance, condensing_conductance)
+    gᵍʳⁿᵈᵛ⁺ = ifelse(qᵍʳⁿᵈ⁺ > qᵃᶜᵃⁿ, evaporating_conductance, condensing_conductance)
     Gᵉ = ifelse(gᵈᵇʳ + Gᵉ > 0, Gᵉ * gᵈᵇʳ / (gᵈᵇʳ + Gᵉ), zero(Gᵉ))
     gᵍʳⁿᵈᵛ = fᵈᵇʳ * Gᵉ + (1 - fᵈᵇʳ) * gᵍʳⁿᵈᵛ⁺
     blended = gᵍʳⁿᵈᵛ > eps(eltype(Ψⁱⁿ))
@@ -508,13 +512,15 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     gˡᵉᵃᶠᵀ = ρᵃᵗ * cᵖᵐ * λˡᵉᵃᶠ * c.leaf_boundary_layer_velocity
     gˡᵇˡ  = ρᵃᵗ * λˡᵉᵃᶠ * c.leaf_boundary_layer_velocity
     gᵍʳⁿᵈᵀ = ρᵃᵗ * cᵖᵐ * wᵘᶜᵃⁿ
-    # Ground vapor path: the ground-surface resistance `rᵍʳⁿᵈ` and, on the moist-soil branch, the soil
-    # surface resistance `rˢᵒⁱ` in series with the undercanopy path (Sakaguchi & Zeng 2009).
-    rᵍʳⁿᵈ   = ground_surface_resistance(c.ground_surface_resistance, u★)
-    rˢᵒⁱ   = soil_surface_resistance(c.wet_soil_resistance, Ψˡᵃ.𝒮)
-    gᵈᵇʳ   = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * rᵍʳⁿᵈ)
-    gᵍʳⁿᵈᵛ⁺ = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * (rᵍʳⁿᵈ + rˢᵒⁱ))
-    Λᵍʳⁿᵈ   = convert(FT, ground_conductance(c.ground_heat_flux))
+    # Ground vapor path: the ground-surface resistance `rᵍʳⁿᵈ` and, for evaporating soil, the soil surface
+    # resistance `rˢᵒⁱ` in series with the undercanopy path (Sakaguchi & Zeng 2009). Below the dry-layer
+    # onset saturation 𝒮ᶜ, `rˢᵒⁱ` holds its onset value and the dry layer adds in series.
+    rᵍʳⁿᵈ = ground_surface_resistance(c.ground_surface_resistance, u★)
+    𝒮ᶜ    = convert(FT, c.soil_humidity.dry_layer_depth.dry_layer_onset_saturation)
+    rˢᵒⁱ  = soil_surface_resistance(c.wet_soil_resistance, max(Ψˡᵃ.𝒮, 𝒮ᶜ))
+    evaporating_conductance = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * (rᵍʳⁿᵈ + rˢᵒⁱ))
+    condensing_conductance  = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * rᵍʳⁿᵈ)
+    Λᵍʳⁿᵈ = convert(FT, ground_conductance(c.ground_heat_flux))
 
     # Canopy-air heat and vapor capacities (zero for a massless node) and the
     # start-of-step node.
@@ -558,7 +564,8 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
         δT = sqrt(eps(FT)) * Tˡᵉᵃᶠ
         gˡᵉᵃᶠᵛ⁺, _, _ = leaf_vapor_terms(c, Tˡᵉᵃᶠ + δT, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
         ∂gˡᵉᵃᶠᵛ∂Tˡᵉᵃᶠ  = (gˡᵉᵃᶠᵛ⁺ - gˡᵉᵃᶠᵛ) / δT
-        gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, dqᵍʳⁿᵈ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+        gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, dqᵍʳⁿᵈ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, qᵃᶜᵃⁿ, evaporating_conductance, condensing_conductance,
+                                                 Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
 
         Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍʳⁿᵈᵛ
         mᵛ  = node_memory(Σgᵛ, Cᵛ, Δt)
@@ -594,7 +601,8 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
 
     # The node and the flux partition at the final leaf and ground temperatures.
     gˡᵉᵃᶠᵛ, gʷᵉᵗ, qˡᵉᵃᶠ = leaf_vapor_terms(c, Tˡᵉᵃᶠ, qᵃᶜᵃⁿ, gˡᵇˡ, Δt, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, transmittance)
-    gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, _ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, gᵍʳⁿᵈᵛ⁺, gᵈᵇʳ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+    gᵍʳⁿᵈᵛ, qᵍʳⁿᵈ, _ = soil_vapor_terms(c.soil_humidity, Tᵍʳⁿᵈ, qᵃᶜᵃⁿ, evaporating_conductance, condensing_conductance,
+                                        Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
     Σgᵛ = gᵃᵛ + gˡᵉᵃᶠᵛ + gᵍʳⁿᵈᵛ
     Tᵃᶜᵃⁿ, equilibrium_temperature = canopy_air_node(T⁻, (gᵍʳⁿᵈᵀ, gˡᵉᵃᶠᵀ, gᵃᵀ), (Tᵍʳⁿᵈ, Tˡᵉᵃᶠ, θᵃᵗ), mᵀ)
     qᵃᶜᵃⁿ, equilibrium_humidity    = canopy_air_node(q⁻, (gᵍʳⁿᵈᵛ, gˡᵉᵃᶠᵛ, gᵃᵛ), (qᵍʳⁿᵈ, qˡᵉᵃᶠ, qᵃᵗ), node_memory(Σgᵛ, Cᵛ, Δt))
