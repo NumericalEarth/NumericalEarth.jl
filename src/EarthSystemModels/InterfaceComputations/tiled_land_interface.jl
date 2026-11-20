@@ -15,7 +15,8 @@ and temperatures the atmosphere and slab read. Build it with
 
 Fields:
 - `vegetated`      : the forested tile, an `AtmosphereInterface` with a [`CanopyInterface`](@ref).
-- `bare`           : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref).
+- `bare`           : the bare-soil tile, an `AtmosphereInterface` with an [`EnergyBalanceTemperature`](@ref)
+                     and a [`SoilResistanceHumidity`](@ref).
 - `cover_fraction` : the vegetated cover fraction `f ∈ [0, 1]` — a `Number`, `Field`, or `FieldTimeSeries`.
 - `fluxes`         : the blended [`AtmosphereSurfaceFluxes`](@ref).
 - `temperature`    : the blended [`CanopyInterfaceDiagnostics`](@ref). Canopy quantities (`canopy`,
@@ -36,14 +37,17 @@ $(TYPEDSIGNATURES)
 
 Build a tiled atmosphere–land interface from the `vegetated` canopy formulation and the
 vegetated `cover_fraction`. `bare` defaults to a soil skin that shares the canopy's ground heat
-flux and soil humidity. The land's surface storage belongs to the vegetated tile.
-`vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for each tile.
+flux, soil humidity, and `wet_soil_resistance` (a [`SoilResistanceHumidity`](@ref)); the
+canopy's `ground_surface_resistance` stays under the canopy. The land's surface storage belongs
+to the vegetated tile. `vegetated_fluxes` and `bare_fluxes` specify the turbulent transport for
+each tile.
 """
 function TiledLandInterface(grid, atmosphere, land;
                             vegetated,
                             cover_fraction,
                             bare                = (temperature       = EnergyBalanceTemperature(vegetated.ground_heat_flux),
-                                                   specific_humidity = vegetated.soil_humidity),
+                                                   specific_humidity = SoilResistanceHumidity(vegetated.soil_humidity,
+                                                                                              vegetated.wet_soil_resistance)),
                             vegetated_fluxes    = default_atmosphere_land_fluxes(land, eltype(grid)),
                             bare_fluxes         = default_atmosphere_land_fluxes(land, eltype(grid)),
                             velocity_difference = RelativeVelocity())

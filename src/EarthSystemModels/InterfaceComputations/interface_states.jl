@@ -724,35 +724,52 @@ Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
     return F, Σg
 end
 
-# A massless skin takes one Newton step on F(Tⁱⁿ) = 0 per iterate of the Monin–Obukhov
-# fixed point, so the skin and the similarity scales converge jointly.
-@inline function compute_interface_temperature(t::EnergyBalanceTemperature,
-                                               interface_state,
-                                               atmosphere_state,
-                                               interior_state,
-                                               radiation_state,
-                                               interface_formulation,
-                                               atmosphere_properties,
-                                               interior_properties,
-                                               storage::Nothing = interior_state.surface_storage)
+# The skin temperature is held through the Monin–Obukhov fixed point: only the similarity
+# scales iterate.
+@inline compute_interface_temperature(::EnergyBalanceTemperature, Ψⁱⁿ, args...) = Ψⁱⁿ.temperature
 
-    T = interface_state.temperature
-    F, Σg = skin_energy_imbalance(T, t, interface_state, atmosphere_state, interior_state,
-                                  radiation_state, interface_formulation, atmosphere_properties)
-    # Σg = 0 leaves F independent of T: no root to step toward.
-    return ifelse(Σg > 0, T + F / Σg, T)
+@inline land_interface_state(temperature_formulation, storage, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt) =
+    compute_interface_state(ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, (;), Δt)
+
+# A massless skin sits at the root of the energy imbalance F(T), evaluated at the similarity
+# scales converged for each trial T. Stepping T and the scales together instead cycles in calm
+# air, where the scales switch between convective and decoupled as T crosses the air temperature.
+# F decreases with T: the trials expand until they bracket the root, then close on it by
+# regula falsi with the Illinois weighting.
+@inline function land_interface_state(t::EnergyBalanceTemperature, ::Nothing, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
+    FT = eltype(Ψⁱⁿ)
+    stop_criteria = ℙⁱⁿ.turbulent_fluxes.solver_stop_criteria
+
+    Ψⁱⁿ = compute_interface_state(ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, (;), Δt)
+    Tᵃ = Ψⁱⁿ.temperature
+    Fᵃ, Σg = skin_energy_imbalance(Tᵃ, t, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ)
+
+    # The first trial is a Newton step at the scales of the initial temperature.
+    maximum_temperature_step = convert(FT, 25)
+    Tᵇ = Tᵃ + ifelse(Σg > 0, clamp(Fᵃ / Σg, -maximum_temperature_step, maximum_temperature_step), zero(FT))
+    Ψⁱⁿ = compute_interface_state(ℙⁱⁿ, rebuild_interface_state(Ψⁱⁿ, Ψⁱⁿ.fluxes, Tᵇ, Ψⁱⁿ.specific_humidity),
+                                  Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, (;), Δt)
+    Fᵇ, _ = skin_energy_imbalance(Tᵇ, t, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ)
+
+    iteration = 1
+    while bracketing(Tᵃ, Tᵇ, iteration, stop_criteria)
+        # Fᵃ = Fᵇ = 0 leaves the trial at the root.
+        bracketed = (Fᵃ * Fᵇ ≤ 0) & (Fᵃ != Fᵇ)
+        T = ifelse(bracketed, (Tᵃ * Fᵇ - Tᵇ * Fᵃ) / (Fᵇ - Fᵃ), Tᵇ + 2 * (Tᵇ - Tᵃ))
+        Ψⁱⁿ = compute_interface_state(ℙⁱⁿ, rebuild_interface_state(Ψⁱⁿ, Ψⁱⁿ.fluxes, T, Ψⁱⁿ.specific_humidity),
+                                      Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, (;), Δt)
+        F, _ = skin_energy_imbalance(T, t, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙⁱⁿ, ℙₐ)
+
+        # Illinois: a retained end has its imbalance halved.
+        kept = bracketed & (F * Fᵇ > 0)
+        Tᵃ = ifelse(kept, Tᵃ, Tᵇ)
+        Fᵃ = ifelse(kept, Fᵃ / 2, Fᵇ)
+        Tᵇ, Fᵇ = T, F
+        iteration += 1
+    end
+
+    return Ψⁱⁿ
 end
-
-# A prognostic skin is model state: frozen through the fixed point (only the
-# similarity scales iterate) and advanced once per step after the flux solve.
-@inline compute_interface_temperature(::EnergyBalanceTemperature,
-                                      interface_state,
-                                      atmosphere_state,
-                                      interior_state,
-                                      radiation_state,
-                                      interface_formulation,
-                                      atmosphere_properties,
-                                      interior_properties, storage) = interface_state.temperature
 
 ####
 #### Interface specific humidity
