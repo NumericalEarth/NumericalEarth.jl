@@ -66,17 +66,17 @@ EarthSystemModels.default_clock(::ReactantState, FT) =
             stage = 1, last_Δt = Reactant.ConcreteRNumber(Inf),
             last_stage_Δt = Reactant.ConcreteRNumber(Inf), kernel_time_type = FT)
 
-# A nested parent following the child's clock inside a compiled step: write the child's values into the
-# parent's own traced numbers, as Oceananigans' traced `tick!` does, rather than rebinding the parent's
-# fields to the child's. Rebinding leaves both clocks holding one result buffer after the call, which the
-# next call refuses to donate twice.
+# A nested parent set to the end of the child's upcoming step inside a compiled step: write the values
+# into the parent's own traced numbers, as Oceananigans' traced `tick!` does, rather than rebinding the
+# parent's fields to the child's. Rebinding leaves both clocks holding one result buffer after the call,
+# which the next call refuses to donate twice.
 const TracedClock = Clock{<:Reactant.TracedRNumber}
 
-function NestedModels.copy_clock!(clock::TracedClock, source)
-    assign!(clock.time, source.time)
-    assign!(clock.iteration, source.iteration)
-    assign!(clock.last_Δt, source.last_Δt)
-    assign!(clock.last_stage_Δt, source.last_stage_Δt)
+function NestedModels.copy_clock!(clock::TracedClock, source, Δt)
+    assign!(clock.time, source.time + Δt)
+    assign!(clock.iteration, source.iteration + 1)
+    assign!(clock.last_Δt, Δt)
+    assign!(clock.last_stage_Δt, Δt)
     return nothing
 end
 
