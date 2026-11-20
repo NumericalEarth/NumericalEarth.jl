@@ -38,17 +38,58 @@ end
     end
 end
 
+# Skin temperature, friction velocity, and sensible and latent heat fluxes of a land column.
+function column_fluxes(arch, temperature; ℓ = 0.1, solver_stop_criteria = nothing, kw...)
+    fluxes = SimilarityTheoryFluxes(Float64; stability_functions = atmosphere_land_stability_functions(Float64),
+                                    momentum_roughness_length = ℓ, temperature_roughness_length = ℓ / 10,
+                                    water_vapor_roughness_length = ℓ / 10, solver_stop_criteria)
+    humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency = 0.5)
+    model = coupled_land_model(arch; atmosphere_land_fluxes = fluxes,
+                               atmosphere_land_interface_state = (; temperature, specific_humidity = humidity), kw...)
+    interface = model.interfaces.atmosphere_land_interface
+    return scalar(interface.temperature), scalar(interface.fluxes.friction_velocity),
+           scalar(interface.fluxes.sensible_heat), scalar(interface.fluxes.latent_heat)
+end
+
+@testset "Massless skin fluxes are the similarity fluxes at its temperature" begin
+    # Still and windy sunny air, a smooth surface that convects past the unstable bound of the stability
+    # functions, and a rough surface on a clear night past the stable bound.
+    columns = ((; wind = 0.0), (; wind = 3.0), (; wind = 0.2, ℓ = 1e-5),
+               (; wind = 2.0, ℓ = 1.0, shortwave = 0.0, longwave = 250.0))
+
+    for arch in test_architectures, column in columns
+        T, skin_fluxes... = column_fluxes(arch, SoilSkinTemperature(0.625, 0.05); column...)
+        _, bulk_fluxes... = column_fluxes(arch, BulkTemperature(); column..., land_temperature = T)
+        @test all(isapprox.(skin_fluxes, bulk_fluxes; rtol = 1e-5))
+    end
+end
+
+@testset "Massless skin with FixedIterations" begin
+    for arch in test_architectures, wind in (1.0, 3.0)
+        T, _ = column_fluxes(arch, SoilSkinTemperature(0.625, 0.05); wind)
+        Tⁿ, _ = column_fluxes(arch, SoilSkinTemperature(0.625, 0.05); wind, solver_stop_criteria = FixedIterations(8))
+        @test Tⁿ ≈ T atol=0.5
+    end
+end
+
 @testset "Massless skin closes its energy balance in calm air" begin
-    for arch in test_architectures
-        conductivity, thickness = 0.625, 0.05
-        soil = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64),
+    conductivity, thickness = 0.625, 0.05
+
+    # Rough surfaces under light wind: sunny over cool wet soil, hot and dry over drier soil, and at night.
+    calm_columns = ((1.0, (; wind = 0.3,  shortwave = 1000.0, air_temperature = 305.0, air_specific_humidity = 0.002,
+                             land_temperature = 295.0, water = 150.0)),
+                    (1.5, (; wind = 0.04, shortwave = 200.0,  air_temperature = 318.0, air_specific_humidity = 0.012,
+                             land_temperature = 328.0, water = 45.0)),
+                    (1.5, (; wind = 1.0,  shortwave = 0.0,    air_temperature = 305.0, air_specific_humidity = 0.006,
+                             land_temperature = 305.0, water = 150.0)))
+
+    for arch in test_architectures, (ℓ, column) in calm_columns, wet_soil_resistance in (nothing, ExponentialSoilResistance(Float64))
+        soil = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64), wet_soil_resistance,
                                ground_heat_flux = SoilConductiveFlux(conductivity, thickness))
         rough = SimilarityTheoryFluxes(Float64; stability_functions = atmosphere_land_stability_functions(Float64),
-                                       momentum_roughness_length = 1.0, temperature_roughness_length = 0.1,
-                                       water_vapor_roughness_length = 0.1)
-        model = tiled_land_model(arch; vegetated = soil, cover_fraction = 0.0, interface_kw = (; bare_fluxes = rough),
-                                 wind = 0.3, shortwave = 1000.0, air_temperature = 305.0, air_specific_humidity = 0.002,
-                                 land_temperature = 295.0, water = 150.0)
+                                       momentum_roughness_length = ℓ, temperature_roughness_length = ℓ / 10,
+                                       water_vapor_roughness_length = ℓ / 10)
+        model = tiled_land_model(arch; vegetated = soil, cover_fraction = 0.0, interface_kw = (; bare_fluxes = rough), column...)
         skin = model.interfaces.atmosphere_land_interface.bare
         radiation = model.interfaces.exchanger.radiation.state
         T = scalar(skin.temperature)
