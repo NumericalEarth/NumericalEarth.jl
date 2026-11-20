@@ -4,7 +4,8 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition, Zipper, FPivot,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
-using Oceananigans.Grids: Sides, Closed, CenterFolded, FaceFolded, generate_coordinate, longitude_in_same_window
+using Oceananigans.Grids: Sides, Closed, CenterFolded, FaceFolded, generate_coordinate, longitude_in_same_window,
+                          validate_dimension_specification
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, distribute_tripolar_grid
 
@@ -365,17 +366,7 @@ function remove_minor_orca_basins(bottom_height, major_basins)
 end
 
 """
-    ORCAGrid(arch = CPU(), FT::DataType = Float64;
-             dataset,
-             halo = (4, 4, 4),
-             z = (-6000, 0),
-             Nz = 50,
-             radius = Oceananigans.defaults.planet_radius,
-             with_bathymetry = true,
-             active_cells_map = true,
-             major_basins = Inf,
-             south_rows_to_remove = default_south_rows_to_remove(dataset),
-             dir = default_download_directory(dataset))
+$(SIGNATURES)
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,
@@ -410,7 +401,7 @@ Keyword Arguments
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
-- `Nz`: Number of vertical levels (only used when `z` is a 2-tuple). Default: `50`.
+- `Nz`: Number of vertical levels. Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
 - `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
@@ -419,6 +410,8 @@ Keyword Arguments
 - `major_basins`: Number of independent connected ocean basins to retain via
                   [`remove_minor_basins!`](@ref). Basins are removed from smallest to largest;
                   `major_basins = 1` keeps only the largest. Default: `Inf` (keep all basins).
+- `minimum_depth`: Minimum depth [m] of the wet columns, defined as a positive value; shallower wet columns are
+                   deepened to it. Default: 0.
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
@@ -434,6 +427,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   with_bathymetry = true,
                   active_cells_map = true,
                   major_basins = Inf,
+                  minimum_depth = 0,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
                   dir = default_download_directory(dataset))
 
@@ -460,10 +454,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     fold_topology = Sides{Closed, fold}
 
     # The first kept column `ic + 1` aligns NEMO's fold mirror (i ↔ jpi + 1 - i for an F pivot,
-    # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one.
-    ic = pivot === FPivot ? 1 : 2
+    # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one. In a file without NEMO halos the kept
+    # columns wrap around the east edge and the top row is the fold itself.
+    nemo_halo = overlap ÷ 2
+    ic = pivot === FPivot ? nemo_halo : nemo_halo + 1
     jr = south_rows_to_remove
-    chop(data) = data[ic+1:ic+size(data, 1)-overlap, jr+1:end-1]
+    chop(data) = data[mod1.(ic+1:ic+size(data, 1)-overlap, size(data, 1)), jr+1:end-nemo_halo]
 
     λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
     φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
@@ -478,6 +474,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     Hx, Hy, Hz = halo
 
     topo = (Periodic, fold_topology, Bounded)
+    z = validate_dimension_specification(Bounded, z, :z, Nz, FT)
     Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),
@@ -542,6 +539,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     bottom_field = Field{Center, Center, Nothing}(underlying_grid)
     set!(bottom_field, global_orca_bottom_height(read_global_bottom_height, underlying_grid, arch, FT, major_basins))
+    launch!(arch, underlying_grid, :xy, _enforce_minimum_depth!, bottom_field, minimum_depth)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
 end

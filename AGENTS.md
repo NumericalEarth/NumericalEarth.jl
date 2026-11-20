@@ -54,7 +54,9 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 
 ### Docstrings
 
-- Use `$(TYPEDSIGNATURES)` from DocStringExtensions.jl (never write explicit signatures)
+- Use `$(TYPEDSIGNATURES)` or `$(SIGNATURES)` (never write explicit signatures), imported from
+  `NumericalEarth`, not DocStringExtensions: they show default values with DocStringExtensions v0.10
+  and plain signatures with v0.9
 - **ALWAYS `jldoctest` blocks, NEVER plain `julia` blocks** — doctests are tested; plain blocks rot
 - Include expected output after `# output`; prefer `show` methods over boolean comparisons
 - **Citations**: Use inline `[Author (year)](@cite Key)` syntax woven into prose
@@ -91,6 +93,8 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
   models' displays inherit it — never manually print what `show`/`summary` already displays.
 - **Extension-implemented API**: declare a stub with docstring and export in `src`
   (`function foo end`), define the method in the extension as `NumericalEarth.Module.foo(...) = ...`.
+- **New extensions**: add the extension's trigger packages to `test/Project.toml` and load them with
+  `using` in `test/test_quality_assurance.jl` — ExplicitImports checks only extensions that are loaded.
 - Minimize code duplication (allow only for trivial one-liners)
 - When something would be better in Oceananigans, add a detailed TODO note
 - Almost always extend functions in source code, not in examples
