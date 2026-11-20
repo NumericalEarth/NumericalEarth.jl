@@ -8,8 +8,8 @@ using ..EarthSystemModels: BoundaryPrescribedComponent
 parent_ocean_sources(ocean::PrescribedOcean) = (u = ocean.velocities.u,
                                                v = ocean.velocities.v,
                                                η = ocean.free_surface,
-                                               T = ocean.sea_surface_temperature,
-                                               S = ocean.sea_surface_salinity)
+                                               T = ocean.temperature,
+                                               S = ocean.salinity)
 
 # A strip parent supplies each side from its own strip; any other parent supplies every side.
 parent_ocean_sources(parent, sides) = NamedTuple{sides}(ntuple(Returns(parent_ocean_sources(parent)), length(sides)))
@@ -36,7 +36,7 @@ normal_velocity_name(side) = boundary_dimension(side) == 1 ? :u : :v
 function boundary_floor(grid, name, parent_bottom_height)
     LX, LY, _ = typeof.(boundary_location(name))
     floor = Field{LX, LY, Nothing}(underlying_grid(grid))
-    interpolate!(floor, parent_bottom_height)
+    interpolate_bottom_height!(floor, parent_bottom_height, parent_bottom_height.grid)
     fill_halo_regions!(floor)
     return floor
 end
@@ -81,7 +81,7 @@ function roll_bands!(exchanger)
 end
 
 function OceanBoundaryExchanger(parent, grid::AbstractGrid, sides::Tuple; width, time, parent_bottom_height = nothing)
-    sources = parent_ocean_sources(parent, sides)
+    sources = map(side_sources -> child_frame_sources(grid, side_sources), parent_ocean_sources(parent, sides))
     times = ParentTimes(time, time)
 
     function side_bands(side)

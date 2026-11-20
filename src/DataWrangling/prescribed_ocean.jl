@@ -35,8 +35,8 @@ function Oceans.PrescribedOcean(region::BoundingBox, dates, dataset;
 
     return PrescribedOcean(T.grid, T.times;
                            clock = Clock{FT}(time = 0),
-                           sea_surface_temperature = T,
-                           sea_surface_salinity = S,
+                           temperature = T,
+                           salinity = S,
                            velocities = (; u, v),
                            free_surface = η,
                            kw...)

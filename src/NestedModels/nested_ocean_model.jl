@@ -4,7 +4,8 @@
 
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField, interior, interpolate!
 using Oceananigans.BoundaryConditions: ObliqueRadiation, TracerReservoir
-using Oceananigans.Grids: LatitudeLongitudeGrid, Open, TwoSided, constructor_arguments, λnodes, φnodes
+using Oceananigans.Grids: LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, Open, TwoSided, constructor_arguments,
+                          λnodes, φnodes
 using Oceananigans.TimeSteppers: Clock
 using Oceananigans.Units: days, hours, kilometers
 using Oceananigans.DistributedComputations: all_reduce, reconstruct_global_grid
@@ -15,25 +16,37 @@ using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions, estimate_max
 using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding,
                        matching_bathymetry
 
-# Sponge and blend widths of 8 and 4 cells at 1/12°, held fixed in degrees across resolutions
 default_velocity_scheme() = ObliqueRadiation(inflow_timescale = 9hours, outflow_timescale = 360days)
 default_tracer_scheme() = TracerReservoir(inflow_length_scale = 20kilometers, outflow_length_scale = 0)
 
+# Sponge and blend widths of 8 and 4 cells at 1/12°, held fixed in degrees across resolutions
 const default_relaxation_degrees = 8 / 12
 const default_bathymetry_blend_degrees = 4 / 12
 
 # The number of cells of `grid` that span `degrees` along its finest horizontal direction.
 function cells_spanning(grid, degrees)
-    cpu_grid = on_architecture(CPU(), underlying_grid(grid))
-    Δ = min(minimum(diff(λnodes(cpu_grid, Face()))), minimum(diff(φnodes(cpu_grid, Face()))))
-    return max(1, round(Int, degrees / all_reduce(min, Δ, architecture(grid))))
+    Δ = all_reduce(min, finest_spacing(underlying_grid(grid)), architecture(grid))
+    return max(1, round(Int, degrees / Δ))
+end
+
+# In degrees of longitude or latitude, or of arc along a curvilinear grid's own axes
+function finest_spacing(grid::LatitudeLongitudeGrid)
+    cpu_grid = on_architecture(CPU(), grid)
+    return min(minimum(diff(λnodes(cpu_grid, Face()))), minimum(diff(φnodes(cpu_grid, Face()))))
+end
+
+function finest_spacing(grid::OrthogonalSphericalShellGrid)
+    Nx, Ny, _ = size(grid)
+    Δx = view(on_architecture(CPU(), grid.Δxᶜᶜᵃ), 1:Nx, 1:Ny)
+    Δy = view(on_architecture(CPU(), grid.Δyᶜᶜᵃ), 1:Nx, 1:Ny)
+    return rad2deg(min(minimum(Δx), minimum(Δy)) / grid.radius)
 end
 
 const OceanParent = Union{PrescribedOcean, BoundaryPrescribedComponent}
 
 function validate_nested_ocean_grid(grid)
-    underlying_grid(grid) isa LatitudeLongitudeGrid ||
-        throw(ArgumentError("a nested ocean requires a LatitudeLongitudeGrid, possibly immersed; got $(summary(grid))."))
+    underlying_grid(grid) isa Union{LatitudeLongitudeGrid, OrthogonalSphericalShellGrid} ||
+        throw(ArgumentError("a nested ocean requires a grid on the sphere; got $(summary(grid))."))
     return nothing
 end
 
@@ -61,6 +74,14 @@ function with_open_sides(grid::LatitudeLongitudeGrid, sides)
     kwargs[:topology] = (open_topology(TX, :west ∈ sides, :east ∈ sides),
                          open_topology(TY, :south ∈ sides, :north ∈ sides), TZ)
     return LatitudeLongitudeGrid(architecture(grid), args[:number_type]; kwargs...)
+end
+
+function with_open_sides(grid::OrthogonalSphericalShellGrid, sides)
+    TX, TY, TZ = topology(grid)
+    TXᵒ = open_topology(TX, :west ∈ sides, :east ∈ sides)
+    TYᵒ = open_topology(TY, :south ∈ sides, :north ∈ sides)
+    properties = ntuple(n -> getfield(grid, n), fieldcount(typeof(grid)))
+    return OrthogonalSphericalShellGrid{eltype(grid), TXᵒ, TYᵒ, TZ}(properties...)
 end
 
 function with_open_sides(grid::GridFittedBottomGrid, sides)
@@ -103,11 +124,14 @@ scheme may also be a `NamedTuple` keyed by side. Over the outermost `relaxation_
 2/3°), `T`, `S` and the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default
 1/6 hours), leaving the barotropic flow to Flather. `relaxation_rate = nothing` disables the relaxation, and
 `relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes `T` and `S` only where the flow enters through the side.
+On a curvilinear `grid`, the parent's eastward and northward velocities are rotated onto the grid's own axes.
 
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport is
 the parent's depth-mean velocity over its own column times the child's wet depth, the boundary-normal velocity is
 corrected to integrate to it, and the child's bottom is blended toward the parent's within `bathymetry_blend_width`
-cells of each open side (default: 1/3°), but no shallower than `minimum_depth`.
+cells of each open side (default: 1/3°), but no shallower than `minimum_depth`. With `inverse_barometer = true`, the
+Flather exterior sea level also includes the child's inverse-barometer response to the atmospheric pressure it is
+forced with, for a parent without one, such as an ocean reanalysis.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child starts from
 `initial_state` (default: the parent, unless the parent knows only the boundaries) interpolated onto `grid`, and
@@ -125,6 +149,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
+                            inverse_barometer = false,
                             initial_state = default_initial_state(parent),
                             clock = Clock{Float64}(time = parent.clock.time, kernel_time_type = eltype(grid)),
                             boundary_conditions = NamedTuple(),
@@ -145,7 +170,10 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     validate_band_width(grid, open_sides, width, "relaxation_width")
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
 
+    inverse_barometer_sea_level = inverse_barometer ? Field{Center, Center, Nothing}(grid) : nothing
+
     nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
+                                                inverse_barometer = inverse_barometer_sea_level,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :
@@ -159,7 +187,9 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
 
     isnothing(initial_state) || set_from_parent!(child, initial_state, time)
 
-    return NestedModel(parent, child, exchanger)
+    child_callbacks = inverse_barometer_callbacks(child, inverse_barometer_sea_level)
+
+    return NestedModel(parent, child, exchanger, child_callbacks)
 end
 
 """
@@ -186,7 +216,7 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
     validate_nested_ocean_grid(grid)
     open_sides = domain_boundary_sides(grid, open_sides)
     validate_open_sides(grid, open_sides)
-    region = BoundingBox(grid; padding = parent_padding)
+    region = BoundingBox(underlying_grid(grid); padding = parent_padding)
 
     # The seafloor the parent state was produced over: the dataset's own, or where its temperature is missing
     if isnothing(parent_bottom_height)
@@ -195,7 +225,7 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
         parent_bottom_height = regrid_bathymetry(underlying_grid(grid), metadatum; major_basins = Inf)
     end
 
-    parent = BoundaryPrescribedComponent(PrescribedOcean, grid, dates, parent_dataset;
+    parent = BoundaryPrescribedComponent(PrescribedOcean, underlying_grid(grid), dates, parent_dataset;
                                          width = relaxation_width, padding = parent_padding, sides = open_sides,
                                          dir, time_indices_in_memory = parent_time_indices_in_memory)
 
@@ -225,7 +255,7 @@ end
 # The parent interpolated onto the whole child grid, so the interior starts consistent with the boundaries
 function set_from_parent!(child, parent, time)
     grid = child.grid
-    sources = parent_ocean_sources(parent)
+    sources = child_frame_sources(grid, parent_ocean_sources(parent))
 
     u₀ = XFaceField(grid)
     v₀ = YFaceField(grid)
@@ -239,7 +269,7 @@ function set_from_parent!(child, parent, time)
     sample_parent!(S₀, boundary_location(:S), sources.S, time)
     sample_parent!(η₀, boundary_location(:η), sources.η, time)
 
-    set!(child; u = u₀, v = v₀, T = T₀, S = S₀, η = interior(η₀))
+    set!(child; u = u₀, v = v₀, T = T₀, S = S₀, η = interior(η₀), intrinsic_velocities = true)
 
     return child
 end
