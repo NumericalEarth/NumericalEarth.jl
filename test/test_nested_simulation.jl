@@ -158,6 +158,41 @@ end
                                                              child_grid, loc, 1, LeftBoundary)
 end
 
+# A curvilinear parent has no separable horizontal axes either, so the source side of the same check
+# cannot read its extent one axis at a time.
+@testset "Interpolated source on a curvilinear parent brackets a child on $(arch)" for arch in test_architectures
+    NM = NumericalEarth.NestedModels
+
+    parent_grid = ConformalConicGrid(arch; size = (40, 40, 4), x = (-1200e3, 1200e3), y = (-1200e3, 1200e3),
+                                     standard_parallels = (33, 45), central_longitude = -100,
+                                     latitude_of_origin = 39, z = (0, 1))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+    set!(parent.temperature, (λ, φ, z, t) -> 290)
+
+    loc = (Center(), Center(), Center())
+    bc = NM.Interpolated(parent.temperature)
+
+    latlon_child = LatitudeLongitudeGrid(arch; size = (16, 16, 4), longitude = (-104, -96),
+                                         latitude = (36, 42), z = (0, 1),
+                                         topology = (Bounded, Bounded, Bounded))
+
+    conic_child = ConformalConicGrid(arch; size = (20, 20, 4), x = (-400e3, 400e3), y = (-400e3, 400e3),
+                                     standard_parallels = (33, 45), central_longitude = -100,
+                                     latitude_of_origin = 39, z = (0, 1))
+
+    sides = ((1, LeftBoundary), (1, RightBoundary), (2, LeftBoundary), (2, RightBoundary))
+
+    for child_grid in (latlon_child, conic_child), (dim, side) in sides
+        @test regularize_boundary_condition(bc, child_grid, loc, dim, side) isa NM.Interpolated
+    end
+
+    # A child reaching past the conic parent is still rejected.
+    wide_child = LatitudeLongitudeGrid(arch; size = (16, 16, 4), longitude = (-130, -70),
+                                       latitude = (20, 55), z = (0, 1),
+                                       topology = (Bounded, Bounded, Bounded))
+    @test_throws ArgumentError regularize_boundary_condition(bc, wide_child, loc, 1, LeftBoundary)
+end
+
 @testset "VectorComponent rotates a geographic parent pair into the child's frame" begin
     # `getbc` here is evaluated on the host, so this is a CPU test: `on_architecture` does not move a
     # boundary condition's source, and a host-side query of device-resident sources scalar-indexes.

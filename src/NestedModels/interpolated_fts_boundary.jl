@@ -22,7 +22,7 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
+using Oceananigans.Grids: node, ξnode, ηnode, topology, Face, Center,
                           OrthogonalSphericalShellGrid, Sides, Connected
 using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid
 using Oceananigans.Fields: Field, interior, compute!
@@ -150,6 +150,17 @@ function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX},
     return extrema(interior(line))
 end
 
+# The source's own extent, read over its whole footprint. A curvilinear source grid has no separable
+# horizontal axis, so there is no `ξnodes` to reduce, and the scalar `ξnode` reads either kind.
+function source_coordinate_extent(coordinate, grid, ℓx, ℓy)
+    LX, LY = typeof(ℓx), typeof(ℓy)
+    operation = KernelFunctionOperation{LX, LY, Center}(coordinate, grid, ℓx, ℓy, Center())
+    Nx, Ny, _ = size(operation)
+    nodes = Field(operation; indices = (1:Nx, 1:Ny, 1:1))
+    compute!(nodes)
+    return extrema(interior(nodes))
+end
+
 function validate_axis_bracket(label, (src_lo, src_hi), (sim_lo, sim_hi))
     (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
         "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
@@ -160,13 +171,13 @@ end
 # The source must bracket the boundary horizontally: along the boundary, the child's whole extent;
 # across it, only the boundary itself, which leaves a per-side source free to span only its own side.
 function validate_bracket(source, grid, dim, SideType, ::Type{LX}, ::Type{LY}) where {LX, LY}
-    source_loc  = Oceananigans.instantiated_location(source)
+    ℓx, ℓy, _   = Oceananigans.instantiated_location(source)
     source_grid = source.grid
 
-    validate_axis_bracket("x", extrema(ξnodes(source_grid, source_loc...)),
+    validate_axis_bracket("x", source_coordinate_extent(ξnode, source_grid, ℓx, ℓy),
                           boundary_coordinate_extent(ξnode, grid, dim, SideType, LX, LY))
 
-    validate_axis_bracket("y", extrema(ηnodes(source_grid, source_loc...)),
+    validate_axis_bracket("y", source_coordinate_extent(ηnode, source_grid, ℓx, ℓy),
                           boundary_coordinate_extent(ηnode, grid, dim, SideType, LX, LY))
 
     return nothing

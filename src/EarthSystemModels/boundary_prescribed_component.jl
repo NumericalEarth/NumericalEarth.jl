@@ -39,10 +39,21 @@ const default_relaxation_width = 5
 # Width of a boundary relaxation zone spanning `width` cells along the coarser horizontal direction
 # of `grid`, in the `grid`’s native coordinates.
 function relaxation_zone_width(grid, width)
-    λ₁, λ₂ = x_domain(grid)
-    φ₁, φ₂ = y_domain(grid)
+    (λ₁, λ₂), (φ₁, φ₂) = horizontal_extents(grid)
     Nx, Ny, _ = size(grid)
     return width * max((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
+end
+
+horizontal_extents(grid) = (x_domain(grid), y_domain(grid))
+
+# `x_domain` and `y_domain` reduce over the whole coordinate array, and a `ConformalConicGrid` leaves
+# its coordinate halo unfilled. The interior slice is copied before reducing, as `BoundingBox` does,
+# so the reduction stays on the device.
+function horizontal_extents(grid::OrthogonalSphericalShellGrid)
+    Nx, Ny, _ = size(grid)
+    λ = grid.λᶠᶠᵃ[1:(Nx + 1), 1:(Ny + 1)]
+    φ = grid.φᶠᶠᵃ[1:(Nx + 1), 1:(Ny + 1)]
+    return ((minimum(λ), maximum(λ)), (minimum(φ), maximum(φ)))
 end
 
 function Oceananigans.TimeSteppers.time_step!(component::BoundaryPrescribedComponent, Δt)
