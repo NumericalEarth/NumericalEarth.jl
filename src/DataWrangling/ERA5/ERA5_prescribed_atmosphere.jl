@@ -74,21 +74,9 @@ function Oceananigans.Fields.set!(Jʳⁿ::RainFTS, backend = Jʳⁿ.backend)
 end
 
 """
-    ERA5PrescribedAtmosphere([architecture = CPU()];
-                             dataset = ERA5HourlySingleLevel(),
-                             start_date = first_date(dataset, :temperature),
-                             end_date = last_date(dataset, :temperature),
-                             dir = download_ERA5_cache,
-                             time_indices_in_memory = 24,
-                             time_indexing = Cyclical(),
-                             surface_layer_height = 10,    # meters
-                             boundary_layer_height = 512,  # meters
-                             thermodynamics_parameters = nothing,
-                             region = nothing,
-                             pressure = :surface_pressure,
-                             other_kw...)
+$(SIGNATURES)
 
-Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
+Return a [`PrescribedAtmosphere`](@ref NumericalEarth.Atmospheres.PrescribedAtmosphere) representing ERA5 single-level reanalysis, suitable for regional hindcast forcing.
 Eastward/northward 10 m winds, 2 m temperature, and the `pressure` variable are loaded directly; specific humidity is
 derived from the 2 m dewpoint and that pressure (`qᵛ = qᵛ⁺(Tᵈ, p)`) one in-memory window at a time. Total precipitation
 and snowfall are converted from hourly-accumulated depths (m of water equivalent) to mass fluxes (kg m⁻² s⁻¹) at load time;
@@ -180,15 +168,9 @@ function pressure_level_field(grid, dataset, architecture)
 end
 
 """
-    ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
-                             architecture = CPU(),
-                             dataset = ERA5HourlyPressureLevels(),
-                             dir = download_ERA5_cache,
-                             time_indices_in_memory = nothing,
-                             thermodynamics_parameters = nothing,
-                             other_kw...)
+$(SIGNATURES)
 
-Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over `bounding_box` at the
+Return a 3-D [`PrescribedAtmosphere`](@ref NumericalEarth.Atmospheres.PrescribedAtmosphere) built from ERA5 **pressure-level** reanalysis over `bounding_box` at the
 requested `dates` — a range or vector of dates, or a `(start_date, end_date)` tuple that expands to the dataset's native
 (hourly or monthly) cadence — on ERA5's **native grid**: a `PressureLevelGrid` at the reanalysis' native horizontal resolution
 with a **time-varying** geopotential-height vertical (each pressure level's height follows the reanalysis as the atmosphere's
@@ -197,8 +179,8 @@ clock advances). Each variable loads natively and raw (per pressure level, no ve
 `time_indices_in_memory` defaults to all dates.
 
 The atmosphere holds eastward/northward `velocities`, `temperature`, `specific_humidity`, `microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ)`
-(cloud liquid/ice + rain/snow water content), and `pressure` (the level coordinate, via [`pressure_level_field`](@ref)).
-Use as the parent of a [`NestedSimulation`](@ref).
+(cloud liquid/ice + rain/snow water content), and `pressure` (the level coordinate, via `pressure_level_field`).
+Use as the parent of a [`NestedSimulation`](@ref NumericalEarth.NestedModels.NestedSimulation).
 """
 function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
                                   architecture = CPU(),
