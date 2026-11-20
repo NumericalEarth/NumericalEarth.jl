@@ -101,7 +101,7 @@ end
 
 @inline function similarity_friction_velocity(g::ConvectiveGustiness, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ)
     FT = typeof(Ξu)
-    γ  = g.gustiness_parameter * cbrt(max(zero(FT), -ζ) * h_bℓ / (ϰ * Δhᵈ))
+    γ  = g.gustiness_parameter * cbrt(max(0, -ζ) * h_bℓ / (ϰ * Δhᵈ))
     Uᴳ = convert(FT, g.minimum_gustiness)
 
     floor_friction_velocity = Ξu * sqrt(ΔU^2 + Uᴳ^2)

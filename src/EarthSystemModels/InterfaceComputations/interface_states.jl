@@ -763,14 +763,11 @@ end
 # The massless skin whose transfer coefficients and u★ are those of stability parameter ζ, with the
 # stability and the friction velocity its fluxes imply. The roughness lengths are evaluated at the
 # friction velocity u★⁻.
-@inline function skin_state_at_stability(ζ, u★⁻, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+@inline function skin_state_at_stability(ζ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     ℂᵃᵗ    = ℙₐ.thermodynamics_parameters
     fluxes = ℙⁱⁿ.turbulent_fluxes
     g      = ℙₐ.gravitational_acceleration
     ϰ      = fluxes.von_karman_constant
-    Δhᵈ    = Ψₐ.z - fluxes.zero_plane_displacement
-    Δu, Δv = velocity_difference(ℙⁱⁿ.velocity_difference, Ψₐ, Ψⁱⁿ)
-    ΔU     = sqrt(Δu^2 + Δv^2)
 
     Ξu, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★⁻, ΔU, Δhᵈ / ζ, Ψⁱⁿ.temperature, Ψₐ.z, ℂᵃᵗ)
     u★  = similarity_friction_velocity(fluxes.subgrid_velocities, Ξu, ΔU, ζ, Δhᵈ, Ψₐ.h_bℓ, ϰ)
@@ -781,11 +778,8 @@ end
     return Ψⁱⁿ, Δhᵈ / monin_obukhov_length(u★, b★, ϰ), Ξu * U
 end
 
-# A massless skin is solved for the stability parameter ζ at which its fluxes imply ζ. The implied
-# stability ζ★ is bounded as the profiles bound it, so the residual r = ζ★ − ζ is bracketed by the bounds
-# and vanishes at one when the root lies past it. u★ at a trial ζ diverges where no stationary layer has
-# that stability, and in calm air the root sits at that divergence, so u★ is solved last, at the solved ζ,
-# against the gustiness of the state's own buoyancy flux.
+# A massless skin is solved for the stability parameter ζ at which its fluxes imply ζ, between the bounds
+# of the stability functions, and then for u★ at that ζ.
 @inline function land_interface_state(t::EnergyBalanceTemperature, ::Nothing, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     FT     = eltype(Ψⁱⁿ)
     ℂᵃᵗ    = ℙₐ.thermodynamics_parameters
@@ -795,11 +789,13 @@ end
     ψ      = fluxes.stability_functions.momentum
     ζᵐⁱⁿ   = - convert(FT, ψ.unstable.maximum_stability_parameter)
     ζᵐᵃˣ   = convert(FT, ψ.stable.maximum_stability_parameter)
+    Δhᵈ    = Ψₐ.z - fluxes.zero_plane_displacement
+    Δu, Δv = velocity_difference(ℙⁱⁿ.velocity_difference, Ψₐ, Ψⁱⁿ)
+    ΔU     = sqrt(Δu^2 + Δv^2)
 
-    # u★ is finite wherever r ≤ 0, and the roughness lengths follow it from there.
-    Ψⁱⁿ, ζ★, u★⁻ = skin_state_at_stability(ζᵐᵃˣ, Ψⁱⁿ.fluxes.u★, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    Ψⁱⁿ, ζ★, u★⁻ = skin_state_at_stability(ζᵐᵃˣ, Ψⁱⁿ.fluxes.u★, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     ζᵇ, rᵇ = ζᵐᵃˣ, clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζᵐᵃˣ
-    Ψⁱⁿ, ζ★, _ = skin_state_at_stability(ζᵐⁱⁿ, u★⁻, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    Ψⁱⁿ, ζ★, _ = skin_state_at_stability(ζᵐⁱⁿ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     ζᵃ, rᵃ = ζᵐⁱⁿ, clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζᵐⁱⁿ
 
     iteration = 1
@@ -807,21 +803,18 @@ end
         # The stability implied at ζᵇ, bisecting when it leaves the bracket and every other step, so the
         # bracket at least halves every two steps.
         ζ = ifelse(isodd(iteration) & (ζᵇ + rᵇ > ζᵃ), ζᵇ + rᵇ, (ζᵃ + ζᵇ) / 2)
-        Ψⁱⁿ, ζ★, u★ⁿ = skin_state_at_stability(ζ, u★⁻, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+        Ψⁱⁿ, ζ★, u★ⁿ = skin_state_at_stability(ζ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
         r = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζ
         below_root = r > 0
         ζᵃ  = ifelse(below_root, ζ, ζᵃ)
         rᵃ  = ifelse(below_root, r, rᵃ)
         ζᵇ  = ifelse(below_root, ζᵇ, ζ)
         rᵇ  = ifelse(below_root, rᵇ, r)
-        u★⁻ = ifelse(below_root, u★⁻, u★ⁿ)
+        u★⁻ = ifelse(below_root, u★⁻, u★ⁿ) # finite wherever r ≤ 0
         iteration += 1
     end
 
-    ζ      = ifelse(rᵃ < -rᵇ, ζᵃ, ζᵇ)
-    Δhᵈ    = Ψₐ.z - fluxes.zero_plane_displacement
-    Δu, Δv = velocity_difference(ℙⁱⁿ.velocity_difference, Ψₐ, Ψⁱⁿ)
-    ΔU     = sqrt(Δu^2 + Δv^2)
+    ζ = ifelse(rᵃ < -rᵇ, ζᵃ, ζᵇ)
     _, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★⁻, ΔU, Δhᵈ / ζ, Ψⁱⁿ.temperature, Ψₐ.z, ℂᵃᵗ)
 
     # u★ steps to Ξu U, bisecting the friction velocities that bracket the fixed point when a step leaves them.
@@ -834,7 +827,7 @@ end
         b★  = buoyancy_scale(Ψⁱⁿ.fluxes.θ★, Ψⁱⁿ.fluxes.q★, ℂᵃᵗ, Ψⁱⁿ.temperature, Ψⁱⁿ.specific_humidity, g)
         U   = sqrt(ΔU^2 + vsgs²(fluxes.subgrid_velocities, u★, b★, Ψₐ.h_bℓ))
         Ξu, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★, U, Δhᵈ / ζ, Ψⁱⁿ.temperature, Ψₐ.z, ℂᵃᵗ)
-        u★ⁿ = convert(FT, Ξu * U)
+        u★ⁿ = Ξu * U
         u★ᵃ = ifelse(u★ⁿ > u★, u★, u★ᵃ)
         u★ᵇ = ifelse(u★ⁿ < u★, u★, u★ᵇ)
         u★⁻ = u★
