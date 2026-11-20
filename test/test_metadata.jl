@@ -470,3 +470,17 @@ end
     @test isnan(interior(field)[2, 3, 1])
     @test count(isnan, interior(field)) == 1
 end
+
+@testset "region_info rejects files that do not cover the target" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (8, 4, 1), longitude = (0, 8), latitude = (0, 4), z = (0, 1))
+    field = CenterField(grid)
+    region = BoundingBox(longitude = (0, 8), latitude = (0, 4))
+
+    λc = collect(0.5:1:7.5)
+    φc = collect(0.5:1:3.5)
+    @test DataWrangling.region_info(region, field, λc, φc) isa DataWrangling.BoundingBoxOffset
+    @test DataWrangling.region_info(region, field, λc, φc[1:3]) isa DataWrangling.BoundingBoxOffset
+
+    @test_throws ArgumentError DataWrangling.region_info(region, field, λc[1:5], φc)
+    @test_throws ArgumentError DataWrangling.region_info(region, field, λc, φc[1:2])
+end
