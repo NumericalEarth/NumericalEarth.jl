@@ -597,7 +597,9 @@ function padded_era5_region(bbox::BBOX, dataset, names::Vector{Symbol})
     Δφ = maximum(180 / size(dataset, name)[2] for name in names)
     lon = bbox.longitude
     lat = bbox.latitude
-    return BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+    # A padded span wider than 360° is wrapped by CDS into a sliver around the seam.
+    lon = lon[2] - lon[1] + 4Δλ < 360 ? (lon[1] - 2Δλ, lon[2] + 2Δλ) : (lon[1], lon[1] + 360)
+    return BBOX(longitude = lon,
                 latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
 end
 
