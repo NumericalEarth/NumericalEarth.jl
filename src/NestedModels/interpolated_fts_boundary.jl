@@ -24,8 +24,8 @@ import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
 import Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
                           OrthogonalSphericalShellGrid, Sides, Connected
-using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid
-using Oceananigans.Fields: Field, interior, compute!
+using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid, compute_computed_field!
+using Oceananigans.Fields: Field, interior
 using Oceananigans.Operators: intrinsic_vector
 import Oceananigans.Forcings: evaluate_target
 using Adapt: Adapt, adapt
@@ -145,8 +145,8 @@ function boundary_coordinate_extent(coordinate, grid, dim, SideType, ::Type{LX},
     Nx, Ny, _ = size(operation)
     i = dim == 1 ? (SideType === LeftBoundary ? (1:1) : (Nx:Nx)) : 1:Nx
     j = dim == 2 ? (SideType === LeftBoundary ? (1:1) : (Ny:Ny)) : 1:Ny
-    line = Field(operation; indices = (i, j, 1:1))
-    compute!(line)
+    line = Field(operation; indices = (i, j, 1:1), compute = false)
+    compute_computed_field!(line)
     return extrema(interior(line))
 end
 
