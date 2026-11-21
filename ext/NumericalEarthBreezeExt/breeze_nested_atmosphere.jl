@@ -617,6 +617,14 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
         update_state!(nested_model)
     end
 
+    fields = merge(Oceananigans.prognostic_fields(child), child.velocities, (; T = child.temperature))
+    foreach(pairs(fields)) do (name, field)
+        all(isfinite, interior(field)) && return nothing
+        bad = findall(!isfinite, Array(interior(field)))
+        i, j, k = (minimum(I -> I[n], bad):maximum(I -> I[n], bad) for n in 1:3)
+        throw(ArgumentError("the initial $name of the nested child is not finite on i ∈ $i, j ∈ $j, k ∈ $k"))
+    end
+
     # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
     # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a
     # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
