@@ -15,6 +15,13 @@ function EarthSystemModels.BoundaryPrescribedComponent(Component, grid::Abstract
                                                        padding = default_horizontal_padding(dataset),
                                                        sides = (:west, :east, :south, :north),
                                                        kw...)
+    regions = boundary_strip_boxes(grid, width, padding)
+    strips = map(region -> Component(region, dates, dataset; architecture = architecture(grid), kw...), regions[sides])
+
+    return BoundaryPrescribedComponent(; strips...)
+end
+
+function boundary_strip_boxes(grid, width, padding)
     box = BoundingBox(grid)
     λ₁, λ₂ = box.longitude
     φ₁, φ₂ = box.latitude
@@ -23,12 +30,23 @@ function EarthSystemModels.BoundaryPrescribedComponent(Component, grid::Abstract
     λ = (λ₁ - δλ, λ₂ + δλ)
     φ = (φ₁ - δφ, φ₂ + δφ)
 
-    regions = (west  = BoundingBox(longitude = (λ₁ - δλ, λ₁ + w + δλ), latitude = φ),
-               east  = BoundingBox(longitude = (λ₂ - w - δλ, λ₂ + δλ), latitude = φ),
-               south = BoundingBox(longitude = λ, latitude = (φ₁ - δφ, φ₁ + w + δφ)),
-               north = BoundingBox(longitude = λ, latitude = (φ₂ - w - δφ, φ₂ + δφ)))
+    return (west  = BoundingBox(longitude = (λ₁ - δλ, λ₁ + w + δλ), latitude = φ),
+            east  = BoundingBox(longitude = (λ₂ - w - δλ, λ₂ + δλ), latitude = φ),
+            south = BoundingBox(longitude = λ, latitude = (φ₁ - δφ, φ₁ + w + δφ)),
+            north = BoundingBox(longitude = λ, latitude = (φ₂ - w - δφ, φ₂ + δφ)))
+end
 
-    strips = map(region -> Component(region, dates, dataset; architecture = architecture(grid), kw...), regions[sides])
+# The sides of a curvilinear grid need not follow meridians and parallels, so each strip spans the
+# nodes of the columns or rows it covers.
+function boundary_strip_boxes(grid::OrthogonalSphericalShellGrid, width, padding)
+    box = BoundingBox(grid)
+    Nx, Ny, _ = size(grid)
+    w = relaxation_zone_width(grid, width)
+    Wx = ceil(Int, w * Nx / (box.longitude[2] - box.longitude[1]))
+    Wy = ceil(Int, w * Ny / (box.latitude[2] - box.latitude[1]))
 
-    return BoundaryPrescribedComponent(; strips...)
+    return (west  = BoundingBox(grid, 1:Wx+1, 1:Ny+1; padding),
+            east  = BoundingBox(grid, Nx-Wx+1:Nx+1, 1:Ny+1; padding),
+            south = BoundingBox(grid, 1:Nx+1, 1:Wy+1; padding),
+            north = BoundingBox(grid, 1:Nx+1, Ny-Wy+1:Ny+1; padding))
 end

@@ -46,11 +46,16 @@ function BoundingBox(grid::AbstractGrid; padding = 0)
                        latitude  = (all_reduce(min, φ₁, arch) - δφ, all_reduce(max, φ₂, arch) + δφ))
 end
 
-function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
+"""
+$(SIGNATURES)
+
+Create a `BoundingBox` spanning the cell-corner nodes `i, j` of `grid`, all of them by default,
+widened on every side by `padding` (degrees).
+"""
+function BoundingBox(grid::OrthogonalSphericalShellGrid, i = 1:size(grid, 1)+1, j = 1:size(grid, 2)+1; padding = 0)
     δλ, δφ = axis_padding(padding)
-    Nx, Ny, _ = size(grid)
-    λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
-    φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    λ = grid.λᶠᶠᵃ[i, j]
+    φ = grid.φᶠᶠᵃ[i, j]
     return BoundingBox(longitude = (minimum(λ) - δλ, maximum(λ) + δλ),
                        latitude  = (minimum(φ) - δφ, maximum(φ) + δφ))
 end

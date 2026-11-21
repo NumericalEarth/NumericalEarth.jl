@@ -180,29 +180,27 @@ end
     @test strips.north.region.latitude == (35.5, 38.5)
 end
 
-@testset "boundary strips on a conformal conic grid span its own extent" begin
+@testset "boundary strips on a conformal conic grid cover their sides" begin
     # 12.5 km cells over a quarter of CONUS, on the projection RAP uses.
     grid = ConformalConicGrid(
         size = (20, 16, 1), x = (-125.0e3, 125.0e3), y = (-100.0e3, 100.0e3), z = (0, 1),
         standard_parallels = (25, 25), central_longitude = -95, latitude_of_origin = 25
     )
-    box = BoundingBox(grid)
     Nx, Ny, _ = size(grid)
-    cell = max((box.longitude[2] - box.longitude[1]) / Nx, (box.latitude[2] - box.latitude[1]) / Ny)
 
     stub_strip(region, dates, dataset; architecture) = (; region, clock = Clock(time = 0))
     component = BoundaryPrescribedComponent(stub_strip, grid, nothing, nothing; width = 2, padding = 0)
     strips = boundary_strips(component)
 
-    # Two cells deep, measured on the grid's own extent: the coordinate halo this grid leaves
-    # unfilled would otherwise put the span, and so the strip, tens of degrees out.
-    @test strips.west.region.longitude[1] == box.longitude[1]
-    @test strips.west.region.longitude[2] ≈ box.longitude[1] + 2cell
+    # Each side slants across meridians and parallels, so a strip must hold the nodes of its
+    # boundary and of the two cells inward of it along the whole side.
+    inside(region, i, j) = region.longitude[1] <= grid.λᶠᶠᵃ[i, j] <= region.longitude[2] &&
+                           region.latitude[1] <= grid.φᶠᶠᵃ[i, j] <= region.latitude[2]
+    @test all(inside(strips.west.region, i, j) for i in 1:3, j in 1:Ny+1)
+    @test all(inside(strips.east.region, i, j) for i in Nx-1:Nx+1, j in 1:Ny+1)
+    @test all(inside(strips.south.region, i, j) for i in 1:Nx+1, j in 1:3)
+    @test all(inside(strips.north.region, i, j) for i in 1:Nx+1, j in Ny-1:Ny+1)
     @test strips.west.region.longitude[2] - strips.west.region.longitude[1] < 1
-    @test strips.east.region.longitude[2] == box.longitude[2]
-    @test strips.south.region.latitude[2] ≈ box.latitude[1] + 2cell
-    @test strips.north.region.latitude[1] ≈ box.latitude[2] - 2cell
-    @test strips.west.region.latitude == box.latitude
 end
 
 @testset "Metadata region keyword" begin
