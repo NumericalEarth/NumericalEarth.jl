@@ -25,7 +25,7 @@ import Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Grids: node, ξnode, ηnode, ξnodes, ηnodes, topology, Face, Center,
                           OrthogonalSphericalShellGrid, Sides, Connected
 using Oceananigans.AbstractOperations: KernelFunctionOperation, validate_grid
-using Oceananigans.Fields: Field, interior, compute!
+using Oceananigans.Fields: Field, interior
 using Oceananigans.Operators: intrinsic_vector
 import Oceananigans.Forcings: evaluate_target
 using Adapt: Adapt, adapt
