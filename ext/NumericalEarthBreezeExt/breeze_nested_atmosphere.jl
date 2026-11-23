@@ -70,10 +70,11 @@ using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
 # else the Breeze-native warm-phase saturation-adjustment scheme. Resolved at call time, so a
 # caller that `using CloudMicrophysics` gets `OneMomentCloudMicrophysics` automatically.
-function default_nested_microphysics()
+function default_nested_microphysics(FT = Oceananigans.defaults.FloatType)
     ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
-    isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
-    return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
+    isnothing(ext) && return SaturationAdjustment(FT; equilibrium = WarmPhaseEquilibrium())
+    cloud_formation = SaturationAdjustment(FT; equilibrium = MixedPhaseEquilibrium(FT))
+    return ext.OneMomentCloudMicrophysics(FT; cloud_formation)
 end
 
 # Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
@@ -361,7 +362,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     bottom_drag_coefficient = nothing,  # constant Cᴰ or a Breeze `PolynomialCoefficient`; `nothing` disables
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
-    microphysics = default_nested_microphysics(),
+    microphysics = default_nested_microphysics(eltype(child_grid)),
     closure = TKEBasedTurbulenceClosure(eltype(child_grid)),
     momentum_advection = WENO(order = 9),
     scalar_advection = default_nested_scalar_advection(microphysics, closure),
