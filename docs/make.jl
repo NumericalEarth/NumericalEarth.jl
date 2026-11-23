@@ -226,6 +226,8 @@ pages = [
 
     "EarthSystemModel" => "earth_system_model.md",
 
+    "Nested regional ocean" => "nested_ocean.md",
+
     "Examples" => examples_pages,
 
     "Developers" => developer_pages,
