@@ -200,7 +200,7 @@ in `microphysical_variables` instead).
 
 Surface (2D, `(Center, Center, Nothing)`) vs 3D (`(Center, Center, Center)`, adding `w`)
 default fields are inferred from the grid's vertical size: `Nz == 1` builds a surface atmosphere
-(ocean / sea-ice coupling), `Nz > 1` a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
+(ocean / sea-ice coupling), `Nz > 1` a 3D atmosphere (e.g. a [`NestedSimulation`](@ref NumericalEarth.NestedModels.NestedSimulation) parent).
 Pass any field explicitly to override; pass `precipitation_flux = nothing` to omit it.
 
 !!! compat "Radiation component"

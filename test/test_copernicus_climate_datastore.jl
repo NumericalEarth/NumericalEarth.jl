@@ -89,6 +89,24 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         end
     end
 
+    @testset "era5_request_area pads by two native cells" begin
+        sl = ERA5HourlySingleLevel()
+
+        # Atmospheric single-level variables live on the 0.25° grid → 0.5° margin
+        bbox = NumericalEarth.DataWrangling.BoundingBox(longitude = (0, 10), latitude = (40, 50))
+        @test CDSExt.era5_request_area(bbox, sl, [:temperature]) == [39.5, -0.5, 50.5, 10.5]
+
+        # The margin never pushes latitude beyond the poles
+        polar = NumericalEarth.DataWrangling.BoundingBox(longitude = (0, 10), latitude = (85, 90))
+        @test CDSExt.era5_request_area(polar, sl, [:temperature]) == [84.5, -0.5, 90.0, 10.5]
+
+        # A longitude span that padding would push past 360° requests the full circle
+        for (longitude, expected) in (((0, 360), (0, 360)), ((-180, 180), (-180, 180)), ((0, 359.5), (0, 360)))
+            arctic = NumericalEarth.DataWrangling.BoundingBox(; longitude, latitude = (50, 90))
+            @test CDSExt.era5_request_area(arctic, sl, [:temperature]) == [49.5, expected[1], 90.0, expected[2]]
+        end
+    end
+
     @testset "Area builder utilities" begin
         @test isnothing(CDSExt.build_era5_area(nothing))
 

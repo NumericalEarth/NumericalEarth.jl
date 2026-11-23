@@ -134,17 +134,6 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
     return string(prefix, ".nc")
 end
 
-
-
-
-#####
-##### Pure Julia CDS client (replaces Python era5cli)
-#####
-
-# CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
-# The extension exports: download_era5, read_cds_credentials
-# Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
-
 #####
 ##### Single-level and pressure-level specifics
 #####

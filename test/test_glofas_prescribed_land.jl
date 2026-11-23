@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using CDSAPI  # activates NumericalEarthCDSAPIExt (the EWDS request path)
 
 using NumericalEarth.DataWrangling: BoundingBox
+using Oceananigans.Units: kilometers
 
 # The lower Amazon, as in the ERA5/GloFAS example: the Amazon is the only river above 10⁵ m³ s⁻¹.
 @testset "GloFASPrescribedLand routes the Amazon [$arch]" for arch in test_architectures
