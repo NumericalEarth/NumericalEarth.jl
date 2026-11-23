@@ -1246,7 +1246,7 @@ end
     end
 end
 
-# A side that borders another rank is interior to the nested domain: its parent strip need not bracket it,
+# A side that borders another rank is interior to the nested domain: its source need not bracket it,
 # the terrain is not blended toward the parent there, and the boundary relaxation leaves it alone.
 @testset "A rank seam is interior to the nested domain on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
@@ -1264,11 +1264,10 @@ end
         return atmosphere
     end
 
-    # The west strip lies wholly east of the child's west edge, which a domain boundary would reject.
-    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-0.5, 0), (34.6, 38.6)),
-                                         east  = parent_atmosphere((0, 2),    (34.6, 38.6)),
-                                         south = parent_atmosphere((-2, 2),   (34.6, 36.6)),
-                                         north = parent_atmosphere((-2, 2),   (36.6, 38.6)))
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6)),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6)),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6)),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6)))
 
     child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
                                        longitude = (-1, 1), latitude = (35.6, 37.6),
@@ -1279,6 +1278,11 @@ end
 
     nested = nested_atmosphere_model(strips, child_grid; relaxation_rate = 1/30, relaxation_width = width,
                                      base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
+
+    # A source wholly east of the west seam, which a domain boundary would reject.
+    east_of_seam = parent_atmosphere((-0.5, 0), (34.6, 38.6))
+    @test regularize_boundary_condition(Interpolated(east_of_seam.temperature), child_grid,
+                                        (Center(), Center(), Center()), 1, LeftBoundary) isa Interpolated
 
     # The terrain blends toward the parent at the east wall but not at the west seam.
     elevation        = Field{Center, Center, Nothing}(child_grid)
