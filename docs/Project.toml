@@ -40,7 +40,7 @@ Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main
 
 [compat]
 ArchGDAL = "0.10"
-Breeze = "0.15"
+Breeze = "0.15.3"
 CUDA = "6"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2"

@@ -12,7 +12,7 @@ ClimaSeaIce = {url = "https://github.com/dkytezab/ClimaSeaIce.jl", rev = "patch-
 NumericalEarth = {path = "../.."}
 
 [compat]
-Breeze = "0.15"
+Breeze = "0.15.3"
 CUDA = "5.9.5, 6"
 Oceananigans = "0.118"
 Reactant = "0.2.289"
