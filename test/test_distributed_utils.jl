@@ -16,8 +16,11 @@ using NumericalEarth.Lands: build_flux_routing
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
 using Oceananigans.BoundaryConditions: regularize_boundary_condition, LeftBoundary
 using Oceananigans.Grids: topology
+using Oceananigans: prognostic_fields
+using NumericalEarth.NestedModels: nested_atmosphere_model, blend_parent_terrain!
 
 using CopernicusMarine
+using Breeze
 
 @testset "Distributed ECCO download" begin
     dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
@@ -222,6 +225,81 @@ end
         jrange = (ry - 1) * Ny + 1 : ry * Ny
 
         @test Array(interior(local_field)) ≈ serial_interior[irange, jrange, :]
+    end
+end
+
+# Every rank treats its seams as interior to the nested domain, so each rank's window of a partitioned
+# nested atmosphere steps exactly as the serial one.
+@testset "Distributed nested atmosphere matches serial on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 4.0, 8.0]
+
+    function parent_atmosphere(longitude, latitude, Nx, Ny, times = times)
+        grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, 8), longitude, latitude, z = (0, 16000),
+                                     halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, times)
+        set!(atmosphere.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + λ + t / 4)
+        set!(atmosphere.specific_humidity, (λ, φ, z, t) -> 0.006)
+        set!(atmosphere.velocities.u,      (λ, φ, z, t) -> 8 + t / 10)
+        set!(atmosphere.velocities.v,      (λ, φ, z, t) -> φ - 36.6)
+        set!(atmosphere.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+        return atmosphere
+    end
+
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6), 6, 12),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6), 6, 12),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6), 12, 6),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6), 12, 6))
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), 12, 12, times[1:1])
+    width = 3
+
+    child_grid(child_arch) = LatitudeLongitudeGrid(child_arch; size = (24, 24, 8), longitude = (-1, 1),
+                                                   latitude = (35.6, 37.6), z = (0, 16000), halo = (5, 5, 5),
+                                                   topology = (Bounded, Bounded, Bounded))
+
+    function stepped_child(child_arch)
+        model = nested_atmosphere_model(strips, child_grid(child_arch); relaxation_rate = 1/30,
+                                        relaxation_width = width, base_pressure = 1e5, coriolis = nothing,
+                                        parent_condensates = nothing)
+        prognostic = ext.child_prognostic_state(snapshot, model.exchanger)
+        ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false, prognostic)
+        for _ in 1:4
+            time_step!(model, 0.5)
+        end
+        return model.child
+    end
+
+    function blended_terrain(child_arch)
+        elevation = Field{Center, Center, Nothing}(child_grid(child_arch))
+        set!(elevation, 1)
+        blend_parent_terrain!(elevation, Field{Center, Center, Nothing}(elevation.grid); width)
+        return elevation
+    end
+
+    serial_child   = stepped_child(arch)
+    serial_terrain = Array(interior(blended_terrain(arch)))
+
+    for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
+        distributed_arch = Distributed(arch; partition)
+        child = stepped_child(distributed_arch)
+        Nx, Ny, _ = size(child.grid)
+        rx, ry, _ = distributed_arch.local_index
+
+        # A face field on the last rank of a bounded direction carries the closing face
+        function serial_window(serial, local_field)
+            nx, ny, _ = size(local_field)
+            return serial[(rx - 1) * Nx .+ (1:nx), (ry - 1) * Ny .+ (1:ny), :]
+        end
+
+        terrain = Array(interior(blended_terrain(distributed_arch)))
+        @test terrain == serial_window(serial_terrain, terrain)
+
+        # The turbulent kinetic energy ρe stays near zero, so it needs an absolute tolerance for roundoff
+        for (name, field) in pairs(prognostic_fields(child))
+            local_interior = Array(interior(field))
+            serial = Array(interior(prognostic_fields(serial_child)[name]))
+            @test local_interior ≈ serial_window(serial, local_interior) rtol = 1e-12 atol = 1e-12
+        end
     end
 end
 
