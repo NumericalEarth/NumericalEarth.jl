@@ -453,6 +453,7 @@ include("GEUS/GEUS.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
 include("ITSLIVE/ITSLIVE.jl")
+include("BedMachine/BedMachine.jl")
 include("IBCSO/IBCSO.jl")
 include("RTopo/RTopo.jl")
 include("GEBCO/GEBCO.jl")
@@ -480,6 +481,7 @@ using .GEUS
 using .SoilGrids
 using .OpenLandMap
 using .ITSLIVE
+using .BedMachine
 using .IBCSO
 using .RTopo
 using .GEBCO

@@ -163,6 +163,7 @@ export
     ORCAGrid,
     OpenLandMapSoilDB,
     ITSLIVEAntarctica,
+    BedMachineAntarctica,
     SoilGrids2,
     GlobalBuildingFootprints3D, building_morphometry,
     GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
@@ -324,6 +325,7 @@ using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
 using .DataWrangling.ITSLIVE
+using .DataWrangling.BedMachine
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
 using .DataWrangling.MODISLand

@@ -2,9 +2,8 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: x_interfaces, y_interfaces, dataset_variable_name, metadata_path,
                                     validate_dataset_coverage, default_inpainting, is_three_dimensional,
-                                    native_grid
-using NumericalEarth.DataWrangling.ITSLIVE: cog_window, window_centers, cog_window_to_netcdf,
-                                            validate_source_lattice
+                                    native_grid, projected_window, projected_window_centers
+using NumericalEarth.DataWrangling.ITSLIVE: cog_window_to_netcdf, validate_source_lattice
 using Oceananigans.Grids: xnodes, ynodes, topology, Bounded, Flat
 
 using ArchGDAL
@@ -52,8 +51,8 @@ end
     pine_island = ProjectedBoundingBox(x = (-1.62e6, -1.59e6), y = (-2.8e5, -2.5e5))
     metadatum = Metadatum(:velocity_x; dataset, region = pine_island)
     grid = native_grid(metadatum)
-    window = cog_window(dataset, pine_island)
-    x, y = window_centers(dataset, window)
+    window = projected_window(dataset, pine_island)
+    x, y = projected_window_centers(dataset, window)
 
     @test topology(grid) == (Bounded, Bounded, Flat)
     @test size(grid)[1:2] == (window.Nx, window.Ny)

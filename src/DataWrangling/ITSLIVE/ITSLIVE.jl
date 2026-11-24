@@ -4,11 +4,11 @@ export ITSLIVEAntarctica
 
 using Downloads: Downloads
 using NumericalEarth: TYPEDSIGNATURES
-using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, ProjectedBoundingBox, Dataset,
-                       metadata_path, dataset_variable_name, bounding_box_suffix, native_cell_range,
+using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, Dataset,
+                       metadata_path, dataset_variable_name, bounding_box_suffix, projected_window,
+                       projected_window_centers, validate_projected_region, write_projected_window,
                        x_interfaces, y_interfaces
 
 using ..OpenLandMap: validate_geographic_northup
@@ -94,22 +94,7 @@ DataWrangling.metadata_filename(::ITSLIVEAntarctica, name, date, region) =
     string("ITSLIVE_Antarctica_", name, "_", bounding_box_suffix(region), ".nc")
 
 DataWrangling.validate_dataset_coverage(grid, metadatum::ITSLIVEAntarcticaMetadatum) =
-    validate_region(metadatum.region, metadatum.dataset)
-
-validate_region(region, dataset) =
-    error("ITSLIVEAntarctica() must be used with a ProjectedBoundingBox in EPSG:3031 metres; " *
-          "the 120 m mosaic is never read in full. For example\n" *
-          "    Metadatum(:velocity_x; dataset = ITSLIVEAntarctica(),\n" *
-          "              region = ProjectedBoundingBox(x = (x₁, x₂), y = (y₁, y₂)))")
-
-function validate_region(region::ProjectedBoundingBox, dataset)
-    x₁, x₂ = x_interfaces(dataset)
-    y₁, y₂ = y_interfaces(dataset)
-    overlaps = region.x[2] > x₁ && region.x[1] < x₂ && region.y[2] > y₁ && region.y[1] < y₂
-    overlaps || error("ITSLIVEAntarctica covers x = ($x₁, $x₂) and y = ($y₁, $y₂) m; " *
-                      "requested $(summary(region)).")
-    return nothing
-end
+    validate_projected_region(metadatum.region, metadatum.dataset)
 
 #####
 ##### Download: window one cloud-optimized GeoTIFF into a regional NetCDF
@@ -132,38 +117,6 @@ function DataWrangling.retrieve_data(metadatum::ITSLIVEAntarcticaMetadatum)
         Array(ds[dataset_variable_name(metadatum)][:, :])
     end
     return data
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Return the `(column_offset, row_offset, Nx, Ny)` raster window of `dataset` whose cells are
-the native-grid cells covering `region`. Offsets count from zero, columns west to east and
-rows north to south, as GDAL reads them.
-"""
-function cog_window(dataset, region)
-    Nx, Ny, _ = size(dataset, nothing)
-    columns = native_cell_range(region.x, x_interfaces(dataset), Nx)
-    rows    = native_cell_range(region.y, y_interfaces(dataset), Ny)
-    return (column_offset = first(columns) - 1, row_offset = Ny - last(rows), Nx = length(columns), Ny = length(rows))
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Return the cell-center coordinates `(x, y)` of the raster `window` of `dataset`, ascending
-in both directions.
-"""
-function window_centers(dataset, window)
-    Nx, Ny, _ = size(dataset, nothing)
-    x₁, x₂ = x_interfaces(dataset)
-    y₁, y₂ = y_interfaces(dataset)
-    Δx = (x₂ - x₁) / Nx
-    Δy = (y₂ - y₁) / Ny
-    j₀ = Ny - window.row_offset - window.Ny
-    x = [x₁ + (window.column_offset + i - 1/2) * Δx for i in 1:window.Nx]
-    y = [y₁ + (j₀ + j - 1/2) * Δy for j in 1:window.Ny]
-    return x, y
 end
 
 """
@@ -193,7 +146,7 @@ end
 """
     read_cog_window(source, window)
 
-Read the raster `window` (see [`cog_window`](@ref)) from the single-band cloud-optimized GeoTIFF
+Read the raster `window` (see [`projected_window`](@ref)) from the single-band cloud-optimized GeoTIFF
 `source`, mask its nodata to `NaN`, apply the band scale and offset, and return
 `(; geotransform, coordinate_system_code, data)` with `data` ordered west to east and south
 to north.
@@ -204,27 +157,13 @@ fallback below fires only when the extension is not active.
 read_cog_window(source, window) =
     error("Reading ITS_LIVE COGs requires the ArchGDAL package. Load it with `using ArchGDAL`.")
 
-# Written to a temporary file and moved, so an interrupted download leaves no partial file.
 function cog_window_to_netcdf(source, path, variable_name, dataset, region)
-    window = cog_window(dataset, region)
+    window = projected_window(dataset, region)
     raster = read_cog_window(source, window)
     validate_source_lattice(raster.geotransform, raster.coordinate_system_code, dataset)
-    x, y = window_centers(dataset, window)
+    x, y = projected_window_centers(dataset, window)
 
-    temporary_path = tempname(dirname(path)) * ".nc"
-    NCDataset(temporary_path, "c") do ds
-        defDim(ds, "x", window.Nx)
-        defDim(ds, "y", window.Ny)
-        projected = ["units" => "m", "grid_mapping" => "EPSG:3031"]
-        x_var = defVar(ds, "x", Float64, ("x",); attrib = ["long_name" => "polar stereographic x"; projected])
-        y_var = defVar(ds, "y", Float64, ("y",); attrib = ["long_name" => "polar stereographic y"; projected])
-        data_var = defVar(ds, variable_name, Float32, ("x", "y");
-                          attrib = ["units" => "m/a"], chunksizes = [min(512, window.Nx), min(512, window.Ny)])
-        x_var[:] = x
-        y_var[:] = y
-        data_var[:, :] = raster.data
-    end
-    mv(temporary_path, path; force = true)
+    write_projected_window(path, variable_name, x, y, raster.data; units = "m/a")
 
     return nothing
 end
