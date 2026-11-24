@@ -3,7 +3,7 @@ include("download_utils.jl")
 
 using JLD2
 using NumericalEarth.Bathymetry: remove_minor_basins!, bathymetry_regridding_key, meridional_barrier,
-                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers
+                                 label_ocean_basins, find_label_at_point, atlantic_ocean_barriers, atlantic_ocean_basin
 using NumericalEarth.Bathymetry.ImageMorphology: label_components
 using NumericalEarth.DataWrangling: field_cache_filename, save_field_cache
 using NumericalEarth.DataWrangling.ETOPO

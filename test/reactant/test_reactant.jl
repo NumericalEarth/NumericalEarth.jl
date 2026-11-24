@@ -184,3 +184,30 @@ end
         @test all(Array(interior(pressure))[i, j, :] == levels for i in 1:4, j in 1:4)
     end
 end
+
+# A NetCDF slice (`Array{Union{Missing, T}}`) reaches the device with `missing` as NaN: Reactant cannot
+# hold the `Missing` element type (EnzymeAD/Reactant.jl#3569).
+@testset "A slice with missing values moved to ReactantState" begin
+    slice = Union{Missing, Float32}[1, missing, 1]
+    device_slice = Oceananigans.Architectures.on_architecture(ReactantState(), slice)
+    @test device_slice isa Reactant.AbstractConcreteArray{Float32}
+    @test isequal(Array(device_slice), Float32[1, NaN, 1])
+
+    reshaped_slice = Oceananigans.Architectures.on_architecture(ReactantState(), reshape(slice, 1, 3))
+    @test size(reshaped_slice) == (1, 3)
+    @test isequal(Array(reshaped_slice), Float32[1 NaN 1])
+end
+
+# The coupled model's default clock around an atmosphere `Simulation` on ReactantState is a device clock in every
+# field, so a compiled step can tick it: `Clock{TT}(time = 0)` left the iteration a host `Int`.
+@testset "EarthSystemModel default clock ticks under compilation" begin
+    grid = Oceananigans.RectilinearGrid(ReactantState(); size = (2, 2, 2), extent = (1, 1, 1))
+    model = Oceananigans.HydrostaticFreeSurfaceModel(grid; free_surface = Oceananigans.ExplicitFreeSurface())
+    atmosphere = Oceananigans.Simulation(model; Δt = 1, verbose = false)
+    clock = NumericalEarth.EarthSystemModels.default_earth_system_clock(atmosphere)
+    @test clock.iteration isa Reactant.ConcreteRNumber{Int}
+
+    @jit Oceananigans.TimeSteppers.tick!(clock, 1.0)
+    @test Reactant.to_number(clock.time) == 1
+    @test Reactant.to_number(clock.iteration) == 1
+end
