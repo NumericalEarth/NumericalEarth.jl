@@ -159,13 +159,24 @@ function boundary_strip_regions(grid, width, sides)
     w = relaxation_zone_width(grid, width)
     Wx = ceil(Int, w / ((λ₂ - λ₁) / Nx))
     Wy = ceil(Int, w / ((φ₂ - φ₁) / Ny))
-    i₁ = :west in sides ? Wx + 1 : 1
-    i₂ = :east in sides ? Nx - Wx : Nx
+    boundaries = domain_boundaries(grid)
+    i₁ = (:west in sides && boundaries.west) ? Wx + 1 : 1
+    i₂ = (:east in sides && boundaries.east) ? Nx - Wx : Nx
     regions = (west  = KernelParameters(1:Wx, 1:Ny, 1:Nz),
                east  = KernelParameters(Nx-Wx+1:Nx, 1:Ny, 1:Nz),
                south = KernelParameters(i₁:i₂, 1:Wy, 1:Nz),
                north = KernelParameters(i₁:i₂, Ny-Wy+1:Ny, 1:Nz))
     return regions[sides]
+end
+
+# Whether each side of this rank's grid is a domain boundary, as opposed to a seam with another rank
+function domain_boundaries(grid)
+    NestedModels = NumericalEarth.NestedModels
+    on_boundary(dim, side) = NestedModels.on_domain_boundary(Oceananigans.Grids.topology(grid, dim), side)
+    return (west  = on_boundary(1, NestedModels.LeftBoundary),
+            east  = on_boundary(1, NestedModels.RightBoundary),
+            south = on_boundary(2, NestedModels.LeftBoundary),
+            north = on_boundary(2, NestedModels.RightBoundary))
 end
 
 @kernel function _add_forcing!(G, grid, forcing, clock, model_fields)
@@ -178,6 +189,7 @@ function relax_boundary_strips!(model, strips)
     arch = architecture(grid)
     model_fields = Oceananigans.fields(model)
     for strip in strips, name in keys(strip.forcings)
+        strip.on_domain_boundary || continue
         launch!(arch, grid, strip.region, _add_forcing!,
                 model.timestepper.Gⁿ[name], grid, strip.forcings[name], model.clock, model_fields)
     end
@@ -203,13 +215,14 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
 
     sides = keys(prognostic.θ)
     regions = boundary_strip_regions(child.grid, width, sides)
+    boundaries = domain_boundaries(child.grid)
     names = (:ρθ, :ρu, :ρv, moisture_name)
     strips = NamedTuple{sides}(
         (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
                                        specific(:ρu, child.velocities.u, VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
                                        specific(:ρv, child.velocities.v, VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
                                        relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
-         region = regions[side])
+         region = regions[side], on_domain_boundary = boundaries[side])
         for side in sides)
 
     return Callback(relax_boundary_strips!; callsite = TendencyCallsite(), parameters = strips)
