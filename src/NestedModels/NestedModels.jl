@@ -1,8 +1,9 @@
 module NestedModels
 
-export NestedModel, NestedSimulation, nested_atmosphere_model,
+export NestedModel, NestedSimulation, nested_atmosphere_model, time_step_ratio,
        parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
-       exchange_state!, total_density, reconstruct_parent_state, VectorComponent
+       exchange_state!, total_density, reconstruct_parent_state, VectorComponent,
+       interpolate_from_parent!
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
@@ -25,10 +26,11 @@ function reconstruct_parent_state end
 
 using Oceananigans
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: AbstractGrid
+using Oceananigans.Grids: AbstractGrid, minimum_xspacing, minimum_yspacing
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
+using DocStringExtensions: TYPEDSIGNATURES
 
 using ...NumericalEarth: SIGNATURES
 using ..EarthSystemModels: EarthSystemModels, component_model, AbstractPrescribedComponent,
@@ -38,6 +40,7 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, Componen
 include("nested_model.jl")
 include("nested_component.jl")
 include("nested_simulation.jl")
+include("parent_sampling.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
