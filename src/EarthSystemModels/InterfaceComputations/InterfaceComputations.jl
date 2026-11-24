@@ -12,6 +12,8 @@ using Oceananigans.Utils: KernelParameters, worksize
 
 export
     ComponentInterfaces,
+    ZeroHeatContentMeltwater,
+    InterfaceTemperatureMeltwater,
     SurfacePartition,
     SimilarityTheoryFluxes,
     FixedIterations,
