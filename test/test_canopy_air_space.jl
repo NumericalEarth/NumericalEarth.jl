@@ -33,14 +33,14 @@ power_law_soil_humidity(FT) = DryLayerHumidity(FT;
 function canopy_arguments(FT; air_temperature = 300, air_specific_humidity = 0.008, wind = 3, albedo = 0, emissivity = 0,
                           flux_scales = (0.26, 1e-3, -1e-3, 0, 0), temperature = 300, saturation = 0.3,
                           vapor_diffusivity = 2.4e-5, canopy_water_storage = 0, canopy_water_capacity = 0,
-                          land_temperature = 298, leaf_area_index = 3)
+                          land_temperature = 298, leaf_area_index = 3, shortwave = 600)
     Ψⁱⁿ = AirLandInterfaceState(InterfaceFluxScales(FT.(flux_scales)...), InterfaceVelocities(FT(0), FT(0)),
                                FT(temperature), FT(0.012))
     Ψₐ = (z = FT(10), u = FT(wind), v = FT(0), T = FT(air_temperature), p = FT(101325), q = FT(air_specific_humidity), h_bℓ = FT(600))
     Ψˡᵃ = (T = FT(land_temperature), 𝒮 = FT(saturation), effective_vapor_diffusivity = FT(vapor_diffusivity),
            canopy_water_storage = FT(canopy_water_storage), canopy_water_capacity = FT(canopy_water_capacity),
            surface_storage = nothing, thermal_exchange_depth = FT(0.05), leaf_area_index = FT(leaf_area_index))
-    Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(albedo), FT(emissivity), FT(-600), FT(-350))
+    Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(albedo), FT(emissivity), FT(-shortwave), FT(-350))
     ℙₐ = (thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT), gravitational_acceleration = FT(9.81))
     return Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ
 end
@@ -251,6 +251,26 @@ end
 
     @test 𝒬ᵛᵍʳⁿᵈ(covered, 0.9) < 𝒬ᵛᵍʳⁿᵈ(exponential, 0.9) < 𝒬ᵛᵍʳⁿᵈ(unresisted, 0.9)
     @test issorted([𝒬ᵛᵍʳⁿᵈ(covered, 𝒮) for 𝒮 in 0.50:-0.03:0.14], rev = true)
+end
+
+@testset "Soil resistance under the canopy: drier soil evaporates less, dew is unresisted" begin
+    resisted(; kw...) = canopy_ground_surface(Float64; ground_surface_resistance = nothing,
+                                              wet_soil_resistance = ExponentialSoilResistance(Float64), kw...)
+    unresisted(; kw...) = canopy_ground_surface(Float64; ground_surface_resistance = nothing, kw...)
+
+    # Bare ground at saturations 0.9 to 0.1, across the dry-layer onset at 0.5.
+    evaporation = [canopy_solve(resisted(leaf_area_index = 0.0); ground_vapor_state(𝒮)...).𝒬ᵛᵍʳⁿᵈ for 𝒮 in 0.9:-0.1:0.1]
+    @test all(evaporation .> 0)
+    @test issorted(evaporation, rev = true)
+
+    # A clear night under nearly saturated air: vapor condenses on the cold ground under the leaves.
+    ℂ = AtmosphereThermodynamicsParameters(Float64)
+    night = (; shortwave = 0, air_temperature = 285, temperature = 285, land_temperature = 282, wind = 2, saturation = 0.5,
+               air_specific_humidity = 0.97 * saturation_specific_humidity(ℂ, 285.0, 101325.0, AtmosphericThermodynamics.Liquid()),
+               flux_scales = (0.15, 1e-3, -1e-3, 1/6, 1/6))
+    dew = canopy_solve(resisted(); night...).𝒬ᵛᵍʳⁿᵈ
+    @test dew < 0
+    @test dew ≈ canopy_solve(unresisted(); night...).𝒬ᵛᵍʳⁿᵈ
 end
 
 @testset "Undercanopy transfer velocity closures" begin
