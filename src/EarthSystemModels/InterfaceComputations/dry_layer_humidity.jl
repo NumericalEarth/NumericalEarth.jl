@@ -359,8 +359,7 @@ land_state_accessors(q::SoilResistanceHumidity) = land_state_accessors(q.soil_hu
     ρᵃᵗ  = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     Gᵃ   = aerodynamic_vapor_conductance(Ψⁱⁿ, Ψₐ, ℂᵃᵗ)
 
-    𝒮ᶜ   = convert(FT, q.soil_humidity.dry_layer_depth.dry_layer_onset_saturation)
-    rˢᵒⁱ = soil_surface_resistance(q.wet_soil_resistance, max(Ψˡᵃ.𝒮, 𝒮ᶜ))
+    rˢᵒⁱ = soil_surface_resistance(q.wet_soil_resistance, q.soil_humidity, Ψˡᵃ.𝒮)
 
     # Each branch condenses without rˢᵒⁱ, so its flux stays continuous through zero.
     # Dry branch: the dry layer and rˢᵒⁱ in series, then the aerodynamic conductance.

@@ -230,10 +230,12 @@ end
 @testset "Ground-surface resistances (bulk cover, Sellers fit)" begin
     for FT in (Float32, Float64)
         r = ExponentialSoilResistance(FT)
-        @test soil_surface_resistance(r, FT(1)) ≈ exp(FT(8.206) - FT(4.255))   # Sellers et al. (1992), Eq. (19)
-        @test soil_surface_resistance(r, FT(2)) == soil_surface_resistance(r, FT(1))
-        @test soil_surface_resistance(r, FT(0.4)) > soil_surface_resistance(r, FT(0.7))
-        @test soil_surface_resistance(nothing, FT(0.5)) == 0
+        soil = bare_soil_humidity(FT)   # dry-layer onset saturation 0.5
+        @test soil_surface_resistance(r, soil, FT(1)) ≈ exp(FT(8.206) - FT(4.255))   # Sellers et al. (1992), Eq. (19)
+        @test soil_surface_resistance(r, soil, FT(2)) == soil_surface_resistance(r, soil, FT(1))
+        @test soil_surface_resistance(r, soil, FT(0.5)) > soil_surface_resistance(r, soil, FT(0.7))
+        @test soil_surface_resistance(r, soil, FT(0.2)) == soil_surface_resistance(r, soil, FT(0.5))
+        @test soil_surface_resistance(nothing, soil, FT(0.5)) == 0
 
         r = GroundSurfaceResistance(FT)
         # Sakaguchi & Zeng (2009), Eq. (13), at unit litter area index

@@ -137,7 +137,8 @@ Empirical surface resistance of evaporating moist soil under a [`CanopyInterface
 rˢᵒⁱ = e^{a - b 𝒮},
 ```
 
-with the current surface saturation `𝒮` supplied by land. The interface coefficients
+with the current surface saturation `𝒮` supplied by land, held at or above the soil's dry-layer
+onset saturation `𝒮ᶜ`. The interface coefficients
 `a` and `b` were fit by [Sellers et al. (1992)](@cite sellers1992) to the FIFE prairie flux
 stations (`rˢᵒⁱ(1) ≈ 52` s m⁻¹). The FIFE sites carried litter, so the fit is an effective
 soil-plus-litter resistance, an alternative to a
@@ -166,12 +167,13 @@ Base.summary(r::ExponentialSoilResistance) =
            ", b=", prettysummary(r.slope), ")")
 Base.show(io::IO, r::ExponentialSoilResistance) = print(io, summary(r))
 
-@inline soil_surface_resistance(::Nothing, 𝒮) = zero(𝒮)
-@inline function soil_surface_resistance(r::ExponentialSoilResistance, 𝒮)
+@inline soil_surface_resistance(::Nothing, soil, 𝒮) = zero(𝒮)
+@inline function soil_surface_resistance(r::ExponentialSoilResistance, soil, 𝒮)
     FT = typeof(𝒮)
     a  = convert(FT, r.intercept)
     b  = convert(FT, r.slope)
-    return exp(a - b * clamp(𝒮, zero(FT), one(FT)))
+    𝒮ᶜ = convert(FT, soil.dry_layer_depth.dry_layer_onset_saturation)
+    return exp(a - b * clamp(𝒮, 𝒮ᶜ, one(FT)))
 end
 
 """
@@ -513,11 +515,9 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     gˡᵇˡ  = ρᵃᵗ * λˡᵉᵃᶠ * c.leaf_boundary_layer_velocity
     gᵍʳⁿᵈᵀ = ρᵃᵗ * cᵖᵐ * wᵘᶜᵃⁿ
     # Ground vapor path: the ground-surface resistance `rᵍʳⁿᵈ` and, for evaporating soil, the soil surface
-    # resistance `rˢᵒⁱ` in series with the undercanopy path (Sakaguchi & Zeng 2009). Below the dry-layer
-    # onset saturation 𝒮ᶜ, `rˢᵒⁱ` holds its onset value and the dry layer adds in series.
+    # resistance `rˢᵒⁱ` in series with the undercanopy path (Sakaguchi & Zeng 2009).
     rᵍʳⁿᵈ = ground_surface_resistance(c.ground_surface_resistance, u★)
-    𝒮ᶜ    = convert(FT, c.soil_humidity.dry_layer_depth.dry_layer_onset_saturation)
-    rˢᵒⁱ  = soil_surface_resistance(c.wet_soil_resistance, max(Ψˡᵃ.𝒮, 𝒮ᶜ))
+    rˢᵒⁱ  = soil_surface_resistance(c.wet_soil_resistance, c.soil_humidity, Ψˡᵃ.𝒮)
     evaporating_conductance = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * (rᵍʳⁿᵈ + rˢᵒⁱ))
     condensing_conductance  = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * rᵍʳⁿᵈ)
     Λᵍʳⁿᵈ = convert(FT, ground_conductance(c.ground_heat_flux))
