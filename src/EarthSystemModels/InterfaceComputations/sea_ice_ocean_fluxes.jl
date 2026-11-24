@@ -13,22 +13,27 @@ using ..EarthSystemModels: ocean_temperature, ocean_salinity
     ZeroHeatContentMeltwater()
 
 Ice meltwater joins the ocean carrying no heat content, that is, at Conservative Temperature 0.
+
+This is the energy-conserving choice for `ClimaSeaIce`, which melts and grows ice with a constant
+latent heat measured at 0 (`ℰ = ρⁱ reference_latent_heat`, since ClimaSeaIce.jl#186). The heat the
+ocean gives the ice, `𝒬ⁱᵒ`, is exactly what turns the ice into water at 0, so the water must arrive
+at 0 for the total heat of ocean plus ice to stay the same.
 """
 struct ZeroHeatContentMeltwater end
 
 """
     InterfaceTemperatureMeltwater()
 
-Ice meltwater joins the ocean at the interface temperature `Tᵦ`. `ClimaSeaIce` evaluates the latent heat
-at the interface, `ℰb = ρⁱ latent_heat(phase_transitions, Tbi)`, so the liquid a basal phase change
-produces is at `Tᵦ` and not at 0; delivering it at 0 hands the ocean `ρᵒᶜ cᵒᶜ |Tᵦ|` of heat it never
-paid for, about 0.23 W m⁻² per m yr⁻¹ of basal melt.
+Ice meltwater joins the ocean at the interface temperature `Tᵦ`. This matches a sea-ice model whose
+latent heat is evaluated at the interface temperature, so that basal melt produces liquid at `Tᵦ`
+rather than at 0. The same holds when freezing: water leaving the ocean to form ice leaves at `Tᵦ`.
 
-The same correction applies in the freezing direction: water leaving the ocean to form ice leaves at
-`Tᵦ` rather than at 0.
+`ClimaSeaIce` now uses a constant latent heat measured at 0 (ClimaSeaIce.jl#186). With that model,
+this option does not conserve energy: the ocean loses an extra `ρᵒᶜ cᵒᶜ |Tᵦ|` per unit volume of basal
+melt, about 0.23 W m⁻² per m yr⁻¹. Use [`ZeroHeatContentMeltwater`](@ref) with `ClimaSeaIce`.
 
-The correction applies to the ocean-driven basal melt rate `q` of the interface heat balance only; top melt
-is produced at the surface melting temperature, near 0, and needs none.
+Only the ocean-driven basal melt rate `q` of the interface heat balance is affected. Top melt forms at
+the surface melting temperature, near 0.
 """
 struct InterfaceTemperatureMeltwater end
 
@@ -265,14 +270,16 @@ end
     # =============================================
     # Jʷ is the total ice+snow mass lost to the ocean (top + bottom + any flooding). 
     # Jˢ the salinity flux carried by the ice-share of the total meltwater Jʷ (the snow does not carry salinity), 
-    # while Jᴴ the heat content associated with Jʷ, where the bottom (ice-ocean) share of Jʷ has a 
-    # temperature equal to the ice-ocean interface temperature and the remaining share is at 0 degrees Celsius
+    # while Jᴴ the heat content associated with Jʷ. All of Jʷ arrives at 0 except, with
+    # InterfaceTemperatureMeltwater, the bottom (ice-ocean) share, which arrives at the interface temperature.
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
         Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
         Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
-        Eᵢᵒ = - q # bottom-only (ocean-driven) ice mass tendency, self-consistent with Tb/Sb
+        # q is a melt rate per unit area of ice. Multiply by the ice concentration to get a rate
+        # per unit area of the grid cell, matching 𝒬ⁱᵒ. In open water (ℵ = 0) there is no melt.
+        Eᵢᵒ = - ℵˢⁱ * q # bottom-only (ocean-driven) ice mass tendency, self-consistent with Tb/Sb
         Jᴴ[i, j, 1] = meltwater_heat_content(meltwater_enthalpy, Tb, - Eᵢᵒ / ρᵒᶜ)
     end
 end
