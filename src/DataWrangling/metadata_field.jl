@@ -15,6 +15,7 @@ Oceananigans.location(metadata::Metadata) = restrict_location(dataset_location(m
 
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
+restrict_location(loc, ::ProjectedBoundingBox) = loc
 restrict_location((LX, LY, LZ), ::Column) = (Nothing, Nothing, LZ)
 
 #####
@@ -186,6 +187,16 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
                                      halo = halo[1:2], longitude, latitude,
                                      topology = (TX, Bounded, Flat))
     end
+end
+
+# Projected datasets are two-dimensional maps in metres.
+function construct_native_grid(metadata, box::ProjectedBoundingBox, arch; halo)
+    FT = eltype(metadata)
+    Nx, Ny, _ = size(metadata)
+    x, Nx = restrict(box.x, x_interfaces(metadata.dataset), Nx)
+    y, Ny = restrict(box.y, y_interfaces(metadata.dataset), Ny)
+    return RectilinearGrid(arch, FT; size = (Nx, Ny), halo = halo[1:2], x, y,
+                           topology = (Bounded, Bounded, Flat))
 end
 
 # 2D-only datasets collapse to (Flat, Flat, Flat); 3D keep z Bounded.

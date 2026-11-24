@@ -213,6 +213,7 @@ NumericalEarth currently ships connectors for the following data products:
 | `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
 | `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
 | `OpenLandMapSoilDB` | 30 m global soil texture (sand, silt, clay) and fine-earth bulk density over 0–100 cm | [OpenLandMap STAC](https://stac.openlandmap.org/) |
+| `ITSLIVEAntarctica` | 120 m Antarctic ice-flow velocity (`:velocity_x`, `:velocity_y`, `:speed` and their errors) on its native EPSG:3031 grid, read over a `ProjectedBoundingBox` (needs `ArchGDAL`) | [ITS_LIVE](https://its-live.jpl.nasa.gov/) |
 | `CopernicusAlbedo` | `:albedo` — ten-day blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |

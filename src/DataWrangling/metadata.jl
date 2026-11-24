@@ -59,6 +59,38 @@ axis_padding(padding::Number) = (padding, padding)
 axis_padding(padding::Tuple{Any, Any}) = padding
 
 """
+$(TYPEDEF)
+
+A rectangle in the projected coordinates, in metres, of a dataset distributed on a map projection
+(for example polar stereographic). The native grid of such a dataset is a `RectilinearGrid` on
+those coordinates, and vector components keep their orientation along the projection axes.
+
+$(TYPEDFIELDS)
+
+```jldoctest
+using NumericalEarth
+
+region = ProjectedBoundingBox(x = (-1.7e6, -1.5e6), y = (-4e5, -2e5))
+summary(region)
+
+# output
+"ProjectedBoundingBox(x=(-1.7e6, -1.5e6), y=(-400000.0, -200000.0))"
+```
+"""
+struct ProjectedBoundingBox{X, Y}
+    "west and east bounds (m)"
+    x :: X
+    "south and north bounds (m)"
+    y :: Y
+end
+
+ProjectedBoundingBox(; x, y) = ProjectedBoundingBox(x, y)
+
+Base.summary(box::ProjectedBoundingBox) =
+    string("ProjectedBoundingBox(x=(", prettysummary(box.x[1]), ", ", prettysummary(box.x[2]),
+           "), y=(", prettysummary(box.y[1]), ", ", prettysummary(box.y[2]), "))")
+
+"""
     bounding_box_intersects(bounds, bbox::BoundingBox)
 
 Whether `bounds`, anything with `west`, `south`, `east`, and `north` fields, overlaps `bbox`.
@@ -88,6 +120,8 @@ function bounding_box_suffix(region::BoundingBox)
     φ = region.latitude
     return string("lon_", bounds_string(λ), "_lat_", bounds_string(φ))
 end
+
+bounding_box_suffix(region::ProjectedBoundingBox) = string("x_", bounds_string(region.x), "_y_", bounds_string(region.y))
 
 bounds_string(::Nothing) = "nothing"
 bounds_string(bounds) = string(bounds[1], "_", bounds[2])

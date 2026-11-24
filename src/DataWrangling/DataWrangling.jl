@@ -6,7 +6,7 @@ module DataWrangling
 
 export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
 export validate_dataset_coverage, metadata_filename
-export BoundingBox, Column, Linear, Nearest
+export BoundingBox, ProjectedBoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
@@ -46,6 +46,7 @@ using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES, TYPEDSIGNATURES
+using DocStringExtensions: TYPEDEF, TYPEDFIELDS
 
 #####
 ##### Downloading utilities
@@ -293,6 +294,8 @@ that `metadata` corresponds to.
 function z_interfaces end
 function longitude_interfaces end
 function latitude_interfaces end
+function x_interfaces end
+function y_interfaces end
 function reversed_vertical_axis end
 reversed_latitude_axis(dataset) = false
 function native_grid end
@@ -449,6 +452,7 @@ include("GloFAS/GloFAS.jl")
 include("GEUS/GEUS.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
+include("ITSLIVE/ITSLIVE.jl")
 include("IBCSO/IBCSO.jl")
 include("RTopo/RTopo.jl")
 include("GEBCO/GEBCO.jl")
@@ -475,6 +479,7 @@ using .GloFAS
 using .GEUS
 using .SoilGrids
 using .OpenLandMap
+using .ITSLIVE
 using .IBCSO
 using .RTopo
 using .GEBCO
