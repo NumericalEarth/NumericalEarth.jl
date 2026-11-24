@@ -72,7 +72,7 @@ function initialize_land_interface!(coupled_model, interface, surface_state = la
     state = interface.formulation.state
     leaf_area_index = canopy_leaf_area_index(specific_humidity_formulation(state))
     vegetation, time_interpolator = kernel_surface_field(leaf_area_index, arch, clock.time)
-    launch!(arch, grid, :xy, _initialize_land_interface!, interface.temperature,
+    launch!(arch, grid, interface_kernel_parameters(grid), _initialize_land_interface!, interface.temperature,
             exchanger.land.state.T, surface_state.state, grid, clock, state, vegetation, time_interpolator)
     return nothing
 end
@@ -249,9 +249,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     radiation_kernel_props = kernel_radiation_properties(radiation, radiation_exchanger)
     radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
 
-    # Interior cells only: halo cells of the atmosphere exchanger state are uninitialized when the
-    # atmosphere grid is a regional cutout matching the exchange-grid interior exactly.
-    launch!(arch, grid, :xy, _compute_atmosphere_land_interface_state!,
+    launch!(arch, grid, interface_kernel_parameters(grid), _compute_atmosphere_land_interface_state!,
             interface_fluxes, interface_temperature, interface_specific_humidity, grid, clock,
             interface_formulation, land_state, vegetation, time_interpolator, atmosphere_data,
             surface_state.next, atmosphere_properties, radiation_kernel_props, radiation_state, convert(FT, Δt))
