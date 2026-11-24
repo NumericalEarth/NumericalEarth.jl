@@ -186,20 +186,28 @@ moisture-dependent depth (m), and `vapor_exchange` specifies molecular transport
 Soil diffusivity is supplied by land; the thermal exchange distance comes from the
 surface heat-transfer closure. Pore air at the evaporation front is saturated;
 matric-suction suppression of its vapor pressure is neglected.
+
+`wet_soil_resistance` is the surface resistance `rˢᵒⁱ` of evaporating moist soil (an
+[`ExponentialSoilResistance`](@ref)), or `nothing` (the default) for none. Vapor leaves the
+saturated skin through `rˢᵒⁱ`; below the dry-layer onset saturation `rˢᵒⁱ` holds its onset
+value and the dry layer adds in series, so evaporation falls as the soil dries. Condensing
+vapor bypasses `rˢᵒⁱ`.
 """
-struct DryLayerHumidity{D, V, P}
+struct DryLayerHumidity{D, V, W, P}
     dry_layer_depth :: D
     vapor_exchange :: V
+    wet_soil_resistance :: W
     phase :: P
 end
 
 DryLayerHumidity(FT::Type=Oceananigans.defaults.FloatType,
-                 phase=AtmosphericThermodynamics.Liquid(); dry_layer_depth, vapor_exchange) =
-    DryLayerHumidity(dry_layer_depth, vapor_exchange, phase)
+                 phase=AtmosphericThermodynamics.Liquid(); dry_layer_depth, vapor_exchange, wet_soil_resistance=nothing) =
+    DryLayerHumidity(dry_layer_depth, vapor_exchange, wet_soil_resistance, phase)
 
-Base.summary(q::DryLayerHumidity{D, V, P}) where {D, V, P} =
+Base.summary(q::DryLayerHumidity{D, V, W, P}) where {D, V, W, P} =
     string("DryLayerHumidity{", P === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice",
-           "}(depth=", summary(q.dry_layer_depth), ", vapor=", summary(q.vapor_exchange), ")")
+           "}(depth=", summary(q.dry_layer_depth), ", vapor=", summary(q.vapor_exchange),
+           ", wet_soil_resistance=", summary(q.wet_soil_resistance), ")")
 Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 
 """
@@ -324,42 +332,15 @@ end
     return Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳⁿᵈ⁺, dqᵉ, dqᵍʳⁿᵈ⁺
 end
 
-@inline compute_interface_humidity(q::DryLayerHumidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ) =
-    compute_interface_humidity(SoilResistanceHumidity(q, nothing), Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-
-"""
-$(TYPEDSIGNATURES)
-
-Specific humidity above a soil surface that evaporates through `wet_soil_resistance`, the
-surface resistance `rˢᵒⁱ` of moist soil (an [`ExponentialSoilResistance`](@ref)), in series
-with the aerodynamic conductance. On the moist branch of `soil_humidity` (a
-[`DryLayerHumidity`](@ref)) vapor leaves the saturated skin through `rˢᵒⁱ`. Below the
-dry-layer onset saturation `𝒮ᶜ`, `rˢᵒⁱ` holds its value at `𝒮ᶜ` and the dry layer adds its
-diffusion resistance in series, so evaporation falls as the soil dries. Dew deposits without
-`rˢᵒⁱ`. `wet_soil_resistance = nothing` leaves `soil_humidity` unchanged.
-"""
-struct SoilResistanceHumidity{S, W}
-    soil_humidity       :: S
-    wet_soil_resistance :: W
-end
-
-Base.summary(q::SoilResistanceHumidity) =
-    string("SoilResistanceHumidity(soil_humidity=", summary(q.soil_humidity),
-           ", wet_soil_resistance=", summary(q.wet_soil_resistance), ")")
-Base.show(io::IO, q::SoilResistanceHumidity) = print(io, summary(q))
-
-land_state_accessors(q::SoilResistanceHumidity) = land_state_accessors(q.soil_humidity)
-@inline interface_phase(q::SoilResistanceHumidity) = interface_phase(q.soil_humidity)
-
-@inline function compute_interface_humidity(q::SoilResistanceHumidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+@inline function compute_interface_humidity(q::DryLayerHumidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     FT  = eltype(Ψⁱⁿ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
-    Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳⁿᵈ⁺, _, _ = dry_layer_terms(q.soil_humidity, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
+    Gᵉ, qᵉ, fᵈᵇʳ, qᵍʳⁿᵈ⁺, _, _ = dry_layer_terms(q, Tⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, ℙₐ)
 
     ρᵃᵗ  = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
     Gᵃ   = aerodynamic_vapor_conductance(Ψⁱⁿ, Ψₐ, ℂᵃᵗ)
 
-    rˢᵒⁱ = soil_surface_resistance(q.wet_soil_resistance, q.soil_humidity, Ψˡᵃ.𝒮)
+    rˢᵒⁱ = soil_surface_resistance(q.wet_soil_resistance, q, Ψˡᵃ.𝒮)
 
     # Each branch condenses without rˢᵒⁱ, so its flux stays continuous through zero.
     # Dry branch: the dry layer and rˢᵒⁱ in series, then the aerodynamic conductance.

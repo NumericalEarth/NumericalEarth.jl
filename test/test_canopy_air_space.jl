@@ -86,7 +86,8 @@ ground_vapor_state(𝒮) = (air_temperature = 305, air_specific_humidity = 0.006
                         canopy_ground_surface(FT; undercanopy_transfer_velocity = AreaIndexUndercanopyVelocity(FT)),
                         canopy_ground_surface(FT; undercanopy_transfer_velocity = FrictionVelocityUndercanopyVelocity(FT)),
                         canopy_ground_surface(FT; ground_surface_resistance = nothing),
-                        canopy_ground_surface(FT; ground_surface_resistance = nothing, wet_soil_resistance = ExponentialSoilResistance(FT)))
+                        canopy_ground_surface(FT; ground_surface_resistance = nothing,
+                                              soil_humidity = bare_soil_humidity(FT; wet_soil_resistance = ExponentialSoilResistance(FT))))
             @inferred canopy_air_space_solve(surface, args..., FT(0))
         end
     end
@@ -247,7 +248,8 @@ end
     end
 
     unresisted = bare(ground_surface_resistance = nothing)
-    exponential    = bare(ground_surface_resistance = nothing, wet_soil_resistance = ExponentialSoilResistance(Float64))
+    exponential    = bare(ground_surface_resistance = nothing,
+                          soil_humidity = bare_soil_humidity(Float64; wet_soil_resistance = ExponentialSoilResistance(Float64)))
     covered    = bare()
     𝒬ᵛᵍʳⁿᵈ(surface, 𝒮) = canopy_solve(surface; ground_vapor_state(𝒮)...).𝒬ᵛᵍʳⁿᵈ
 
@@ -257,7 +259,8 @@ end
 
 @testset "Soil resistance under the canopy: drier soil evaporates less, dew is unresisted" begin
     resisted(; kw...) = canopy_ground_surface(Float64; ground_surface_resistance = nothing,
-                                              wet_soil_resistance = ExponentialSoilResistance(Float64), kw...)
+                                              soil_humidity = bare_soil_humidity(Float64; wet_soil_resistance = ExponentialSoilResistance(Float64)),
+                                              kw...)
     unresisted(; kw...) = canopy_ground_surface(Float64; ground_surface_resistance = nothing, kw...)
 
     # Bare ground at saturations 0.9 to 0.1, across the dry-layer onset at 0.5.

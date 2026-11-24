@@ -131,7 +131,8 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Empirical surface resistance of evaporating moist soil under a [`CanopyInterface`](@ref),
+Empirical surface resistance of evaporating moist soil, the `wet_soil_resistance` of a
+[`DryLayerHumidity`](@ref),
 
 ```math
 rˢᵒⁱ = e^{a - b 𝒮},
@@ -239,7 +240,8 @@ formulation to solve temperature and specific humidity together. Over an
 rate through the leaf boundary layer alone; a dry canopy (`Mᶜⁿᵖʸ = 0`) has no wet branch.
 
 Fields:
-- `soil_humidity`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)).
+- `soil_humidity`   : the soil vapor branch (a [`DryLayerHumidity`](@ref)), whose `wet_soil_resistance`
+  sits in series on both ground vapor branches.
 - `canopy_humidity` : the leaf vapor branch (a [`CanopyConductanceHumidity`](@ref)).
 - `ground_heat_flux` : ground↔bulk conduction `Λᵍʳⁿᵈ = κᵀ/ℓᵀ` (a [`SoilConductiveFlux`](@ref),
   whose `κᵀ` and `ℓᵀ` may be per-cell `Field`s).
@@ -256,11 +258,6 @@ Fields:
 - `undercanopy_transfer_velocity` : ground↔canopy-air transfer velocity `wᵘᶜᵃⁿ` → `gᵍʳⁿᵈᵀ = ρcᵖᵐ·wᵘᶜᵃⁿ`;
   a constant `Number` (m s⁻¹), an [`AreaIndexUndercanopyVelocity`](@ref), or a
   [`FrictionVelocityUndercanopyVelocity`](@ref).
-- `wet_soil_resistance` : surface resistance `rˢᵒⁱ` of evaporating moist soil (an
-  [`ExponentialSoilResistance`](@ref)) in series on both ground vapor branches, or `nothing`
-  (the default: the ground-surface resistance and undercanopy path alone carry the vapor).
-  Below the dry-layer onset saturation `rˢᵒⁱ` holds its onset value and the dry layer adds
-  in series; condensing ground bypasses it.
 - `ground_surface_resistance` : bulk ground-surface resistance in series on both ground
   vapor branches (a [`GroundSurfaceResistance`](@ref), the default, whose `Cᵍʳⁿᵈ` may be a
   per-cell `Field`, or a constant `Number` in s m⁻¹), or `nothing` for none.
@@ -296,7 +293,7 @@ local_interface_formulation(surface, 2, 1).leaf_albedo
 0.35
 ```
 """
-struct CanopyInterface{S, C, RF, LA, GA, CE, GE, FT, U, W, L}
+struct CanopyInterface{S, C, RF, LA, GA, CE, GE, FT, U, L}
     soil_humidity                 :: S
     canopy_humidity               :: C
     ground_heat_flux              :: RF
@@ -308,7 +305,6 @@ struct CanopyInterface{S, C, RF, LA, GA, CE, GE, FT, U, W, L}
     clumping                      :: FT
     leaf_boundary_layer_velocity  :: FT
     undercanopy_transfer_velocity :: U
-    wet_soil_resistance           :: W
     ground_surface_resistance     :: L
     inner_iterations              :: Int
 end
@@ -325,7 +321,6 @@ function CanopyInterface(FT=Oceananigans.defaults.FloatType;
                              clumping                      = 1,
                              leaf_boundary_layer_velocity  = 0.02,
                              undercanopy_transfer_velocity = 0.013,
-                             wet_soil_resistance           = nothing,
                              ground_surface_resistance     = GroundSurfaceResistance(FT),
                              inner_iterations              = 10)
 
@@ -339,7 +334,7 @@ function CanopyInterface(FT=Oceananigans.defaults.FloatType;
                                convert(FT, extinction), convert(FT, clumping),
                                convert(FT, leaf_boundary_layer_velocity),
                                convert_if_number(FT, undercanopy_transfer_velocity),
-                               wet_soil_resistance, ground_surface_resistance,
+                               ground_surface_resistance,
                                inner_iterations)
 end
 
@@ -367,7 +362,7 @@ end
                         state2dindex(c.maximum_canopy_emissivity, i, j),
                         state2dindex(c.ground_emissivity, i, j),
                         c.extinction, c.clumping, c.leaf_boundary_layer_velocity,
-                        c.undercanopy_transfer_velocity, c.wet_soil_resistance,
+                        c.undercanopy_transfer_velocity,
                         local_interface_formulation(c.ground_surface_resistance, i, j),
                         c.inner_iterations)
 
@@ -517,7 +512,7 @@ The leaf-conductance derivative is evaluated by a one-sided difference.
     # Ground vapor path: the ground-surface resistance `rᵍʳⁿᵈ` and, for evaporating soil, the soil surface
     # resistance `rˢᵒⁱ` in series with the undercanopy path (Sakaguchi & Zeng 2009).
     rᵍʳⁿᵈ = ground_surface_resistance(c.ground_surface_resistance, u★)
-    rˢᵒⁱ  = soil_surface_resistance(c.wet_soil_resistance, c.soil_humidity, Ψˡᵃ.𝒮)
+    rˢᵒⁱ  = soil_surface_resistance(c.soil_humidity.wet_soil_resistance, c.soil_humidity, Ψˡᵃ.𝒮)
     evaporating_conductance = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * (rᵍʳⁿᵈ + rˢᵒⁱ))
     condensing_conductance  = ρᵃᵗ * wᵘᶜᵃⁿ / (1 + wᵘᶜᵃⁿ * rᵍʳⁿᵈ)
     Λᵍʳⁿᵈ = convert(FT, ground_conductance(c.ground_heat_flux))
