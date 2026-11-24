@@ -27,7 +27,7 @@ mutable struct AtmosphereInterface{J, ST, SQ, F}
 end
 
 """
-    SeaIceOceanInterface{J, F, T, S, P}
+    SeaIceOceanInterface{J, F, T, S, E}
 
 Container for sea ice-ocean interface data including fluxes, formulation, and interface state.
 
@@ -38,12 +38,15 @@ Fields
 - `flux_formulation::F`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `temperature::T`: interface temperature field (ocean surface view or computed field)
 - `salinity::S`: interface salinity field (ocean surface view or computed field)
+- `meltwater_enthalpy::E`: the temperature ice meltwater carries into the ocean
+  ([`ZeroHeatContentMeltwater`](@ref), [`InterfaceTemperatureMeltwater`](@ref))
 """
-mutable struct SeaIceOceanInterface{J, F, T, S}
+mutable struct SeaIceOceanInterface{J, F, T, S, E}
     fluxes :: J
     flux_formulation :: F
     temperature :: T
     salinity :: S
+    meltwater_enthalpy :: E
 end
 
 # Utilities to get the computed fluxes
@@ -107,10 +110,12 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSurfaceFluxes
                             on_architecture(arch, fluxes.water_vapor_scale))
 
 struct SeaIceOceanFluxes{C, FX, FY}
-    interface_heat :: C
-    frazil_heat    :: C
-    salt           :: C
-    freshwater     :: C
+    interface_heat          :: C
+    frazil_heat             :: C
+    salt                    :: C
+    freshwater              :: C
+    # Σ Tᵢ Jʷᵢ over the ice-ocean exchange: zero unless the meltwater is delivered at the interface
+    # temperature, in which case it is Tᵦ times the ice-only volume flux.
     freshwater_heat_content :: C
     # Affine ice-ocean drag Fₑ + λ uᵒ: `x_momentum` is Fₑ = -ρₑ Cᴰ |Δu| uⁱ, `x_momentum_coefficient` is λ = ρₑ Cᴰ |Δu|.
     x_momentum             :: FX
@@ -325,25 +330,29 @@ Arguments
 - `sea_ice`: sea ice simulation
 - `ocean`: ocean simulation
 - `flux_formulation`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
+- `meltwater_enthalpy`: the temperature ice meltwater carries into the ocean. Default:
+  `ZeroHeatContentMeltwater()`
 """
-function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
+function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation;
+                                 meltwater_enthalpy = ZeroHeatContentMeltwater())
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
     Tⁱⁿ = ocean_surface_temperature(ocean)
     Sⁱⁿ = ocean_surface_salinity(ocean)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, meltwater_enthalpy)
 end
 
-function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux)
+function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux;
+                                 meltwater_enthalpy = ZeroHeatContentMeltwater())
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # Interface temperature and salinity are computed fields
     Tⁱⁿ = Field{Center, Center, Nothing}(grid)
     Sⁱⁿ = Field{Center, Center, Nothing}(grid)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿ, Sⁱⁿ, meltwater_enthalpy)
 end
 
 #####
@@ -408,6 +417,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
                              atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
                              sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
+                             ice_meltwater_enthalpy = ZeroHeatContentMeltwater(),
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
@@ -469,7 +479,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                               atmosphere_ocean_velocity_difference,
                                               atmosphere_ocean_interface_specific_humidity)
 
-    io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux)
+    io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux;
+                                          meltwater_enthalpy = ice_meltwater_enthalpy)
 
     ai_interface = atmosphere_sea_ice_interface(exchange_grid,
                                                 atmosphere,
