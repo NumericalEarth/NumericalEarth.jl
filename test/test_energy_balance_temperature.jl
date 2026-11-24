@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     SoilSkinTemperature, BulkTemperature, FractionalHumidity, CanopyInterface, SoilConductiveFlux,
-    SimilarityTheoryFluxes, atmosphere_land_stability_functions
+    SimilarityTheoryFluxes, MomentumRoughnessLength, ScalarRoughnessLength, atmosphere_land_stability_functions
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 # Skin temperature, turbulent flux sum, and conductive flux Λᵍʳⁿᵈ(Tˡᵃ − Tᵍʳⁿᵈ) over a 300 K slab with Λᵍʳⁿᵈ = 1.5 / 0.05.
@@ -39,11 +39,11 @@ end
 end
 
 # Skin temperature, friction velocity, and sensible and latent heat fluxes of a land column.
-function column_fluxes(arch, temperature; ℓ = 0.1, solver_stop_criteria = nothing, kw...)
+function column_fluxes(arch, temperature; ℓ = 0.1, ℓˢ = ℓ / 10, efficiency = 0.5, solver_stop_criteria = nothing, kw...)
     fluxes = SimilarityTheoryFluxes(Float64; stability_functions = atmosphere_land_stability_functions(Float64),
-                                    momentum_roughness_length = ℓ, temperature_roughness_length = ℓ / 10,
-                                    water_vapor_roughness_length = ℓ / 10, solver_stop_criteria)
-    humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency = 0.5)
+                                    momentum_roughness_length = ℓ, temperature_roughness_length = ℓˢ,
+                                    water_vapor_roughness_length = ℓˢ, solver_stop_criteria)
+    humidity = FractionalHumidity(AtmosphericThermodynamics.Liquid(); efficiency)
     model = coupled_land_model(arch; atmosphere_land_fluxes = fluxes,
                                atmosphere_land_interface_state = (; temperature, specific_humidity = humidity), kw...)
     interface = model.interfaces.atmosphere_land_interface
@@ -53,14 +53,27 @@ end
 
 @testset "Massless skin fluxes are the similarity fluxes at its temperature" begin
     # Still and windy sunny air, a smooth surface that convects past the unstable bound of the stability
-    # functions, and a rough surface on a clear night past the stable bound.
+    # functions, a rough surface on a clear night past the stable bound, still dry air whose evaporation
+    # reverses the buoyancy flux as u★ rises, and roughness lengths that depend on u★.
     columns = ((; wind = 0.0), (; wind = 3.0), (; wind = 0.2, ℓ = 1e-5),
-               (; wind = 2.0, ℓ = 1.0, shortwave = 0.0, longwave = 250.0))
+               (; wind = 2.0, ℓ = 1.0, shortwave = 0.0, longwave = 250.0),
+               (; wind = 0.0, ℓ = 1.0, shortwave = 1000.0, air_temperature = 305.0, air_specific_humidity = 0.006, land_temperature = 315.0),
+               (; wind = 5.0, ℓ = MomentumRoughnessLength(Float64), ℓˢ = ScalarRoughnessLength(Float64)))
 
     for arch in test_architectures, column in columns
         T, skin_fluxes... = column_fluxes(arch, SoilSkinTemperature(0.625, 0.05); column...)
         _, bulk_fluxes... = column_fluxes(arch, BulkTemperature(); column..., land_temperature = T)
         @test all(isapprox.(skin_fluxes, bulk_fluxes; rtol = 1e-5))
+    end
+end
+
+@testset "Massless skin stays coupled where a decoupled state also balances" begin
+    # A saturated rough surface under a clear night sky: the stable bound implies itself at 283.0 K, and
+    # the coupled skin balances at 283.8 K.
+    for arch in test_architectures
+        T, _ = column_fluxes(arch, SoilSkinTemperature(0.625, 0.05); wind = 3.5, ℓ = 0.5, efficiency = 1.0, shortwave = 0.0,
+                             longwave = 289.0, air_temperature = 290.0, air_specific_humidity = 0.00711, land_temperature = 287.0)
+        @test T > 283.5
     end
 end
 

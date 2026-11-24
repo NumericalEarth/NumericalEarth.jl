@@ -761,8 +761,8 @@ end
 end
 
 # The massless skin whose transfer coefficients and u★ are those of stability parameter ζ, with the
-# stability and the friction velocity its fluxes imply. The roughness lengths are evaluated at the
-# friction velocity u★⁻.
+# stability and the friction velocity Ξu U its fluxes imply. The roughness lengths are evaluated at Ξu U,
+# from the guess u★⁻, until the transfer coefficients stop changing.
 @inline function skin_state_at_stability(ζ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     ℂᵃᵗ    = ℙₐ.thermodynamics_parameters
     fluxes = ℙⁱⁿ.turbulent_fluxes
@@ -770,16 +770,27 @@ end
     ϰ      = fluxes.von_karman_constant
 
     Ξu, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★⁻, ΔU, Δhᵈ / ζ, Ψⁱⁿ.temperature, Ψₐ.z, ℂᵃᵗ)
-    u★  = similarity_friction_velocity(fluxes.subgrid_velocities, Ξu, ΔU, ζ, Δhᵈ, Ψₐ.h_bℓ, ϰ)
-    Ψⁱⁿ = skin_state_at_conductance(u★, Ξθ, Ξq, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-    b★  = buoyancy_scale(Ψⁱⁿ.fluxes.θ★, Ψⁱⁿ.fluxes.q★, ℂᵃᵗ, Ψⁱⁿ.temperature, Ψⁱⁿ.specific_humidity, g)
-    U   = sqrt(ΔU^2 + vsgs²(fluxes.subgrid_velocities, u★, b★, Ψₐ.h_bℓ))
+    Ξu⁻ = zero(Ξu)
+    ζ★  = zero(Ξu)
+    iteration = 0
+    while (Ξu != Ξu⁻) & ((iteration == 0) | bracketing(Ξu⁻, Ξu, iteration, fluxes.solver_stop_criteria))
+        u★  = similarity_friction_velocity(fluxes.subgrid_velocities, Ξu, ΔU, ζ, Δhᵈ, Ψₐ.h_bℓ, ϰ)
+        Ψⁱⁿ = skin_state_at_conductance(u★, Ξθ, Ξq, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+        b★  = buoyancy_scale(Ψⁱⁿ.fluxes.θ★, Ψⁱⁿ.fluxes.q★, ℂᵃᵗ, Ψⁱⁿ.temperature, Ψⁱⁿ.specific_humidity, g)
+        U   = sqrt(ΔU^2 + vsgs²(fluxes.subgrid_velocities, u★, b★, Ψₐ.h_bℓ))
+        ζ★  = Δhᵈ / monin_obukhov_length(u★, b★, ϰ)
+        u★⁻ = Ξu * U
+        Ξu⁻ = Ξu
+        Ξu, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★⁻, ΔU, Δhᵈ / ζ, Ψⁱⁿ.temperature, Ψₐ.z, ℂᵃᵗ)
+        iteration += 1
+    end
 
-    return Ψⁱⁿ, Δhᵈ / monin_obukhov_length(u★, b★, ϰ), Ξu * U
+    return Ψⁱⁿ, ζ★, u★⁻
 end
 
-# A massless skin is solved for the stability parameter ζ at which its fluxes imply ζ, between the bounds
-# of the stability functions, and then for u★ at that ζ.
+# A massless skin is solved for the stability parameter ζ at which its fluxes imply ζ, between neutral and
+# the bound of the stability functions on the side the neutral skin implies, and then for u★ at that ζ.
+# Of several stable roots it takes the one nearest neutral.
 @inline function land_interface_state(t::EnergyBalanceTemperature, ::Nothing, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     FT     = eltype(Ψⁱⁿ)
     ℂᵃᵗ    = ℙₐ.thermodynamics_parameters
@@ -793,16 +804,27 @@ end
     Δu, Δv = velocity_difference(ℙⁱⁿ.velocity_difference, Ψₐ, Ψⁱⁿ)
     ΔU     = sqrt(Δu^2 + Δv^2)
 
-    Ψⁱⁿ, ζ★, u★⁻ = skin_state_at_stability(ζᵐᵃˣ, Ψⁱⁿ.fluxes.u★, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-    ζᵇ, rᵇ = ζᵐᵃˣ, clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζᵐᵃˣ
-    Ψⁱⁿ, ζ★, _ = skin_state_at_stability(ζᵐⁱⁿ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-    ζᵃ, rᵃ = ζᵐⁱⁿ, clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζᵐⁱⁿ
+    Ψⁱⁿ, ζ★, u★⁻ = skin_state_at_stability(zero(FT), Ψⁱⁿ.fluxes.u★, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    neutral_residual = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ)
+    unstable = neutral_residual < 0
 
+    ζᵃ = ifelse(unstable, ζᵐⁱⁿ, zero(FT))
+    ζᵇ = ifelse(unstable, zero(FT), ζᵐᵃˣ)
+    ζ  = ifelse(unstable, ζᵃ, ζᵇ)
+    Ψⁱⁿ, ζ★, _ = skin_state_at_stability(ζ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+    r  = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζ
+    rᵃ = ifelse(unstable, r, neutral_residual) # r(ζᵃ) ≥ 0
+    rᵇ = ifelse(unstable, neutral_residual, r) # r(ζᵇ) ≤ 0
+
+    # Where the stable bound implies itself the ends do not bracket a root, and ζᵃ steps to the stability
+    # it implies until that reaches the bound. A step within the tolerance has converged.
     iteration = 1
-    while (rᵃ > 0) & (rᵇ < 0) & bracketing(ζᵃ, ζᵇ, iteration, stop_criteria)
-        # The stability implied at ζᵇ, bisecting when it leaves the bracket and every other step, so the
-        # bracket at least halves every two steps.
-        ζ = ifelse(isodd(iteration) & (ζᵇ + rᵇ > ζᵃ), ζᵇ + rᵇ, (ζᵃ + ζᵇ) / 2)
+    while (rᵃ > 0) & bracketing(zero(FT), ifelse(unstable, rᵇ, rᵃ), iteration, stop_criteria) &
+          ifelse(rᵇ < 0, bracketing(ζᵃ, ζᵇ, iteration, stop_criteria), (ζᵇ == ζᵐᵃˣ) & (ζᵃ + rᵃ < ζᵇ))
+        # The stability implied at the end nearer neutral, bisecting a bracket when it leaves it and every
+        # other step, so the bracket at least halves every two steps.
+        ζ = ifelse(unstable, ζᵇ + rᵇ, ζᵃ + rᵃ)
+        ζ = ifelse((rᵇ < 0) & (iseven(iteration) | (ζ ≤ ζᵃ) | (ζ ≥ ζᵇ)), (ζᵃ + ζᵇ) / 2, ζ)
         Ψⁱⁿ, ζ★, u★ⁿ = skin_state_at_stability(ζ, u★⁻, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
         r = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζ
         below_root = r > 0
@@ -810,14 +832,15 @@ end
         rᵃ  = ifelse(below_root, r, rᵃ)
         ζᵇ  = ifelse(below_root, ζᵇ, ζ)
         rᵇ  = ifelse(below_root, rᵇ, r)
-        u★⁻ = ifelse(below_root, u★⁻, u★ⁿ) # finite wherever r ≤ 0
+        u★⁻ = ifelse(below_root & unstable, u★⁻, u★ⁿ) # u★ diverges only where r > 0 and ζ < 0
         iteration += 1
     end
 
-    ζ = ifelse(rᵃ < -rᵇ, ζᵃ, ζᵇ)
+    ζ = ifelse((rᵃ < -rᵇ) | ((rᵇ == 0) & (ζᵇ == ζᵐᵃˣ) & (ζᵃ + rᵃ < ζᵇ)), ζᵃ, ζᵇ)
     _, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★⁻, ΔU, Δhᵈ / ζ, Ψⁱⁿ.temperature, Ψₐ.z, ℂᵃᵗ)
 
-    # u★ steps to Ξu U, bisecting the friction velocities that bracket the fixed point when a step leaves them.
+    # u★ steps to Ξu U. Once friction velocities bracket the fixed point it bisects them when a step leaves
+    # them and every other step, so the bracket at least halves every two steps.
     u★  = u★⁻
     u★ᵃ = zero(FT)         # Ξu U > u★ᵃ
     u★ᵇ = convert(FT, Inf) # Ξu U < u★ᵇ
@@ -830,8 +853,9 @@ end
         u★ⁿ = Ξu * U
         u★ᵃ = ifelse(u★ⁿ > u★, u★, u★ᵃ)
         u★ᵇ = ifelse(u★ⁿ < u★, u★, u★ᵇ)
+        bisect = (u★ᵃ > 0) & (u★ᵇ < Inf) & (isodd(iteration) | (u★ⁿ ≤ u★ᵃ) | (u★ⁿ ≥ u★ᵇ))
         u★⁻ = u★
-        u★  = ifelse(((u★ⁿ > u★ᵃ) & (u★ⁿ < u★ᵇ)) | (u★ⁿ == u★), u★ⁿ, (u★ᵃ + u★ᵇ) / 2)
+        u★  = ifelse(bisect & (u★ⁿ != u★), (u★ᵃ + u★ᵇ) / 2, u★ⁿ)
         iteration += 1
     end
 
