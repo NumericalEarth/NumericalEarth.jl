@@ -84,7 +84,7 @@ end
                              land_temperature = 305.0, water = 150.0)))
 
     for arch in test_architectures, (ℓ, column) in calm_columns, wet_soil_resistance in (nothing, ExponentialSoilResistance(Float64))
-        soil = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64), wet_soil_resistance,
+        soil = CanopyInterface(Float64; soil_humidity = bare_soil_humidity(Float64; wet_soil_resistance),
                                ground_heat_flux = SoilConductiveFlux(conductivity, thickness))
         rough = SimilarityTheoryFluxes(Float64; stability_functions = atmosphere_land_stability_functions(Float64),
                                        momentum_roughness_length = ℓ, temperature_roughness_length = ℓ / 10,

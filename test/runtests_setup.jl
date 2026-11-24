@@ -60,7 +60,7 @@ test_fields = Dict(
 
 scalar(field) = Array(interior(field))[1, 1, 1]
 
-bare_soil_humidity(FT) = DryLayerHumidity(FT;
+bare_soil_humidity(FT; wet_soil_resistance = nothing) = DryLayerHumidity(FT; wet_soil_resistance,
     dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015, dry_layer_onset_saturation = 0.5,
                                                 dry_layer_exponent = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3, molecular_diffusivity = 2.4e-5,
