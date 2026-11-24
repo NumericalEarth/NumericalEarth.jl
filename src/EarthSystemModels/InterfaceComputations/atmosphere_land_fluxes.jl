@@ -38,7 +38,19 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    state               = default_al_interface_state(land),
                                    velocity_difference = RelativeVelocity())
     validate_surface_storage(land, state)
+    validate_massless_skin(temperature_formulation(state), land_surface_state(land).state, fluxes)
     return build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)
+end
+
+# A massless skin is solved for its stability between the finite bounds of the land stability functions.
+validate_massless_skin(temperature, storage, fluxes) = nothing
+
+function validate_massless_skin(::EnergyBalanceTemperature, ::Nothing, fluxes)
+    ψ = fluxes isa SimilarityTheoryFluxes ? fluxes.stability_functions.momentum : nothing
+    ψ isa BoundedStabilityFunction &&
+        isfinite(ψ.unstable.maximum_stability_parameter) && isfinite(ψ.stable.maximum_stability_parameter) ||
+        throw(ArgumentError("a massless EnergyBalanceTemperature skin requires SimilarityTheoryFluxes with finite atmosphere_land_stability_functions bounds"))
+    return nothing
 end
 
 function build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)

@@ -55,8 +55,10 @@ velocity, ``U² = Δu² + Δv² + Uᶜ² + Uᵐ²``:
   unresolved on coarse grids, e.g. [`mahrt_sun_subgrid_velocity`](@ref)`(Δx)`.
   Default `nothing` (no contribution).
 
-Either slot may be `nothing`, a `Number` [m/s], or a formulation implementing
-`vsgs²(correction, u★, b★, h_bℓ)`.
+Either slot may be `nothing` or a `Number` [m/s]. The `convective` slot may also be a
+formulation implementing `vsgs²(correction, u★, b★, h_bℓ)` and, for a massless land skin,
+`similarity_friction_velocity`. The `mesoscale` slot may be a formulation implementing a
+`vsgs²` that does not depend on `u★` and `b★`.
 """
 struct SubgridVelocityCorrection{C, M}
     convective :: C
@@ -157,7 +159,8 @@ Keyword Arguments
 - `von_karman_constant`: The von Karman constant. Default: 0.4.
 - `turbulent_prandtl_number`: The turbulent Prandtl number. Default: 1.
 - `subgrid_velocities`: Empirical subgrid velocity enhancement of the bulk velocity: `nothing`,
-                        a `Number` [m/s], a formulation implementing `vsgs²`, or a
+                        a `Number` [m/s], a formulation implementing `vsgs²` (and
+                        `similarity_friction_velocity` for a massless land skin), or a
                         [`SubgridVelocityCorrection`](@ref) composing several. Default:
                         [`ConvectiveGustiness`](@ref)`{FT}()`.
 - `stability_functions`: The stability functions. Default: `default_stability_functions(FT)` that follow the
@@ -245,7 +248,6 @@ struct COARELogarithmicSimilarityProfile end
 
 @inline function similarity_profile(::LogarithmicSimilarityProfile, stability_function, h, ℓ, L)
     Φn = log(h / ℓ)
-    L  = bounded_obukhov_length(stability_function, h, L)
     ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
     ψℓ = inner_stability_profile(stability_function, ℓ / L)
@@ -378,6 +380,7 @@ end
 
     # Tall roughness elements displace the similarity profiles upward by `d`.
     Δhᵈ = Δh - flux_formulation.zero_plane_displacement
+    L   = bounded_obukhov_length(ψ.momentum, Δhᵈ, L)
 
     ϰ = flux_formulation.von_karman_constant
     form = flux_formulation.similarity_form
@@ -896,8 +899,8 @@ unstable functions of [zeng1998intercomparison](@citet)
 ([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)),
 bounded at ``|ζ| ≤`` `maximum_stability_parameter`, and the linear stable function
 ``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter` (CLM4.5 bounds it at 2,
-CLM5 at 0.5, Noah-MP at 1). The bounds limit the Obukhov length, so the profile sees the same length at
-the roughness height.
+CLM5 at 0.5, Noah-MP at 1). The bounds limit the Obukhov length at the reference height, so every height
+of the profile sees the same length.
 """
 function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
                                              maximum_stability_parameter = 100,
@@ -913,13 +916,15 @@ function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
     return SimilarityScales(momentum, scalar, scalar)
 end
 
-# The Obukhov length that both heights of a similarity profile see. The land stability functions bound
-# the stability parameter h / L through it, as CLM does.
+const BoundedStabilityFunction = SplitStabilityFunction{<:LinearStableStabilityFunction,
+                                                        <:Union{FreeConvectionMomentumStabilityFunction,
+                                                                FreeConvectionScalarStabilityFunction}}
+
+# The Obukhov length bounded at the reference height h, which every height of the profile sees. The land
+# stability functions bound the stability parameter h / L through it, as CLM does.
 @inline bounded_obukhov_length(ψ, h, L) = L
 
-@inline bounded_obukhov_length(ψ::SplitStabilityFunction{<:LinearStableStabilityFunction,
-                                                         <:Union{FreeConvectionMomentumStabilityFunction,
-                                                                 FreeConvectionScalarStabilityFunction}}, h, L) =
+@inline bounded_obukhov_length(ψ::BoundedStabilityFunction, h, L) =
     h / clamp(h / L, -ψ.unstable.maximum_stability_parameter, ψ.stable.maximum_stability_parameter)
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
