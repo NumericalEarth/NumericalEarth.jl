@@ -1,6 +1,6 @@
 # NumericalEarth.jl
 
-🌎 Realistic ocean-only and coupled ocean-sea ice simulations driven by prescribed atmospheres and based on [Oceananigans](https://github.com/CliMA/Oceananigans.jl) and [ClimaSeaIce](https://github.com/CliMA/ClimaSeaIce.jl).
+🌎 Realistic Earth system models to represent any combination of prescribed or prognostic atmosphere, ocean, sea ice, and land components, based on [Oceananigans](https://github.com/CliMA/Oceananigans.jl) and [ClimaSeaIce](https://github.com/CliMA/ClimaSeaIce.jl).
 
 NumericalEarth implements a framework for coupling prescribed or prognostic representations of the ocean, sea ice, and atmosphere state.
 Fluxes of heat, momentum, and freshwater are computed across the interfaces of its component models according to either Monin--Obukhov similarity theory,
