@@ -24,9 +24,9 @@ using Adapt: Adapt
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
-using KernelAbstractions: @kernel, @index
+using KernelAbstractions: KernelAbstractions, @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
-using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
+using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture, device,
                                   on_architecture, child_architecture
 using Oceananigans.AbstractOperations: Average
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions

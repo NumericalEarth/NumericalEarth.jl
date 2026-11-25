@@ -128,10 +128,17 @@ struct PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
     pending :: Task
 end
 
+# The kernels run on the stream of this task, which waits for them before it ends
+function prefetch!(buffer)
+    set!(buffer)
+    KernelAbstractions.synchronize(device(architecture(buffer)))
+    return nothing
+end
+
 function PrefetchingBackend(buffer)
     architecture(buffer) isa Distributed && throw(ArgumentError("prefetch = true needs a series on a non-distributed grid"))
     return PrefetchingBackend(buffer.backend.start, buffer.backend.length, buffer.backend.metadata,
-                              buffer, Threads.@spawn set!(buffer))
+                              buffer, Threads.@spawn prefetch!(buffer))
 end
 
 Base.summary(backend::PrefetchingBackend) = string("PrefetchingBackend(", backend.start, ", ", backend.length, ")")
@@ -156,7 +163,7 @@ function set!(fts::PrefetchingFieldTimeSeries, backend=fts.backend)
     # The next reload starts at this window's last record
     next_start = time_index(backend, fts.time_indexing, length(fts.times), backend.length)
     buffer.backend = new_backend(buffer.backend, next_start, backend.length)
-    fts.backend = PrefetchingBackend(backend.start, backend.length, backend.metadata, buffer, Threads.@spawn set!(buffer))
+    fts.backend = PrefetchingBackend(backend.start, backend.length, backend.metadata, buffer, Threads.@spawn prefetch!(buffer))
 
     return nothing
 end
