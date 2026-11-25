@@ -128,10 +128,10 @@ struct PrefetchingBackend{M, F} <: AbstractInMemoryBackend{Int}
     pending :: Task
 end
 
-# The kernels of `set!` run on the stream of the task that calls it, so the task waits for them before it ends
+# The kernels run on the stream of this task, which waits for them before it ends
 function prefetch!(buffer)
     set!(buffer)
-    sync_device!(architecture(buffer))
+    KernelAbstractions.synchronize(device(architecture(buffer)))
     return nothing
 end
 

@@ -24,9 +24,9 @@ using Adapt: Adapt
 using Downloads: Downloads
 using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
-using KernelAbstractions: @kernel, @index
+using KernelAbstractions: KernelAbstractions, @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
-using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
+using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture, device,
                                   on_architecture, child_architecture
 using Oceananigans.AbstractOperations: Average
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
@@ -39,7 +39,7 @@ using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
-using Oceananigans.Utils: launch!, prettytime, prettysummary, sync_device!
+using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
