@@ -60,8 +60,9 @@ end
 # ## The vegetated tile and the roughness contrast
 #
 # The vegetated tile is a full `CanopyInterface` (transpiring canopy, dry-layer soil
-# evaporation branch); the bare tile is derived from it (LAI = 0). We give the two
-# tiles a strong roughness contrast — rough forest canopy versus smooth bare surface.
+# evaporation branch); the bare tile is a soil skin sharing its soil humidity and ground
+# heat flux. We give the two tiles a strong roughness contrast — rough forest canopy
+# versus smooth bare surface.
 
 critical_saturation = 0.5
 soil_porosity       = 0.4

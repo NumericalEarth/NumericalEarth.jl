@@ -30,6 +30,13 @@ end
 
 @inline iterating(Ψⁿ, Ψ⁻, iteration, fixed::FixedIterations) = iteration < fixed.iterations
 
+# Whether the trials xᵃ and xᵇ of a root search are still further apart than the tolerance
+# and the floating-point spacing.
+@inline bracketing(xᵃ, xᵇ, iteration, convergence::ConvergenceStopCriteria) =
+    (abs(xᵇ - xᵃ) > max(convergence.tolerance, eps(xᵇ))) & (iteration < convergence.maxiter)
+
+@inline bracketing(xᵃ, xᵇ, iteration, fixed::FixedIterations) = iteration < fixed.iterations
+
 #####
 ##### The solver
 #####
