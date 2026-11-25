@@ -235,6 +235,7 @@ pages = [
     "Metadata" => [
         "Overview" => "Metadata/metadata_overview.md",
         "Supported variables" => "Metadata/supported_variables.md",
+        "Freshwater discharge" => "Metadata/freshwater_discharge.md",
     ],
     "Interface fluxes" => "interface_fluxes.md",
     "Urban roughness" => "urban_roughness.md",

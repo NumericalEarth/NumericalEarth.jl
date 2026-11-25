@@ -1,11 +1,12 @@
-using DocStringExtensions: TYPEDSIGNATURES
+using NumericalEarth: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.Biogeochemistry: required_biogeochemical_tracers
+using Oceananigans.BuoyancyFormulations: LinearEquationOfState
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node, topology
-using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: maybe_extend_halos
+using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveVerticallyImplicitDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
@@ -205,7 +206,7 @@ default_freshwater_tracer_content(val_name, biogeochemistry) = ZeroField()
 # TODO: Specify the grid to a grid on the sphere; otherwise we can provide a different
 # function that requires latitude and longitude etc for computing coriolis=FPlane...
 """
-    ocean_simulation(grid; model = :hydrostatic, kwargs...)
+$(SIGNATURES)
 
 Construct and return an ocean simulation tailored to `grid`. The `model` keyword
 selects the underlying Oceananigans model formulation:
@@ -273,7 +274,7 @@ function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
 end
 
 """
-    ocean_model(grid; model = :hydrostatic, kwargs...)
+$(SIGNATURES)
 
 Construct and return an ocean model tailored to `grid`: the model that [`ocean_simulation`](@ref)
 wraps in a `Simulation`. `model` selects the formulation, `:hydrostatic` (default,
@@ -329,7 +330,6 @@ Construct and return a hydrostatic ocean model tailored to `grid`. Called by
 This function assembles an Oceananigans's `HydrostaticFreeSurfaceModel` with physically
 consistent defaults for advection, closures, the equation of state, surface fluxes, Coriolis,
 barotropic pressure–gradient forcing, boundary conditions, and optional biogeochemistry.
-
 
 ## Behavior and automatic configuration
 
@@ -401,9 +401,10 @@ override the defaults on a per-field basis.
 - `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
-- `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `radiative_forcing`: Additional temperature forcing; merged into `forcing`. A `CATKEVerticalDiffusivity` accounts for
+  it in its convective scales.
 - `materialize_buoyancy_gradients`: whether the buoyancy gradients are precomputed and stored in fields. Default: `false`.
-- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref), typically `land.river_routing`. Defaults to
+- `river_routing`: `NamedTuple` of [`RiverRouting`](@ref NumericalEarth.Lands.RiverRouting), typically `land.river_routing`. Defaults to
   `nothing`, which leaves `closure` untouched.
 - `river_mouth_diffusivity`: vertical tracer diffusivity (m² s⁻¹) at the river mouths. Default: `0.1`.
 - `river_mouth_mixing_depth`: depth (m) over which it is applied. Default: `10`.
@@ -647,6 +648,7 @@ Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
 #####
 
 EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
+EarthSystemModels.reference_density(eos::LinearEquationOfState{FT}) where FT = FT(1026)
 EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
 EarthSystemModels.reference_density(model::OceananigansOceanModels) = EarthSystemModels.reference_density(model.buoyancy.formulation)
 EarthSystemModels.reference_density(ocean::OceananigansModelSimulations) = EarthSystemModels.reference_density(ocean.model)
@@ -659,6 +661,7 @@ function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT
     cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
     return convert(FT, cₚ⁰)
 end
+EarthSystemModels.heat_capacity(::LinearEquationOfState{FT}) where FT = FT(3991.86795711963)
 
 # setup helpers
 biogeochemistry_surface_exchanged_tracers(biogeochemistry) = tuple()
