@@ -36,7 +36,7 @@ using NumericalEarth.DataWrangling.GHSL: GHSBuilt, GHSBuiltH, GHSBuiltS, GHSLMet
                                          longitude_latitude_to_mollweide, MOLLWEIDE_RADIUS
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, granule_urls, regional_lattice,
                                               stored_granule_layers, write_lattice_file
-using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices,
+using NumericalEarth.DataWrangling.OpenLandMap: assemble_raster_window, raster_window_indices, decode_raster_values,
                                                 validate_wgs84_longitude_latitude, validate_geographic_northup
 using NumericalEarth.DataWrangling.SoilGrids: SoilGrids2Metadatum,
                                               soilgrids_raster_geometry,
@@ -56,6 +56,7 @@ include("globfp3d.jl")
 include("ghsl.jl")
 include("modis_land.jl")
 include("openlandmap.jl")
+include("itslive.jl")
 include("worldcover.jl")
 include("soilgrids.jl")
 

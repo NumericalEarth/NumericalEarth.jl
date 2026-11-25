@@ -139,7 +139,7 @@ export
     smooth_topography!,
     connect_basins!,
     Metadata, Metadatum, MetadataSet,
-    BoundingBox,
+    BoundingBox, ProjectedBoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
@@ -162,6 +162,8 @@ export
     ORCAOne, ORCATwo, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     OpenLandMapSoilDB,
+    ITSLIVEAntarctica,
+    BedMachineAntarctica,
     SoilGrids2,
     GlobalBuildingFootprints3D, building_morphometry,
     GHSBuiltH, GHSBuiltS, GHSBuiltS10m, GHSBuiltS100m, GHSBuilt,
@@ -322,6 +324,8 @@ using .DataWrangling.ASTERGED
 using .DataWrangling.CopernicusDEM
 using .DataWrangling.CopernicusLandAlbedo
 using .DataWrangling.OpenLandMap
+using .DataWrangling.ITSLIVE
+using .DataWrangling.BedMachine
 using .DataWrangling.GloBFP3D
 using .DataWrangling.GHSL
 using .DataWrangling.MODISLand

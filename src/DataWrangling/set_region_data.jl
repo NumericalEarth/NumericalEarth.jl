@@ -1,6 +1,6 @@
 using Oceananigans.Utils: launch!
 using Oceananigans.Architectures: AbstractArchitecture, architecture
-using Oceananigans.Grids: AbstractGrid, Periodic, Bounded, λnodes, φnodes
+using Oceananigans.Grids: AbstractGrid, Periodic, Bounded, λnodes, φnodes, xnodes, ynodes
 using Oceananigans.Fields: Field, interior, interpolate!
 using Oceananigans.Fields: convert_to_λ₀_λ₀_plus360
 using GPUArraysCore: @allowscalar
@@ -115,6 +115,19 @@ function region_info(::BoundingBox, target, λc, φc)
 
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
+    return BoundingBoxOffset(di, dj)
+end
+
+function region_info(::ProjectedBoundingBox, target, xc, yc)
+    LX, LY, _ = Oceananigans.Fields.location(target)
+    i₁, _ = compute_bounding_indices(compute_bounding_nodes(target.grid, LX, xnodes), xc)
+    j₁, _ = compute_bounding_indices(compute_bounding_nodes(target.grid, LY, ynodes), yc)
+
+    Nx, Ny, _ = size(target)
+    validate_region_coverage(length(xc), Nx, length(yc), Ny)
+
+    di = clamp(i₁ - 1, 0, max(length(xc) - Nx, 0))
+    dj = clamp(j₁ - 1, 0, max(length(yc) - Ny, 0))
     return BoundingBoxOffset(di, dj)
 end
 

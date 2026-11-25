@@ -15,6 +15,7 @@ Oceananigans.location(metadata::Metadata) = restrict_location(dataset_location(m
 
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
+restrict_location(loc, ::ProjectedBoundingBox) = loc
 restrict_location((LX, LY, LZ), ::Column) = (Nothing, Nothing, LZ)
 
 #####
@@ -43,6 +44,85 @@ function native_cell_range(bounds, interfaces, N)
         i⁻ = max(i⁺ - 1, 0)
     end
     return (i⁻ + 1):i⁺
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the `(column_offset, row_offset, Nx, Ny)` raster window of `dataset` whose cells are
+the native-grid cells covering `region`. Offsets count from zero, columns west to east and
+rows north to south, as rasters store them.
+"""
+function projected_window(dataset, region)
+    Nx, Ny, _ = size(dataset, nothing)
+    columns = native_cell_range(region.x, x_interfaces(dataset), Nx)
+    rows    = native_cell_range(region.y, y_interfaces(dataset), Ny)
+    return (column_offset = first(columns) - 1, row_offset = Ny - last(rows), Nx = length(columns), Ny = length(rows))
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the cell-center coordinates `(x, y)` of the raster `window` of `dataset`, ascending
+in both directions.
+"""
+function projected_window_centers(dataset, window)
+    Nx, Ny, _ = size(dataset, nothing)
+    x₁, x₂ = x_interfaces(dataset)
+    y₁, y₂ = y_interfaces(dataset)
+    Δx = (x₂ - x₁) / Nx
+    Δy = (y₂ - y₁) / Ny
+    j₀ = Ny - window.row_offset - window.Ny
+    x = [x₁ + (window.column_offset + i - 1/2) * Δx for i in 1:window.Nx]
+    y = [y₁ + (j₀ + j - 1/2) * Δy for j in 1:window.Ny]
+    return x, y
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Check that `region` is a [`ProjectedBoundingBox`](@ref) overlapping the projected extent of
+`dataset`. Projected mosaics are too large to read without a region.
+"""
+function validate_projected_region(region::ProjectedBoundingBox, dataset)
+    x₁, x₂ = x_interfaces(dataset)
+    y₁, y₂ = y_interfaces(dataset)
+    overlaps = region.x[2] > x₁ && region.x[1] < x₂ && region.y[2] > y₁ && region.y[1] < y₂
+    overlaps || error("$(nameof(typeof(dataset))) covers x = ($x₁, $x₂) and y = ($y₁, $y₂) m; " *
+                      "requested $(summary(region)).")
+    return nothing
+end
+
+validate_projected_region(region, dataset) =
+    error("$(nameof(typeof(dataset)))() must be used with a ProjectedBoundingBox in projected metres; " *
+          "the mosaic is never read in full. For example\n" *
+          "    Metadatum(name; dataset = $(nameof(typeof(dataset)))(),\n" *
+          "              region = ProjectedBoundingBox(x = (x₁, x₂), y = (y₁, y₂)))")
+
+"""
+$(TYPEDSIGNATURES)
+
+Write the window `data` of a polar stereographic (EPSG:3031) dataset, with ascending cell centers
+`x` and `y`, as the variable `variable_name` of the NetCDF file `path`. Written to a temporary file
+and moved, so an interrupted download leaves no partial file.
+"""
+function write_projected_window(path, variable_name, x, y, data; units)
+    Nx, Ny = length(x), length(y)
+    temporary_path = tempname(dirname(path)) * ".nc"
+    Dataset(temporary_path, "c") do ds
+        NCDatasets.defDim(ds, "x", Nx)
+        NCDatasets.defDim(ds, "y", Ny)
+        projected = ["units" => "m", "grid_mapping" => "EPSG:3031"]
+        x_var = NCDatasets.defVar(ds, "x", Float64, ("x",); attrib = ["long_name" => "polar stereographic x"; projected])
+        y_var = NCDatasets.defVar(ds, "y", Float64, ("y",); attrib = ["long_name" => "polar stereographic y"; projected])
+        data_var = NCDatasets.defVar(ds, variable_name, Float32, ("x", "y");
+                                     attrib = ["units" => units], chunksizes = [min(512, Nx), min(512, Ny)])
+        x_var[:] = x
+        y_var[:] = y
+        data_var[:, :] = data
+    end
+    mv(temporary_path, path; force = true)
+    return nothing
 end
 
 function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
@@ -186,6 +266,16 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
                                      halo = halo[1:2], longitude, latitude,
                                      topology = (TX, Bounded, Flat))
     end
+end
+
+# Projected datasets are two-dimensional maps in metres.
+function construct_native_grid(metadata, box::ProjectedBoundingBox, arch; halo)
+    FT = eltype(metadata)
+    Nx, Ny, _ = size(metadata)
+    x, Nx = restrict(box.x, x_interfaces(metadata.dataset), Nx)
+    y, Ny = restrict(box.y, y_interfaces(metadata.dataset), Ny)
+    return RectilinearGrid(arch, FT; size = (Nx, Ny), halo = halo[1:2], x, y,
+                           topology = (Bounded, Bounded, Flat))
 end
 
 # 2D-only datasets collapse to (Flat, Flat, Flat); 3D keep z Bounded.
