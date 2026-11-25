@@ -563,6 +563,10 @@ function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
     restore_prognostic_state!(esm.atmosphere, state.atmosphere)
     restore_prognostic_state!(esm.land, state.land)
     restore_prognostic_state!(esm.sea_ice, state.sea_ice)
+    # TODO: restoring the coupled clock should restore the clocks of the prescribed components (ocean, sea ice,
+    # radiation, land) and bring every `FieldTimeSeries` they read into memory at the restored time, with
+    # `update_field_time_series!`, before `update_state!`. A clock that jumps without moving the window of its
+    # series reads records that are not loaded. The Yin-Yang AMIP drivers do both in `restore_component_clocks!`.
     update_restored_state!(esm.atmosphere)
     update_state!(esm)
     return esm
