@@ -149,3 +149,17 @@ end
         end
     end
 end
+
+@testset "ocean_simulation default Δt on an immersed rectilinear grid" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing ocean_simulation default Δt on an immersed RectilinearGrid on $A..."
+
+        underlying_grid = RectilinearGrid(arch; size = (8, 8, 8), halo = (7, 7, 7), x = (0, 8e3), y = (0, 8e3), z = (-100, 0),
+                                          topology = (Bounded, Bounded, Bounded))
+        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(-80))
+
+        ocean = ocean_simulation(grid; coriolis = nothing)
+        @test ocean.Δt == NumericalEarth.Oceans.estimate_maximum_Δt(underlying_grid)
+    end
+end

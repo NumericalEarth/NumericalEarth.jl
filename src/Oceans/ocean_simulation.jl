@@ -119,6 +119,7 @@ default_free_surface(grid) = SplitExplicitFreeSurface(grid; cfl=0.7)
 default_tracer_advection() = WENO(order=5)
 
 estimate_maximum_Δt(grid::RectilinearGrid) = 30minutes # ?
+estimate_maximum_Δt(grid::ImmersedBoundaryGrid) = estimate_maximum_Δt(grid.underlying_grid)
 
 function estimate_maximum_Δt(grid)
     arch = architecture(grid)
