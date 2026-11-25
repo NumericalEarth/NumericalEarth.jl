@@ -333,6 +333,91 @@ function distributed_earth_system_checkpointing_script()
     """
 end
 
+function distributed_inpainted_cache_script()
+    return raw"""
+    include("runtests_setup.jl")
+
+    using MPI
+    MPI.Init()
+
+    using NumericalEarth.DataWrangling: inpainted_metadata_path, NearestNeighborInpainting
+    using Oceananigans.DistributedComputations
+
+    @testset "Distributed inpainted-data cache" begin
+        # one data directory for all ranks
+        dir = MPI.bcast(mktempdir(), MPI.COMM_WORLD)
+        metadatum  = Metadatum(:temperature; dataset = SyntheticOcean(), dir)
+        inpainting = NearestNeighborInpainting(10)
+        @root download(metadatum)
+
+        # Only rank 0 needs this field: it inpaints it and caches it without waiting for the other ranks
+        MPI.Comm_rank(MPI.COMM_WORLD) == 0 && Field(metadatum; inpainting)
+        @test MPI.Allreduce(1, +, MPI.COMM_WORLD) == MPI.Comm_size(MPI.COMM_WORLD)
+        @test isfile(inpainted_metadata_path(metadatum))
+
+        cached = Field(metadatum; inpainting)
+        fresh  = Field(metadatum; inpainting, cache_inpainted_data = false)
+        @test interior(cached) == interior(fresh)
+        MPI.Barrier(MPI.COMM_WORLD)    # the directory goes when rank 0 exits
+    end
+
+    MPI.Barrier(MPI.COMM_WORLD)
+    MPI.Finalize()
+    """
+end
+
+function distributed_glorys_script()
+    return raw"""
+    include("runtests_setup.jl")
+
+    using MPI
+    MPI.Init()
+
+    using CopernicusMarine
+    using NumericalEarth.DataWrangling: BoundingBox
+    using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
+    using Oceananigans.DistributedComputations
+
+    @testset "Distributed GLORYS set! matches serial" begin
+        # A bbox-restricted GLORYS field, set! onto a distributed target grid, must
+        # reproduce the serial result rank-by-rank: each rank's local interior equals
+        # the matching window of the field assembled on a single process.
+        region = BoundingBox(longitude=(200, 210), latitude=(30, 40))
+        md = Metadatum(:temperature; dataset=GLORYSDaily(), region)
+
+        # The CopernicusMarine extension already guards the subset call with `@root`.
+        download(md)
+        MPI.Barrier(MPI.COMM_WORLD)
+
+        target_grid(arch) = LatitudeLongitudeGrid(arch;
+                                                  size = (20, 20, 10),
+                                                  longitude = (201, 209),
+                                                  latitude = (31, 39),
+                                                  z = (-1000, 0))
+
+        serial = CenterField(target_grid(CPU()))
+        set!(serial, md; inpainting=nothing)
+        serial_interior = Array(interior(serial))
+
+        for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
+            arch = Distributed(CPU(); partition)
+            local_field = CenterField(target_grid(arch))
+            set!(local_field, md; inpainting=nothing)
+
+            Nx, Ny, _ = size(local_field.grid)
+            rx, ry, _ = arch.local_index
+            irange = (rx - 1) * Nx + 1 : rx * Nx
+            jrange = (ry - 1) * Ny + 1 : ry * Ny
+
+            @test Array(interior(local_field)) ≈ serial_interior[irange, jrange, :]
+        end
+    end
+
+    MPI.Barrier(MPI.COMM_WORLD)
+    MPI.Finalize()
+    """
+end
+
 @testset "Distributed ECCO download" begin
     run_mpi_script("distributed_ecco_download.jl", distributed_ecco_download_script())
 end
@@ -343,6 +428,14 @@ end
 
 @testset "Distributed grids and river routing" begin
     run_mpi_script("distributed_grids.jl", distributed_grids_script())
+end
+
+@testset "Distributed inpainted-data cache" begin
+    run_mpi_script("distributed_inpainted_cache.jl", distributed_inpainted_cache_script())
+end
+
+@testset "Distributed GLORYS set! matches serial" begin
+    run_mpi_script("distributed_glorys.jl", distributed_glorys_script())
 end
 
 @testset "Distributed EarthSystemModel checkpointing" begin

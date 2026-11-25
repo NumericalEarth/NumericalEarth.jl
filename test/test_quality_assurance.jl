@@ -3,9 +3,17 @@ using NumericalEarth
 using ArchGDAL
 using Breeze
 using CDSAPI
+using CopernicusClimateDataStore
+using CopernicusMarine
+using Makie
+using NaturalEarth, GeoInterface
+using OceanBioME
 using PythonCall, CondaPkg
+using Reactant
 using SpeedyWeather, ConservativeRegridding
+using Terrarium
 using WorldOceanAtlasTools
+using Zarr
 using ExplicitImports: ExplicitImports
 
 @testset "Explicit Imports" begin

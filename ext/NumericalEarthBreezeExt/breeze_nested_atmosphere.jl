@@ -18,7 +18,7 @@ using NumericalEarth:
     surface_elevation
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width
+using NumericalEarth.EarthSystemModels: BoundaryPrescribedComponent, boundary_strips, relaxation_zone_width, default_relaxation_width
 using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
                                    VectorComponent
@@ -57,7 +57,6 @@ using Breeze:
     CompressibleDynamics,
     SplitExplicitTimeDiscretization,
     UpperSponge,
-    NoDivergenceDamping,
     MixedPhaseEquilibrium,
     SpecificForcing,
     TKEBasedTurbulenceClosure,
@@ -65,19 +64,18 @@ using Breeze:
     moisture_prognostic_name,
     moisture_specific_name
 
-using Breeze.AtmosphereModels: prognostic_field_names, dynamics_density
+using Breeze.AtmosphereModels: prognostic_field_names, continuity_density
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
 # else the Breeze-native warm-phase saturation-adjustment scheme. Resolved at call time, so a
 # caller that `using CloudMicrophysics` gets `OneMomentCloudMicrophysics` automatically.
-function default_nested_microphysics()
+function default_nested_microphysics(FT = Oceananigans.defaults.FloatType)
     ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
-    isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
-    return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
+    isnothing(ext) && return SaturationAdjustment(FT; equilibrium = WarmPhaseEquilibrium())
+    cloud_formation = SaturationAdjustment(FT; equilibrium = MixedPhaseEquilibrium(FT))
+    return ext.OneMomentCloudMicrophysics(FT; cloud_formation)
 end
-
-const default_relaxation_width = 5
 
 # Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
 # Contract: ramp(0)=1, ramp(1)=0, monotone between.
@@ -119,13 +117,24 @@ function boundary_strip_regions(grid, width, sides)
     w = relaxation_zone_width(grid, width)
     Wx = ceil(Int, w / ((λ₂ - λ₁) / Nx))
     Wy = ceil(Int, w / ((φ₂ - φ₁) / Ny))
-    i₁ = :west in sides ? Wx + 1 : 1
-    i₂ = :east in sides ? Nx - Wx : Nx
+    boundaries = domain_boundaries(grid)
+    i₁ = (:west in sides && boundaries.west) ? Wx + 1 : 1
+    i₂ = (:east in sides && boundaries.east) ? Nx - Wx : Nx
     regions = (west  = KernelParameters(1:Wx, 1:Ny, 1:Nz),
                east  = KernelParameters(Nx-Wx+1:Nx, 1:Ny, 1:Nz),
                south = KernelParameters(i₁:i₂, 1:Wy, 1:Nz),
                north = KernelParameters(i₁:i₂, Ny-Wy+1:Ny, 1:Nz))
     return regions[sides]
+end
+
+# Whether each side of this rank's grid is a domain boundary, as opposed to a seam with another rank
+function domain_boundaries(grid)
+    NestedModels = NumericalEarth.NestedModels
+    on_boundary(dim, side) = NestedModels.on_domain_boundary(Oceananigans.Grids.topology(grid, dim), side)
+    return (west  = on_boundary(1, NestedModels.LeftBoundary),
+            east  = on_boundary(1, NestedModels.RightBoundary),
+            south = on_boundary(2, NestedModels.LeftBoundary),
+            north = on_boundary(2, NestedModels.RightBoundary))
 end
 
 @kernel function _add_forcing!(G, grid, forcing, clock, model_fields)
@@ -138,6 +147,7 @@ function relax_boundary_strips!(model, strips)
     arch = architecture(grid)
     model_fields = Oceananigans.fields(model)
     for strip in strips, name in keys(strip.forcings)
+        strip.on_domain_boundary || continue
         launch!(arch, grid, strip.region, _add_forcing!,
                 model.timestepper.Gⁿ[name], grid, strip.forcings[name], model.clock, model_fields)
     end
@@ -150,7 +160,7 @@ end
 function boundary_relaxation(child, prognostic, rate, mask, width)
     child_fields = Oceananigans.prognostic_fields(child)
     moisture_name = moisture_prognostic_name(child.microphysics)
-    ρᵈ = dynamics_density(child.dynamics)
+    ρᵈ = continuity_density(child.dynamics)
     θ = Oceananigans.fields(child.formulation).θ
 
     fts_target(target) = FieldTimeSeriesTarget(target, target.grid)
@@ -163,13 +173,14 @@ function boundary_relaxation(child, prognostic, rate, mask, width)
 
     sides = keys(prognostic.θ)
     regions = boundary_strip_regions(child.grid, width, sides)
+    boundaries = domain_boundaries(child.grid)
     names = (:ρθ, :ρu, :ρv, moisture_name)
     strips = NamedTuple{sides}(
         (forcings = NamedTuple{names}((specific(:ρθ, θ, prognostic.θ[side]),
                                        specific(:ρu, child.velocities.u, VectorComponent{:u}(prognostic.u[side], prognostic.v[side])),
                                        specific(:ρv, child.velocities.v, VectorComponent{:v}(prognostic.u[side], prognostic.v[side])),
                                        relaxation(child_fields[moisture_name], prognostic.ρqᵛᵉ[side]))),
-         region = regions[side])
+         region = regions[side], on_domain_boundary = boundaries[side])
         for side in sides)
 
     return Callback(relax_boundary_strips!; callsite = TendencyCallsite(), parameters = strips)
@@ -216,15 +227,13 @@ end
 default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
 
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
-# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and no divergence damping
-# (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). Entries of
-# `time_discretization_kwargs` override both and set any other split-explicit option. When given,
+# Rayleigh layer over the top `damping_depth` meters at `damping_rate`, and Breeze's default divergence
+# damping. Entries of `time_discretization_kwargs` override both and set any other split-explicit option. When given,
 # `base_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
 # perturbation-form pressure-gradient reference profile.
 function default_nested_dynamics(grid; base_pressure, reference_potential_temperature, damping_rate, damping_depth,
                                  time_discretization_kwargs)
     time_discretization = SplitExplicitTimeDiscretization(; sponge = UpperSponge(; damping_rate, depth = damping_depth),
-                                                          damping = NoDivergenceDamping(),
                                                           time_discretization_kwargs...)
     kw = (;)
     isnothing(base_pressure)                   || (kw = merge(kw, (; base_pressure)))
@@ -313,7 +322,7 @@ prognostic-TKE vertical mixing `closure = TKEBasedTurbulenceClosure()`, and a co
 lid sponge (`Relaxation` toward zero) is added to `forcing`. Pass
 `base_pressure`/`reference_potential_temperature` to anchor the default dynamics, and
 `time_discretization_kwargs` to set options of its `SplitExplicitTimeDiscretization`, e.g.
-`(; damping = ThermalDivergenceDamping())` (default: no divergence damping). Any
+`(; damping = NoDivergenceDamping())` (default: Breeze's divergence damping). Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
 When `bottom_drag_coefficient` is given — a constant drag coefficient or a `Breeze.PolynomialCoefficient`
@@ -353,7 +362,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::
     bottom_drag_coefficient = nothing,  # constant Cᴰ or a Breeze `PolynomialCoefficient`; `nothing` disables
     drag_surface_temperature = nothing, # surface temperature entering the drag's surface density
     parent_condensates = default_parent_condensates(parent_atmosphere),
-    microphysics = default_nested_microphysics(),
+    microphysics = default_nested_microphysics(eltype(child_grid)),
     closure = TKEBasedTurbulenceClosure(eltype(child_grid)),
     momentum_advection = WENO(order = 9),
     scalar_advection = default_nested_scalar_advection(microphysics, closure),
