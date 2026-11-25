@@ -20,7 +20,7 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture, CPU
 using Oceananigans.Fields: Center, Field, ZeroField, FractionalIndices
-using Oceananigans.Grids: grid_name, ηnode, _node, topology, Flat, on_architecture
+using Oceananigans.Grids: grid_name, ηnode, _node, topology, Flat, on_architecture, LatitudeLongitudeGrid
 using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices,
                                   update_field_time_series!, extract_field_time_series
 using Oceananigans.Simulations: Simulation
@@ -33,6 +33,7 @@ using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_i
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  _compute_fractional_indices!,
                                                  ComponentExchanger,
+                                                 convert_if_number,
                                                  kernel_radiation_properties,
                                                  air_sea_interface_radiation_state,
                                                  air_sea_ice_interface_radiation_state,

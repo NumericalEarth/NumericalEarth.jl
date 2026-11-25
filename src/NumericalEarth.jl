@@ -89,6 +89,7 @@ export
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     FreezingLimitedOceanTemperature,
+    PrescribedSeaIce,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
     LatitudeDependentAlbedo,
@@ -154,6 +155,7 @@ export
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
+    PCMDIAMIPBoundaryConditions, PCMDIAMIPObservations,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     ERA5HourlyLand, ERA5MonthlyLand,
@@ -280,6 +282,7 @@ end
 #####
 
 include("Grids/Grids.jl")
+include("YinYangRegridding/YinYangRegridding.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")

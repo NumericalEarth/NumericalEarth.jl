@@ -1,4 +1,10 @@
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid;
+                                                                   surface_radiation_properties = (;))
+
+    isempty(surface_radiation_properties) ||
+        throw(ArgumentError("PrescribedRadiation carries the radiative properties of its surfaces: pass " *
+                            "`ocean_surface`, `sea_ice_surface`, ... to its constructor rather than " *
+                            "`surface_radiation_properties` to the model."))
 
     regridder = radiation_regridder(radiation, grid)
 

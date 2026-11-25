@@ -92,6 +92,7 @@ jobs:
                      test_esaworldcover_downloading
                      test_glofas_downloading
                      test_openlandmap_downloading
+                     test_pcmdi_amip_downloading
                      test_soilgrids_downloading)
           # ASTER GED needs NASA Earthdata credentials
           if [[ -n "${EARTHDATA_USERNAME}" ]]; then

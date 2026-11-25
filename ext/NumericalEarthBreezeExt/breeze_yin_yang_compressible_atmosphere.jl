@@ -24,6 +24,7 @@
 using Breeze: CompressibleDynamics
 using Breeze.Thermodynamics: MoistureMassFractions, vapor_equivalent_heat_capacity
 using Oceananigans.Grids: znodes
+using Oceananigans.Fields: ZeroField
 
 const YinYangCompressibleAtmosphere = Breeze.AtmosphereModel{<:CompressibleDynamics, <:Any, <:Any, <:Any, <:YinYangGrid}
 
@@ -119,6 +120,7 @@ function apply_surface_and_radiative_sources!(model::YinYangCompressibleAtmosphe
     constants = model.thermodynamic_constants
     fluxes = exchange.surface_fluxes
     μ = model.microphysical_fields
+    # 0M (InstantaneousPrecipitation) retains no condensate, so its microphysical fields have no qˡ
 
     FT = eltype(grid)
     κ = convert(FT, Breeze.dry_air_gas_constant(constants) / constants.dry_air.heat_capacity)
@@ -145,7 +147,7 @@ function apply_surface_and_radiative_sources!(model::YinYangCompressibleAtmosphe
                 getregion(dynamics.total_density, r),
                 getregion(Breeze.AtmosphereModels.dynamics_pressure(dynamics), r),
                 getregion(μ.qᵛ, r),
-                getregion(μ.qˡ, r),
+                haskey(μ, :qˡ) ? getregion(μ.qˡ, r) : ZeroField(FT),
                 constants, pˢᵗ, κ, Δt)
     end
 
@@ -177,7 +179,8 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosp
                                                                           correction = nothing) =
     yin_yang_component_exchanger(atmosphere, exchange_grid, correction)
 
-lowest_level_height(grid::YinYangGrid) = (z = znodes(getregion(grid, 1), Face()); (z[2] - z[1]) / 2)
+# The faces are copied to the host: indexing them on a GPU grid is scalar indexing (job 20035)
+lowest_level_height(grid::YinYangGrid) = (z = Array(znodes(getregion(grid, 1), Face())); (z[2] - z[1]) / 2)
 
 function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::YinYangCompressibleAtmosphere, exchange_grid)
     height = Field{Center, Center, Nothing}(exchange_grid)

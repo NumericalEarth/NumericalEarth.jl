@@ -1,11 +1,13 @@
-using Oceananigans.Grids: Center
-using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
+using Oceananigans.Grids: Center, Flat, halo_size, topology
+using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using Oceananigans.Fields: compute!
 using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
                                specific_humidity, bottom_precipitation_flux
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using GPUArraysCore: @allowscalar
-using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
+using Breeze: ThermodynamicConstants
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters, ConstitutiveParameters,
+                                  HeatCapacityParameters, PhaseTransitionParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
@@ -20,9 +22,54 @@ const BreezeAtmosphereSim = Simulation{<:Breeze.AtmosphereModel}
 ##### Thermodynamics parameters
 #####
 
-# This is a _hack_: the parameters should ideally be derived from Breeze.ThermodynamicConstants,
-# but the ESM similarity theory expects CliMA Thermodynamics parameters.
-NumericalEarth.EarthSystemModels.thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParameters(Float64)
+"""
+$(TYPEDSIGNATURES)
+
+Return the `AtmosphereThermodynamicsParameters` that hold the constants of `constants`, a
+`Breeze.ThermodynamicConstants`, in its float type. The similarity theory of the interfaces evaluates the
+density, the heat capacity and the latent heat of the air with these, so that they are those of the Breeze
+atmosphere it exchanges with:
+
+- the molar gas constant and the molar masses of dry air and water, hence `Rᵈ` and `Rᵛ`;
+- `κᵈ = Rᵈ / cᵖᵈ` from the heat capacity of dry air, and the heat capacities of vapor, liquid and ice;
+- the latent heats of vaporization and sublimation at the energy reference temperature, and the triple point.
+
+Breeze has no freezing temperature of pure water and no temperature of homogeneous ice nucleation: those two
+keep the defaults of `PhaseTransitionParameters`. The saturation vapor pressure of the interfaces is the one
+`Thermodynamics.jl` integrates from these constants, not Breeze's `saturation_vapor_pressure` formulation.
+"""
+function NumericalEarth.Atmospheres.AtmosphereThermodynamicsParameters(constants::ThermodynamicConstants)
+    FT = eltype(constants)
+    Rᵈ = constants.molar_gas_constant / constants.dry_air.molar_mass
+
+    constitutive = ConstitutiveParameters(FT; gas_constant = constants.molar_gas_constant,
+                                              dry_air_molar_mass = constants.dry_air.molar_mass,
+                                              water_molar_mass = constants.vapor.molar_mass)
+
+    heat_capacity = HeatCapacityParameters(FT; dry_air_adiabatic_exponent = Rᵈ / constants.dry_air.heat_capacity,
+                                               water_vapor_heat_capacity = constants.vapor.heat_capacity,
+                                               liquid_water_heat_capacity = constants.liquid.heat_capacity,
+                                               water_ice_heat_capacity = constants.ice.heat_capacity)
+
+    phase_transitions = PhaseTransitionParameters(FT; reference_vaporization_enthalpy = constants.liquid.reference_latent_heat,
+                                                      reference_sublimation_enthalpy = constants.ice.reference_latent_heat,
+                                                      reference_temperature = constants.energy_reference_temperature,
+                                                      triple_point_temperature = constants.triple_point_temperature,
+                                                      triple_point_pressure = constants.triple_point_pressure)
+
+    return AtmosphereThermodynamicsParameters(FT; constitutive, heat_capacity, phase_transitions)
+end
+
+# One source of truth: the constants the Breeze atmosphere was built with.
+NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmosphere::BreezeAtmosphere) =
+    AtmosphereThermodynamicsParameters(atmosphere.thermodynamic_constants)
+
+NumericalEarth.EarthSystemModels.gravitational_acceleration(atmosphere::BreezeAtmosphere) =
+    atmosphere.thermodynamic_constants.gravitational_acceleration
+
+NumericalEarth.EarthSystemModels.gravitational_acceleration(atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.gravitational_acceleration(component_model(atmos))
+
 NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphereSim) =
     NumericalEarth.EarthSystemModels.thermodynamics_parameters(component_model(atmos))
 
@@ -81,6 +128,14 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     atmosphere_size == exchange_size ||
         throw(ArgumentError("The Breeze atmosphere's horizontal size $atmosphere_size must match the exchange grid's $exchange_size."))
 
+    # The winds are averaged from the faces to the centers of the halo columns `0` and `N + 1` too,
+    # which reads the faces `N + 2`.
+    for dimension in (1, 2)
+        topology(atmosphere.grid, dimension) === Flat || halo_size(atmosphere.grid)[dimension] ≥ 2 ||
+            throw(ArgumentError("Coupling a Breeze atmosphere needs a halo of at least 2 cells in each horizontal " *
+                                "direction; got halo = $(halo_size(atmosphere.grid))."))
+    end
+
     # Breeze's bottom flux of every sedimenting condensate, liquid and frozen (positive down,
     # kg m⁻² s⁻¹), enters as rain; Jˢⁿ stays zero.
     Jʳⁿ = bottom_precipitation_flux(atmosphere)
@@ -106,12 +161,15 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos:
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
-@kernel function _interpolate_breeze_state!(state, u, v, T, qᵛ, p)
+@kernel function _interpolate_breeze_state!(state, grid, u, v, T, qᵛ, p)
     i, j = @index(Global, NTuple)
 
     @inbounds begin
-        state.u[i, j, 1]    = u[i, j, 1]
-        state.v[i, j, 1]    = v[i, j, 1]
+        # `u` and `v` live on the x- and y-faces of the atmosphere's C-grid, half a cell west and south
+        # of the cell center where the exchange state is held. Average each to the center, so that the
+        # pair is one vector at the same node as `T`, `q` and `p`.
+        state.u[i, j, 1]    = ℑxᶜᵃᵃ(i, j, 1, grid, u)
+        state.v[i, j, 1]    = ℑyᵃᶜᵃ(i, j, 1, grid, v)
         state.T[i, j, 1]    = T[i, j, 1]
         state.q[i, j, 1]    = qᵛ[i, j, 1]
         state.p[i, j, 1]    = p[i, j, 1]
@@ -136,12 +194,19 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     kernel_parameters = interface_kernel_parameters(exchange_grid)
     launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
-            state, u, v, T, qᵛ, p)
+            state, atmosphere.grid, u, v, T, qᵛ, p)
 
     compute!(state.Jʳⁿ)   # refresh the precipitation diagnostic
 
+    # The height of the exchanged state above the ground, where it moves with the state
+    update_surface_layer_height!(coupled_model, atmosphere)
+
     return nothing
 end
+
+# The surface-layer height of a grid whose vertical coordinate is height is fixed, and cached when the
+# interfaces are built.
+update_surface_layer_height!(coupled_model, atmosphere) = nothing
 
 NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::BreezeAtmosphereSim, coupled_model) =
     NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, component_model(atmos), coupled_model)
@@ -178,22 +243,29 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeA
 ##### open ocean ℵᵒᶜ (1 - ℵˢⁱ), sea ice ℵᵒᶜ ℵˢⁱ, land (1 - ℵᵒᶜ).
 #####
 
+# A fraction where the net fluxes read it, clamped to [0, 1]. The fluxes are assembled in the halo columns too,
+# and the stress at the faces `i = 1` and `j = 1` averages the cell centers on both sides, one of which is a halo
+# cell. Fractions are in [0, 1] in the interior, which the clamp leaves bit for bit, but their halos are not:
+# an ordinary `fill_halo_regions!` holds `2 c̄ - c` across a pole of a latitude-longitude grid and Oceananigans'
+# cubic interpolation from the other panel on a Yin-Yang grid, which overshoots a 0/1 mask to [-0.13, 1.13].
+# (`interpolate_to_yin_yang!` and `transfer_flux!` clamp the halos they fill, until the next ordinary refill.)
+# The weights of the three surfaces are then non-negative and sum to one wherever the fluxes are assembled.
+@inline bounded_fraction(ℵ, i, j, k) = @inbounds clamp(ℵ[i, j, k], 0, 1)
+
 # Center-located partition-weighted stress, interpolated to the face-located ρu/ρv
 # only after weighting.
 @inline function ρτᶜᶜᶜ(i, j, k, grid, ρτᵃᵒ, ρτᵃⁱ, ρτᵃˡ, ℵᵒᶜ, ℵˢⁱ)
-    @inbounds begin
-        ℵᵒᶜᵢ = ℵᵒᶜ[i, j, k]
-        ℵˢⁱᵢ = ℵˢⁱ[i, j, k]
-        return ℵᵒᶜᵢ * ((1 - ℵˢⁱᵢ) * ρτᵃᵒ[i, j, k] + ℵˢⁱᵢ * ρτᵃⁱ[i, j, k]) + (1 - ℵᵒᶜᵢ) * ρτᵃˡ[i, j, k]
-    end
+    ℵᵒᶜᵢ = bounded_fraction(ℵᵒᶜ, i, j, k)
+    ℵˢⁱᵢ = bounded_fraction(ℵˢⁱ, i, j, k)
+    return @inbounds ℵᵒᶜᵢ * ((1 - ℵˢⁱᵢ) * ρτᵃᵒ[i, j, k] + ℵˢⁱᵢ * ρτᵃⁱ[i, j, k]) + (1 - ℵᵒᶜᵢ) * ρτᵃˡ[i, j, k]
 end
 
 @kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes, ai_fluxes, al_fluxes, ℵᵒᶜ, ℵˢⁱ, grid)
     i, j = @index(Global, NTuple)
-    @inbounds begin
-        ℵᵒᶜᵢ = ℵᵒᶜ[i, j, 1]
-        ℵˢⁱᵢ = ℵˢⁱ[i, j, 1]
+    ℵᵒᶜᵢ = bounded_fraction(ℵᵒᶜ, i, j, 1)
+    ℵˢⁱᵢ = bounded_fraction(ℵˢⁱ, i, j, 1)
 
+    @inbounds begin
         Qc = ℵᵒᶜᵢ * ((1 - ℵˢⁱᵢ) * ao_fluxes.sensible_heat[i, j, 1] + ℵˢⁱᵢ * ai_fluxes.sensible_heat[i, j, 1]) + (1 - ℵᵒᶜᵢ) * al_fluxes.sensible_heat[i, j, 1]
         Fv = ℵᵒᶜᵢ * ((1 - ℵˢⁱᵢ) * ao_fluxes.water_vapor[i, j, 1]   + ℵˢⁱᵢ * ai_fluxes.water_vapor[i, j, 1])   + (1 - ℵᵒᶜᵢ) * al_fluxes.water_vapor[i, j, 1]
 
@@ -207,7 +279,10 @@ end
 NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::BreezeAtmosphereSim) =
     NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, component_model(atmos))
 
-function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
+NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere) =
+    assemble_net_atmosphere_fluxes!(coupled_model, atmosphere)
+
+function assemble_net_atmosphere_fluxes!(coupled_model, atmosphere)
     net = coupled_model.interfaces.net_fluxes.atmosphere
     isnothing(net) && return nothing
 
@@ -227,6 +302,16 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
 
     return nothing
 end
+
+#####
+##### Checkpointing
+#####
+
+# Restoring an `AtmosphereModel` restores its prognostic fields only. The interfaces read its velocities,
+# temperature, pressure and humidity, and its next step starts from tendencies, all of which `update_state!`
+# diagnoses. It does not solve the radiation again: that is due in the second stage of a step only.
+NumericalEarth.EarthSystemModels.update_restored_state!(atmosphere::BreezeAtmosphereSim) =
+    update_state!(component_model(atmosphere))
 
 #####
 ##### CFL wizard support

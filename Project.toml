@@ -65,6 +65,7 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 NumericalEarthArchGDALExt = ["ArchGDAL", "GDAL"]
 NumericalEarthBreezeExt = "Breeze"
 NumericalEarthCDSAPIExt = "CDSAPI"
+NumericalEarthConservativeRegriddingExt = "ConservativeRegridding"
 NumericalEarthCopernicusClimateDataStoreExt = "CopernicusClimateDataStore"
 NumericalEarthCopernicusMarineExt = "CopernicusMarine"
 NumericalEarthMakieExt = "Makie"

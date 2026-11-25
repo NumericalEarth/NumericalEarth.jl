@@ -604,6 +604,48 @@ end
     end
 end
 
+# Regression probe: the exchanger used to copy the face-located `u[i, j, 1]` and `v[i, j, 1]` into its
+# center-located state, a half-cell offset of each component in its own direction.
+@testset "Exchanger winds are averaged from the C-grid faces to cell centers as a pair" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @testset "state winds equal the face averages on $A" begin
+            Nx, Ny, L = 8, 8, 800
+            k = 2π / L
+            grid = RectilinearGrid(arch; size = (Nx, Ny, 10), halo = (5, 5, 5), x = (0, L), y = (0, L), z = (0, 1000),
+                                   topology = (Periodic, Periodic, Bounded))
+            atmosphere = atmosphere_simulation(grid; dynamics = AnelasticDynamics(ReferenceState(grid)))
+            # Winds that vary along their own direction and are non-divergent on the C-grid
+            set!(atmosphere.model; θ = 290, u = (x, y, z) -> 5 + 4sin(k * x) * cos(k * y), v = (x, y, z) -> -4cos(k * x) * sin(k * y))
+            ocean_grid = RectilinearGrid(arch; size = (Nx, Ny), halo = (5, 5), x = (0, L), y = (0, L),
+                                         topology = (Periodic, Periodic, Flat))
+            ocean = PrescribedOcean(ocean_grid)
+            set!(ocean, T = 292)
+            model = AtmosphereOceanModel(atmosphere, ocean)
+
+            u = Array(interior(atmosphere.model.velocities.u, :, :, 1))
+            v = Array(interior(atmosphere.model.velocities.v, :, :, 1))
+            state = model.interfaces.exchanger.atmosphere.state
+            uᶜ = Array(interior(state.u, :, :, 1))
+            vᶜ = Array(interior(state.v, :, :, 1))
+
+            # The probe is sensitive: the face values differ from the centered ones by a finite amount
+            @test maximum(abs, uᶜ .- u) > 1
+            @test maximum(abs, vᶜ .- v) > 1
+
+            @test uᶜ ≈ (u .+ circshift(u, (-1, 0))) ./ 2
+            @test vᶜ ≈ (v .+ circshift(v, (0, -1))) ./ 2
+
+            # The centered pair is the analytic wind at the cell centers, to second order in the cell size
+            x = [(i - 1/2) * L / Nx for i in 1:Nx, j in 1:Ny]
+            y = [(j - 1/2) * L / Ny for i in 1:Nx, j in 1:Ny]
+            second_order = 4 * (k * L / Nx)^2 / 8
+            @test maximum(abs, uᶜ .- (5 .+ 4 .* sin.(k .* x) .* cos.(k .* y))) ≤ 1.5 * second_order
+            @test maximum(abs, vᶜ .+ 4 .* cos.(k .* x) .* sin.(k .* y)) ≤ 1.5 * second_order
+        end
+    end
+end
+
 # `base_pressure` is the datum at z = 0, which `reference_state` reduces to each column's surface.
 @testset "Cold start agrees with its own reference on a raised domain" begin
     for arch in test_architectures
@@ -625,6 +667,106 @@ end
             # Both anchored at the datum would also agree, so pin that the reference really is
             # reduced to the domain bottom: 2 km of hydrostatic descent is ~22 kPa.
             @test maximum(p[:, :, 1]) < 0.9 * p₀
+        end
+    end
+end
+
+#####
+##### Fractions read in halo cells
+#####
+
+# The net fluxes of the atmosphere are assembled in the halo columns too, and the stress at the first face in each
+# direction averages a halo cell: the kernel is the consumer of the halos of the ocean fraction and of the sea ice
+# concentration. A halo fill does not keep fractions in [0, 1].
+@testset "Net atmosphere fluxes weight the surfaces with fractions in [0, 1] where halos overshoot" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        kernel! = NumericalEarthBreezeExt._assemble_net_atmosphere_fluxes!
+        interface_kernel_parameters = NumericalEarth.EarthSystemModels.InterfaceComputations.interface_kernel_parameters
+        getregion = Oceananigans.Utils.getregion
+
+        coast(λ, φ) = ifelse(sind(3λ) * cosd(2φ) > 0.2, 1, 0)       # 0/1 land-sea mask
+        ice_edge(λ, φ) = ifelse(abs(φ) + 10 * sind(4λ) > 60, 1, 0)  # 0/1 ice mask
+
+        # Fluxes that are 1 over the ocean, 2 over sea ice and 3 over land: weights that are non-negative and sum to
+        # one give a net flux in [1, 3], and every departure of a fraction from [0, 1] leaves that range somewhere
+        function assembled_fluxes(grid, ℵᵒᶜ, ℵˢⁱ)
+            constant(value) = (c = Oceananigans.Field{Center, Center, Nothing}(grid); fill!(parent(c), value); c)
+            surface_fluxes(value) = (; sensible_heat = constant(value), water_vapor = constant(value),
+                                       x_momentum = constant(value), y_momentum = constant(value))
+            net = (; ρu = constant(NaN), ρv = constant(NaN), ρE = constant(NaN), ρqᵛᵉ = constant(NaN))
+            Oceananigans.Utils.launch!(arch, grid, interface_kernel_parameters(grid), kernel!,
+                                       net, surface_fluxes(1), surface_fluxes(2), surface_fluxes(3), ℵᵒᶜ, ℵˢⁱ, grid)
+            return map(flux -> assembled_cells(flux, grid), net)
+        end
+
+        # The cells 0:N+1 in each direction, where the kernel assembles the fluxes
+        function assembled_cells(field, grid)
+            Nx, Ny, _ = size(grid)
+            Hx, Hy, _ = Oceananigans.Grids.halo_size(grid)
+            return Array(parent(field))[Hx:Hx+Nx+1, Hy:Hy+Ny+1, 1]
+        end
+
+        halo_range(field, grid) = extrema(assembled_cells(field, grid))
+        in_range(flux) = all(1 - 1e-12 .≤ flux .≤ 3 + 1e-12)
+
+        @testset "Across the poles of a latitude-longitude grid on $A" begin
+            grid = LatitudeLongitudeGrid(arch; size = (36, 18, 1), longitude = (0, 360), latitude = (-90, 90), z = (0, 1))
+            ℵᵒᶜ = Oceananigans.Field{Center, Center, Nothing}(grid)
+            ℵˢⁱ = Oceananigans.Field{Center, Center, Nothing}(grid)
+            set!(ℵᵒᶜ, (λ, φ) -> ifelse(λ < 270, 1, 0)) # zonal mean 3/4 next to the poles
+            set!(ℵˢⁱ, ice_edge)
+            Oceananigans.BoundaryConditions.fill_halo_regions!(ℵᵒᶜ)
+            Oceananigans.BoundaryConditions.fill_halo_regions!(ℵˢⁱ)
+
+            # An ordinary fill holds 2 c̄ - c across a pole: 1/2 and 3/2 for this ocean fraction
+            @test extrema(Array(interior(ℵᵒᶜ))) == (0, 1)
+            lowest, highest = halo_range(ℵᵒᶜ, grid)
+            @info "Latitude-longitude ocean fraction after fill_halo_regions!: halo range = ($lowest, $highest)"
+            @test highest > 1.4
+
+            net = assembled_fluxes(grid, ℵᵒᶜ, ℵˢⁱ)
+            @test all(in_range, net)
+        end
+
+        @testset "Between the panels of a Yin-Yang grid on $A" begin
+            latlon = LatitudeLongitudeGrid(arch; size = (360, 180, 1), longitude = (0, 360), latitude = (-90, 90), z = (0, 1))
+            grid = Oceananigans.MultiRegion.YinYangGrid(arch; size = (135, 45, 1), z = (0, 1))
+            regridder = NumericalEarth.YinYangRegridding.YinYangRegridder(grid, latlon; flux_transfer = false)
+
+            fractions = map((coast, ice_edge)) do mask
+                source = Oceananigans.Field{Center, Center, Nothing}(latlon)
+                set!(source, mask)
+                fraction = Oceananigans.Field{Center, Center, Nothing}(grid)
+                NumericalEarth.YinYangRegridding.interpolate_to_yin_yang!(fraction, regridder, source)
+                fraction
+            end
+
+            # The regridder leaves the fractions in [0, 1], halos included
+            for fraction in fractions, r in 1:2
+                @test all(0 .≤ Array(parent(getregion(fraction, r))) .≤ 1)
+            end
+
+            # An ordinary refill, as any later `fill_halo_regions!` of the field, overshoots
+            foreach(Oceananigans.BoundaryConditions.fill_halo_regions!, fractions)
+            ℵᵒᶜ, ℵˢⁱ = fractions
+            ranges = [halo_range(getregion(fraction, r), getregion(grid, r)) for fraction in fractions, r in 1:2]
+            lowest, highest = minimum(first, ranges), maximum(last, ranges)
+            @info "Yin-Yang fractions after an ordinary fill_halo_regions!: range in the cells the net fluxes read = ($lowest, $highest)"
+            @test lowest < -0.01
+            @test highest > 1.01
+
+            for r in 1:2
+                panel = getregion(grid, r)
+                net = assembled_fluxes(panel, getregion(ℵᵒᶜ, r), getregion(ℵˢⁱ, r))
+                @test all(in_range, net)
+
+                # In the interior, where the fractions are in [0, 1], the weights are the fractions themselves
+                Nx, Ny, _ = size(panel)
+                fᵒᶜ = Array(interior(getregion(ℵᵒᶜ, r)))[:, :, 1]
+                fˢⁱ = Array(interior(getregion(ℵˢⁱ, r)))[:, :, 1]
+                @test net.ρE[2:Nx+1, 2:Ny+1] == @. fᵒᶜ * ((1 - fˢⁱ) * 1 + fˢⁱ * 2) + (1 - fᵒᶜ) * 3
+            end
         end
     end
 end

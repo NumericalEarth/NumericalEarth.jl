@@ -25,10 +25,32 @@ function Oceananigans.initialize!(model::NumericalEarth.EarthSystemModels.EarthS
     Oceananigans.initialize!(model.interfaces.exchanger, model)
     if model.clock.iteration == 0
         initialize_land_interface!(model)
+        initialize_ocean_interface_temperature!(model, model.interfaces.atmosphere_ocean_interface)
         update_surface_temperature!(model)
+        NumericalEarth.EarthSystemModels.update_radiative_surface!(model)
         update_state!(component_model(model.atmosphere); compute_tendencies=false)
     end
     return nothing
+end
+
+initialize_ocean_interface_temperature!(model, ::Nothing) = nothing
+
+# Before the first interface computation the ocean's interface temperature is unset, and the first radiation
+# solve would see an ocean at absolute zero: start it from the temperature of the ocean surface.
+function initialize_ocean_interface_temperature!(model, atmosphere_ocean_interface)
+    exchanger = model.interfaces.exchanger
+    grid = exchanger.grid
+    NumericalEarth.EarthSystemModels.interpolate_state!(exchanger.sea_ice, grid, model.sea_ice, model)
+    NumericalEarth.EarthSystemModels.interpolate_state!(exchanger.ocean, grid, model.ocean, model)
+    launch!(architecture(grid), grid, :xy, _initialize_ocean_interface_temperature!,
+            atmosphere_ocean_interface.temperature, exchanger.ocean.state.T, grid)
+    return nothing
+end
+
+@kernel function _initialize_ocean_interface_temperature!(interface_temperature, ocean_temperature, grid)
+    i, j = @index(Global, NTuple)
+    kᴺ = size(grid, 3)
+    @inbounds interface_temperature[i, j, 1] = ocean_temperature[i, j, kᴺ]
 end
 
 """

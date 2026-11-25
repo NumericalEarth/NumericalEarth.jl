@@ -522,7 +522,7 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
     D  = κ * ΔT - Ωᵀ * δ
     T★ = (Ψᵢ.T * κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * δ) / D
-    T★ = ifelse(D == 0, Ψⁱⁿ.temperature, T★)
+    T★ = ifelse(D == 0, oftype(T★, Ψⁱⁿ.temperature), T★) # one type in both branches, or `ifelse` returns a `Union`
     max_ΔT = convert(FT, st.max_ΔT)
     return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
@@ -575,7 +575,8 @@ Adapt.@adapt_structure SoilConductiveFlux
     Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd
 
     # Sensible transfer coefficient Ωc = 𝒬ᵀ/ΔT, safely handling ΔT → 0.
-    Ωc = ifelse(ΔT == zero(ΔT), zero(Tⁱⁿ⁻), 𝒬ᵀ / ΔT)
+    Ωc = 𝒬ᵀ / ΔT
+    Ωc = ifelse(ΔT == zero(ΔT), zero(Ωc), Ωc)
 
     # Newton linearization of upwelling longwave: ℐꜛˡʷ(Tⁱⁿ) ≈ ℐꜛˡʷ(Tⁱⁿ⁻) + β (Tⁱⁿ − Tⁱⁿ⁻).
     # Since ℐꜛˡʷ = σ ϵ Tⁱⁿ⁻⁴, we have β = 4 σ ϵ Tⁱⁿ⁻³ = 4 ℐꜛˡʷ / Tⁱⁿ⁻.
@@ -584,8 +585,11 @@ Adapt.@adapt_structure SoilConductiveFlux
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R
     T★ = (Tb + β * R * Tⁱⁿ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
-    T★ = ifelse(D == 0, Tⁱⁿ⁻, T★)
-    T★ = ifelse(isnan(T★), Tⁱⁿ⁻, T★)
+
+    # One type in both branches: `ifelse` between values of two float types returns a `Union`, which the
+    # rest of the iterate then carries (a radiation state that is not in the float type of the interface state)
+    T★ = ifelse(D == 0, oftype(T★, Tⁱⁿ⁻), T★)
+    T★ = ifelse(isnan(T★), oftype(T★, Tⁱⁿ⁻), T★)
 
     # Damped-Newton trust region: cap how far the skin moves in one iterate.
     ΔT★ = T★ - Tⁱⁿ⁻
@@ -598,7 +602,7 @@ Adapt.@adapt_structure SoilConductiveFlux
     Tⁱⁿ⁺ = min(Tⁱⁿ⁺, Tₘ)
 
     # If ice is not consolidated, use the bottom temperature
-    Tⁱⁿ⁺ = ifelse(hᵢ ≥ hc, Tⁱⁿ⁺, Tb)
+    Tⁱⁿ⁺ = ifelse(hᵢ ≥ hc, Tⁱⁿ⁺, oftype(Tⁱⁿ⁺, Tb))
 
     return Tⁱⁿ⁺
 end

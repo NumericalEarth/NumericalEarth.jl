@@ -10,6 +10,9 @@ const NestedModelSimulation = Simulation{<:NestedModel}
 EarthSystemModels.thermodynamics_parameters(nm::NestedModel) =
     EarthSystemModels.thermodynamics_parameters(nm.child)
 
+EarthSystemModels.gravitational_acceleration(nm::NestedModel) =
+    EarthSystemModels.gravitational_acceleration(nm.child)
+
 EarthSystemModels.surface_layer_height(nm::NestedModel) =
     EarthSystemModels.surface_layer_height(nm.child)
 
@@ -36,6 +39,9 @@ EarthSystemModels.update_net_fluxes!(coupled_model, nm::NestedModel) =
 
 EarthSystemModels.thermodynamics_parameters(sim::NestedModelSimulation) =
     EarthSystemModels.thermodynamics_parameters(component_model(sim))
+
+EarthSystemModels.gravitational_acceleration(sim::NestedModelSimulation) =
+    EarthSystemModels.gravitational_acceleration(component_model(sim))
 
 EarthSystemModels.surface_layer_height(sim::NestedModelSimulation) =
     EarthSystemModels.surface_layer_height(component_model(sim))

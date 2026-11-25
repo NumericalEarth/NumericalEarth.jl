@@ -12,6 +12,23 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
+"""
+    update_radiative_surface!(coupled_model)
+
+Publish the surface that an interactive radiation sees (skin temperature, emissivity and albedo of the
+mosaic of land, open ocean and sea ice in each cell) once the interface states are known. Called after
+the land fluxes at the start of a time step, before the radiation of that step is solved, and when the
+model is initialized. Radiations that compute their own fluxes (for example a Breeze
+`RadiativeTransferModel`) overload this; the default is a no-op.
+
+`update_state!` does not publish, except with the land fluxes it computes at iteration 0. The interface
+kernels read the published albedos, so that a surface absorbs the downwelling shortwave with the albedo
+that the radiation reflected it with; publishing again at the end of `update_state!` would make a second
+`update_state!` from the same state, such as the one that follows a restore from a checkpoint, absorb with
+other albedos than the first.
+"""
+update_radiative_surface!(::Any) = nothing
+
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
 
@@ -46,6 +63,7 @@ function compute_land_fluxes!(coupled_model, Δt)
     update_net_fluxes!(coupled_model, coupled_model.land)
     update_net_fluxes!(coupled_model, coupled_model.atmosphere)
     apply_air_land_radiative_fluxes!(coupled_model)
+    update_radiative_surface!(coupled_model)
     return nothing
 end
 

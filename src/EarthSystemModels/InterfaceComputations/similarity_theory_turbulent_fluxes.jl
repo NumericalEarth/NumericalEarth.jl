@@ -651,7 +651,7 @@ end
     z = cbrt(1 + ζ⁺)
     B = cbrt((1 - b) / b)
 
-    rt3 = sqrt(3)
+    rt3 = sqrt(convert(typeof(B), 3)) # in the float type of the parameters: `sqrt(3)` is a Float64
     Ψ₁ = - 3 * a * (z - 1) / b
     Ψ₂ = a * B / 2b * (2 * log((z + B) / (1 + B))
                        - log((z^2 - B * z + B^2) / (1 - B + B^2))
@@ -791,9 +791,9 @@ end
 Base.summary(ss::SplitStabilityFunction) = "SplitStabilityFunction"
 Base.show(io::IO, ss::SplitStabilityFunction) = print(io, "SplitStabilityFunction")
 
+# The two branches are promoted to one type: `ifelse` between values of two float types returns a `Union`
 @inline function stability_profile(ψ::SplitStabilityFunction, ζ)
-    Ψ_stable = stability_profile(ψ.stable, ζ)
-    Ψ_unstable = stability_profile(ψ.unstable, ζ)
+    Ψ_stable, Ψ_unstable = promote(stability_profile(ψ.stable, ζ), stability_profile(ψ.unstable, ζ))
     stable = ζ > 0
     return ifelse(stable, Ψ_stable, Ψ_unstable)
 end
@@ -817,8 +817,7 @@ heights.
     businger_dyer_scalar_profile(ψ.a, min(zero(ζ), ζ))
 
 @inline function inner_stability_profile(ψ::SplitStabilityFunction, ζ)
-    Ψ_stable = stability_profile(ψ.stable, ζ)
-    Ψ_unstable = inner_stability_profile(ψ.unstable, ζ)
+    Ψ_stable, Ψ_unstable = promote(stability_profile(ψ.stable, ζ), inner_stability_profile(ψ.unstable, ζ))
     return ifelse(ζ > 0, Ψ_stable, Ψ_unstable)
 end
 

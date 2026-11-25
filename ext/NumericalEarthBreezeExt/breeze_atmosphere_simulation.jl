@@ -3,7 +3,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field
 using Oceananigans.Grids: znode, Center, Face
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, DefaultBoundaryCondition
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, tupleit
 
 using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
@@ -67,6 +67,11 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `Breeze.RadiativeTransferModel` directly as `radiation` here is rejected — use
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
+With Breeze's `HydrostaticDynamics` the model is dry (`microphysics = nothing`), its momentum advection is
+`VectorInvariant()`, and the surface fluxes enter the velocities and the potential temperature density of the
+lowest layer through its mass: see `ext/NumericalEarthBreezeExt/breeze_hydrostatic_atmosphere.jl`.
+`timestepper` and `timestepper_kwargs` are forwarded to `Breeze.AtmosphereModel` when `timestepper` is given.
+
 `formulation` selects the thermodynamic formulation (for example a
 `Breeze.LiquidIcePotentialTemperatureFormulation` with non-default options); `nothing` (the default) keeps Breeze's
 default. [`nested_atmosphere_model`](@ref NumericalEarth.NestedModels.nested_atmosphere_model) forwards it here; its parent-to-child exchange supplies `ρθ`, so a nested child
@@ -82,17 +87,20 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                      thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
                                                      dynamics = CompressibleDynamics(; base_pressure,
                                                                                      reference_potential_temperature = potential_temperature),
-                                                     microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                                                     momentum_advection = Oceananigans.WENO(order=9),
+                                                     microphysics = default_microphysics(dynamics),
+                                                     momentum_advection = default_momentum_advection(dynamics),
                                                      scalar_advection = Oceananigans.WENO(order=5),
                                                      boundary_conditions = NamedTuple(),
                                                      coriolis = nothing,
                                                      forcing = NamedTuple(),
                                                      closure = nothing,
+                                                     tracers = (),
                                                      formulation = nothing,
+                                                     timestepper = nothing,
+                                                     timestepper_kwargs = NamedTuple(),
                                                      clock = Oceananigans.TimeSteppers.Clock(grid),
                                                      initialize = true,
-                                                     radiation = CoupledRadiation())
+                                                     radiation = default_radiation(dynamics))
 
     if radiation isa Breeze.RadiativeTransferModel
         throw(ArgumentError("`atmosphere_simulation` does not accept a `Breeze.RadiativeTransferModel`. " *
@@ -100,7 +108,58 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                             "`AtmosphereLandModel(atmos, land; radiation = rtm)`."))
     end
 
-    # Create 2D coupling-flux fields populated by the ESM coupler each step.
+    # The bottom boundary conditions (and, for some dynamics, the forcings) through which the
+    # coupler's fluxes enter the prognostic variables of `dynamics`.
+    coupling = surface_coupling(dynamics, grid, microphysics, thermodynamic_constants)
+
+    # User BCs override coupling defaults — per-side, so the user's lateral
+    # BCs combine with the coupling's bottom-flux BCs rather than replacing
+    # the whole `FieldBoundaryConditions`.
+    boundary_conditions = merge_boundary_conditions(coupling.boundary_conditions, NamedTuple(boundary_conditions))
+    forcing = merge_forcings(coupling.forcing, NamedTuple(forcing))
+
+    # `nothing` keeps Breeze's default formulation and time stepper.
+    formulation_kw = isnothing(formulation) ? (;) : (; formulation)
+    timestepper_kw = isnothing(timestepper) ? (;) : (; timestepper, timestepper_kwargs)
+
+    model = AtmosphereModel(grid;
+                            dynamics, microphysics, thermodynamic_constants,
+                            momentum_advection, scalar_advection,
+                            boundary_conditions,
+                            coriolis, forcing, closure, tracers, clock,
+                            radiation, formulation_kw..., timestepper_kw...)
+
+    model = attach_coupled_radiation(model, coupling)
+
+    # Breeze ≥0.7 no longer derives the prognostic density from the reference state inside a bare
+    # `set!(θ, …)` — an uninitialized model carries ρ ≡ 0, which NaNs anything that divides by density
+    # (e.g. the MOST surface-flux coupling). Initialize to a resting, hydrostatically balanced state at
+    # the reference θ so the returned atmosphere is valid; a later user `set!` of θ/velocities (without
+    # a `ρ` entry) preserves this density. Callers that derive the full state themselves (the nested
+    # child) pass `initialize = false`: this set!'s default-anchored state otherwise survives into
+    # `initialize_nested_child!` and destabilizes the adiabatic balance twin (DomainError blowup).
+    #
+    # `HydrostaticallyBalancedDensity` is documented for `CompressibleDynamics` only. For
+    # `AnelasticDynamics`, `reference_state.density` already prescribes a valid resting density —
+    # applying this compressible-only set! corrupts it in place (Breeze's set_to_mean.jl copies
+    # between mismatched-shape Fields), NaN-ing every field that divides by density.
+    initialize && initialize_resting_atmosphere!(model, dynamics, potential_temperature)
+
+    return model
+end
+
+#####
+##### What depends on the dynamics: defaults, the route of the surface fluxes, the resting state
+#####
+
+default_microphysics(dynamics) = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
+default_momentum_advection(dynamics) = Oceananigans.WENO(order=9)
+default_radiation(dynamics) = CoupledRadiation()
+
+# Dynamics that evolve the momentum densities `ρu` and `ρv`: the surface stress is their bottom flux, the
+# energy flux enters under Breeze's energy key and the vapor flux under the moisture prognostic.
+function surface_coupling(dynamics, grid, microphysics, thermodynamic_constants)
+    # 2D coupling-flux fields populated by the ESM coupler each step.
     ρτˣ = Field{Center, Center, Nothing}(grid)
     ρτʸ = Field{Center, Center, Nothing}(grid)
     Jᴱ  = Field{Center, Center, Nothing}(grid)
@@ -115,40 +174,24 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
         ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτʸ)),
     )
 
-    coupling_bcs = merge(momentum_bcs, energy_bc, moisture_bc)
-
-    # User BCs override coupling defaults — per-side, so the user's lateral
-    # BCs combine with the coupling's bottom-flux BCs rather than replacing
-    # the whole `FieldBoundaryConditions`.
-    boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
-
-    # `nothing` keeps Breeze's default formulation.
-    formulation_kw = isnothing(formulation) ? (;) : (; formulation)
-
-    model = AtmosphereModel(grid;
-                            dynamics, microphysics, thermodynamic_constants,
-                            momentum_advection, scalar_advection,
-                            boundary_conditions,
-                            coriolis, forcing, closure, clock,
-                            radiation, formulation_kw...)
-
-    # Breeze ≥0.7 no longer derives the prognostic density from the reference state inside a bare
-    # `set!(θ, …)` — an uninitialized model carries ρ ≡ 0, which NaNs anything that divides by density
-    # (e.g. the MOST surface-flux coupling). Initialize to a resting, hydrostatically balanced state at
-    # the reference θ so the returned atmosphere is valid; a later user `set!` of θ/velocities (without
-    # a `ρ` entry) preserves this density. Callers that derive the full state themselves (the nested
-    # child) pass `initialize = false`: this set!'s default-anchored state otherwise survives into
-    # `initialize_nested_child!` and destabilizes the adiabatic balance twin (DomainError blowup).
-    #
-    # `HydrostaticallyBalancedDensity` is documented for `CompressibleDynamics` only. For
-    # `AnelasticDynamics`, `reference_state.density` already prescribes a valid resting density —
-    # applying this compressible-only set! corrupts it in place (Breeze's set_to_mean.jl copies
-    # between mismatched-shape Fields), NaN-ing every field that divides by density.
-    initialize && dynamics isa CompressibleDynamics &&
-        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity())
-
-    return model
+    return (boundary_conditions = merge(momentum_bcs, energy_bc, moisture_bc), forcing = NamedTuple())
 end
+
+# Forcings of the coupling and of the user on the same variable add.
+function merge_forcings(coupling::NamedTuple, user::NamedTuple)
+    shared = filter(name -> haskey(user, name), keys(coupling))
+    combined = NamedTuple{shared}(map(name -> (coupling[name], tupleit(user[name])...), shared))
+    return merge(coupling, user, combined)
+end
+
+# By default the radiation is the `radiation` the model was built with.
+attach_coupled_radiation(model, coupling) = model
+
+# `HydrostaticallyBalancedDensity` is for `CompressibleDynamics`; other dynamics start as Breeze leaves them.
+initialize_resting_atmosphere!(model, dynamics, potential_temperature) = nothing
+
+initialize_resting_atmosphere!(model, ::CompressibleDynamics, potential_temperature) =
+    set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity())
 
 """
 $(TYPEDSIGNATURES)

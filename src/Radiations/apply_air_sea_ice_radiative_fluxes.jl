@@ -21,7 +21,8 @@ _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, ::Any) = nothing
 function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSystemModel,
                                                        sea_ice::Simulation{<:SeaIceModel})
     radiation = coupled_model.radiation
-    interface_fluxes = radiation.interface_fluxes
+    radiation_exchanger = coupled_model.interfaces.exchanger.radiation
+    interface_fluxes = interface_radiation_fluxes(radiation, radiation_exchanger)
     isnothing(interface_fluxes) && return nothing
     haskey(interface_fluxes, :sea_ice) || return nothing
 
@@ -30,8 +31,8 @@ function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSyste
     clock = coupled_model.clock
 
     top_heat_flux = coupled_model.interfaces.net_fluxes.sea_ice.top.heat
-    radiation_state = coupled_model.interfaces.exchanger.radiation.state
-    rk = kernel_radiation_properties(radiation)
+    radiation_state = radiation_exchanger.state
+    rk = kernel_radiation_properties(radiation, radiation_exchanger)
 
     ice_concentration = sea_ice_concentration(sea_ice)
     surface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature

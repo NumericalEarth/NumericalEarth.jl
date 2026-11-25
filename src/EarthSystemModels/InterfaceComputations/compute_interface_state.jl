@@ -31,6 +31,35 @@ end
 @inline iterating(Ψⁿ, Ψ⁻, iteration, fixed::FixedIterations) = iteration < fixed.iterations
 
 #####
+##### Under-relaxation of an iteration that has not converged
+#####
+
+# The interface iteration is a Picard iteration of the similarity scales, together with the skin temperature.
+# It does not contract everywhere: when the reference height is large compared with the Obukhov length and the
+# heat and vapor fluxes contribute to the buoyancy flux with opposite signs, the stability parameter changes sign
+# from one iterate to the next and the iterates wander without converging, at fixed interface temperature too.
+# What the iteration then returns depends on where it started.
+#
+# An iteration that has used half of its `maxiter` is therefore under-relaxed for the rest: each iterate moves
+# halfway from the previous one to its image. A solve that converges within `maxiter ÷ 2` iterations is
+# untouched, bit for bit. Under-relaxation by 1/2 contracts an oscillation whose amplification is below 3; it is
+# a safeguard, not a guarantee. `FixedIterations` is not relaxed: every thread follows the same path.
+@inline relax_interface_state(stop_criteria, Ψ⁻, Ψⁿ, iteration) = Ψⁿ
+
+@inline function relax_interface_state(convergence::ConvergenceStopCriteria, Ψ⁻, Ψⁿ, iteration)
+    u★ = (Ψ⁻.fluxes.u★ + Ψⁿ.fluxes.u★) / 2
+    θ★ = (Ψ⁻.fluxes.θ★ + Ψⁿ.fluxes.θ★) / 2
+    q★ = (Ψ⁻.fluxes.q★ + Ψⁿ.fluxes.q★) / 2
+    fluxes = InterfaceFluxScales(u★, θ★, q★, Ψⁿ.fluxes.Ξθ, Ψⁿ.fluxes.Ξq)
+
+    Tⁱⁿ = (Ψ⁻.temperature + Ψⁿ.temperature) / 2
+    qⁱⁿ = (Ψ⁻.specific_humidity + Ψⁿ.specific_humidity) / 2
+    relaxed = rebuild_interface_state(Ψⁿ, fluxes, Tⁱⁿ, qⁱⁿ)
+
+    return ifelse(iteration > convergence.maxiter ÷ 2, relaxed, Ψⁿ)
+end
+
+#####
 ##### The solver
 #####
 
@@ -58,6 +87,7 @@ end
                                       atmosphere_properties,
                                       interior_properties, Δt)
         iteration += 1
+        Ψⁱⁿⁿ = relax_interface_state(stop_criteria, Ψⁱⁿ⁻, Ψⁱⁿⁿ, iteration)
     end
 
     return Ψⁱⁿⁿ

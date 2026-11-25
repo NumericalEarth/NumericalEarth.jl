@@ -24,8 +24,8 @@ EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemMod
 apply_air_land_radiative_fluxes!(coupled_model, ::Nothing) = nothing
 
 # Diagnostic radiative fluxes at the land surface; a radiation that keeps none gets empty slots.
-land_interface_radiation_flux(radiation) = InterfaceRadiationFlux(nothing, nothing, nothing)
-land_interface_radiation_flux(radiation::PrescribedRadiation) = radiation.interface_fluxes.land
+land_interface_radiation_flux(::Nothing) = InterfaceRadiationFlux(nothing, nothing, nothing)
+land_interface_radiation_flux(interface_fluxes) = interface_fluxes.land
 
 function apply_air_land_radiative_fluxes!(coupled_model, land)
     # No atmosphere--land interface (no atmosphere): nothing to do.
@@ -54,7 +54,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
             land_energy_flux,
-            land_interface_radiation_flux(radiation),
+            land_interface_radiation_flux(interface_radiation_fluxes(radiation, coupled_model.interfaces.exchanger.radiation)),
             grid,
             clock,
             rk,

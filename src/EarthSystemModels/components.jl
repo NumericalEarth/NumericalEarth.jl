@@ -72,6 +72,16 @@ function molmass_dryair end
 function surface_layer_height end
 function boundary_layer_height end
 
+"""
+$(TYPEDSIGNATURES)
+
+Return the gravitational acceleration (m s⁻²) that the interfaces of `atmosphere` use, by default
+`default_gravitational_acceleration`. An atmosphere model that carries its own (a Breeze `AtmosphereModel`,
+in its thermodynamic constants) returns that one, so that the buoyancy flux of the surface layer and the
+height of the atmosphere's lowest level are computed with the same constant.
+"""
+gravitational_acceleration(atmosphere) = default_gravitational_acceleration
+
 surface_layer_height(::Nothing) = 0
 boundary_layer_height(::Nothing) = 0
 

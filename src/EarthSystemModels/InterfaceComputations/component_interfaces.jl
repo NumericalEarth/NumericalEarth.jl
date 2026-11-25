@@ -268,6 +268,17 @@ atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = nothing
 atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = nothing
 atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = nothing
 
+# The field holding the temperature of the surface that the atmosphere sees over sea ice: the snow's when there is snow
+function sea_ice_surface_temperature(sea_ice::Simulation)
+    snow_thermodynamics = sea_ice.model.snow_thermodynamics
+    isnothing(snow_thermodynamics) && return sea_ice.model.ice_thermodynamics.top_surface_temperature
+    return snow_thermodynamics.top_surface_temperature
+end
+
+# The liquidus of a sea ice component with an atmosphere-sea ice interface; `nothing` for one without
+sea_ice_liquidus(sea_ice) = nothing
+sea_ice_liquidus(sea_ice::Simulation) = sea_ice.model.phase_transitions.liquidus
+
 function atmosphere_sea_ice_interface(grid,
                                       atmosphere,
                                       sea_ice,
@@ -282,13 +293,7 @@ function atmosphere_sea_ice_interface(grid,
                                        (temperature = temperature_formulation, specific_humidity = specific_humidity_formulation),
                                        velocity_formulation)
 
-    snow_thermo = sea_ice.model.snow_thermodynamics
-    interface_temperature = if isnothing(snow_thermo)
-        sea_ice.model.ice_thermodynamics.top_surface_temperature
-    else
-        snow_thermo.top_surface_temperature
-    end
-
+    interface_temperature = sea_ice_surface_temperature(sea_ice)
     interface_specific_humidity = Field{Center, Center, Nothing}(grid)
 
     return AtmosphereInterface(fluxes, interface_temperature, interface_specific_humidity, formulation)
@@ -390,13 +395,24 @@ Keyword Arguments
    a `Field`, function, or number), forming the [`SurfacePartition`](@ref) that weights the
    atmosphere's net surface fluxes. Required when the model has both land and ocean interfaces;
    unused otherwise.
+- `surface_radiation_properties`: named tuple of `SurfaceRadiationProperties` (albedo and emissivity) for
+   the `ocean` and `sea_ice` surfaces, for a radiation that does not carry them itself: a Breeze
+   `RadiativeTransferModel`, whose own surface albedo and emissivity are the land's. Entries left out take
+   the defaults of `default_surface_radiation_properties(radiation, ocean, sea_ice, exchange_grid)`. Under
+   a `RadiativeTransferModel` these are, for the ocean, emissivity 0.97 and `LatitudeDependentAlbedo` on a
+   `LatitudeLongitudeGrid` (0.06 on other grids); for sea ice, emissivity 1 and albedo 0.7, or for
+   `PrescribedSeaIce` the snow-free `SeaIceAlbedo` of its thickness and surface temperature. One broadband
+   albedo serves the direct and the diffuse beam. `PrescribedRadiation` takes the properties of its
+   surfaces in its own constructor instead.
 - `ocean_reference_density`: reference density for the ocean. Default: `reference_density(ocean)`.
 - `ocean_heat_capacity`: heat capacity for the ocean. Default: `heat_capacity(ocean)`.
 - `ocean_temperature_units`: temperature units for the ocean. Default: `DegreesCelsius()`.
-- `sea_ice_temperature_units`: temperature units for sea ice. Default: `DegreesCelsius()`.
+- `sea_ice_temperature_units`: temperature units for sea ice. Default: `temperature_units(sea_ice)`.
 - `sea_ice_reference_density`: reference density for sea ice. Default: `reference_density(sea_ice)`.
 - `sea_ice_heat_capacity`: heat capacity for sea ice. Default: `heat_capacity(sea_ice)`.
-- `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
+- `gravitational_acceleration`: gravitational acceleration. Default: that of the atmosphere,
+   `EarthSystemModels.gravitational_acceleration(atmosphere)`, which is `default_gravitational_acceleration`
+   unless the atmosphere model carries its own.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              radiation = nothing,
@@ -421,13 +437,14 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                                                                    state               = atmosphere_land_interface_state,
                                                                                    velocity_difference = atmosphere_land_velocity_difference),
                              ocean_fraction = nothing,
+                             surface_radiation_properties = (;),
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
                              ocean_temperature_units = temperature_units(ocean),
-                             sea_ice_temperature_units = DegreesCelsius(),
+                             sea_ice_temperature_units = temperature_units(sea_ice),
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
-                             gravitational_acceleration = default_gravitational_acceleration,
+                             gravitational_acceleration = EarthSystemModels.gravitational_acceleration(atmosphere),
                              exchanger_correction = nothing,
                              biogeochemistry_interface_kwargs = NamedTuple())
 
@@ -450,15 +467,17 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                         latent_heat_of_fusion = latent_heat_of_fusion,
                         temperature_units     = ocean_temperature_units)
 
-    # Only build sea_ice_properties if sea_ice is an actual Simulation with a model
-    if sea_ice isa Simulation
+    # Only build sea_ice_properties for a sea ice component with a liquidus
+    liquidus = sea_ice_liquidus(sea_ice)
+
+    if isnothing(liquidus)
+        sea_ice_properties = nothing
+    else
         sea_ice_properties = (reference_density  = sea_ice_reference_density,
                               heat_capacity      = sea_ice_heat_capacity,
                               freshwater_density = freshwater_density,
-                              liquidus           = sea_ice.model.phase_transitions.liquidus,
+                              liquidus           = liquidus,
                               temperature_units  = sea_ice_temperature_units)
-    else
-        sea_ice_properties = nothing
     end
 
     # Component interfaces
@@ -492,9 +511,13 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 
     land_accessors = isnothing(atmosphere_land_interface) ? (;) : land_state_accessors(atmosphere_land_interface)
 
+    surface_radiation_properties = merge(default_surface_radiation_properties(radiation, ocean, sea_ice, exchange_grid),
+                                         surface_radiation_properties)
+
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction,
-                               land_accessors)
+                               land_accessors,
+                               surface_radiation_properties)
 
     # The surface-layer (MOST reference) height is fixed by the atmosphere grid, so
     # build it once here rather than per coupled step. Scalar for prescribed

@@ -19,6 +19,12 @@ include("breeze_prognostic_state.jl")
 include("breeze_state_exchanger.jl")
 include("breeze_nested_atmosphere.jl")
 include("breeze_air_land_radiation.jl")
+include("breeze_surface_radiation.jl")
 include("breeze_surface_albedo.jl")
+
+# Breeze's hydrostatic dynamical core is not in every supported version of Breeze
+@static if isdefined(Breeze, :HydrostaticDynamics)
+    include("breeze_hydrostatic_atmosphere.jl")
+end
 
 end # module NumericalEarthBreezeExt

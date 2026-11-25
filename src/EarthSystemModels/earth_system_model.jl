@@ -517,9 +517,30 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
+"""
+    exchanged_radiation_state(radiation, radiation_exchanger)
+
+Return the fields of the exchanger of `radiation` that `update_state!` reads without recomputing them from
+the states of the components, or `nothing` when there are none. They are checkpointed with the model, so
+that the `update_state!` of a restored model reproduces the one it was checkpointed after.
+"""
+exchanged_radiation_state(radiation, radiation_exchanger) = nothing
+
+"""
+    update_restored_state!(component)
+
+Bring what `component` diagnoses from its prognostic state up to date after that state was restored from a
+checkpoint, before the interfaces read it. The default does nothing: prescribed components do it in their
+own `restore_prognostic_state!`.
+"""
+update_restored_state!(component) = nothing
+
 function Oceananigans.prognostic_state(esm::EarthSystemModel)
+    radiation_exchanger = exchanged_radiation_state(esm.radiation, esm.interfaces.exchanger.radiation)
+
     return (clock = prognostic_state(esm.clock),
             radiation = prognostic_state(esm.radiation),
+            radiation_exchanger = prognostic_state(radiation_exchanger),
             ocean = prognostic_state(esm.ocean),
             atmosphere = prognostic_state(esm.atmosphere),
             land = prognostic_state(esm.land),
@@ -533,11 +554,16 @@ function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
     if hasproperty(state, :radiation)
         restore_prognostic_state!(esm.radiation, state.radiation)
     end
+    if hasproperty(state, :radiation_exchanger)
+        radiation_exchanger = exchanged_radiation_state(esm.radiation, esm.interfaces.exchanger.radiation)
+        restore_prognostic_state!(radiation_exchanger, state.radiation_exchanger)
+    end
     restore_prognostic_state!(esm.interfaces, state.interfaces)
     restore_prognostic_state!(esm.ocean, state.ocean)
     restore_prognostic_state!(esm.atmosphere, state.atmosphere)
     restore_prognostic_state!(esm.land, state.land)
     restore_prognostic_state!(esm.sea_ice, state.sea_ice)
+    update_restored_state!(esm.atmosphere)
     update_state!(esm)
     return esm
 end

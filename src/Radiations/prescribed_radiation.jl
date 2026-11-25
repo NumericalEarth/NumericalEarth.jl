@@ -74,10 +74,11 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
         clock = Clock{Float64}(time = 0)
     end
 
-    surface_properties = _filter_surface_properties(ocean = ocean_surface,
-                                                    sea_ice = sea_ice_surface,
-                                                    snow = snow_surface,
-                                                    land = land_surface)
+    # Albedos and emissivities given as numbers are held in the float type of the radiation fields
+    surface_properties = _filter_surface_properties(ocean = convert_surface_radiation_properties(FT, ocean_surface),
+                                                    sea_ice = convert_surface_radiation_properties(FT, sea_ice_surface),
+                                                    snow = convert_surface_radiation_properties(FT, snow_surface),
+                                                    land = convert_surface_radiation_properties(FT, land_surface))
 
     radiation = PrescribedRadiation(grid,
                                     clock,
@@ -152,6 +153,8 @@ function EarthSystemModels.allocate_interface_fluxes!(radiation::PrescribedRadia
     radiation.interface_fluxes = NamedTuple(pairs)
     return nothing
 end
+
+interface_radiation_fluxes(radiation::PrescribedRadiation, radiation_exchanger) = radiation.interface_fluxes
 
 #####
 ##### Checkpointing

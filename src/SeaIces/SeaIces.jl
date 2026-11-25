@@ -1,6 +1,6 @@
 module SeaIces
 
-export sea_ice_simulation, FreezingLimitedOceanTemperature, LandfastBasalStress
+export sea_ice_simulation, FreezingLimitedOceanTemperature, PrescribedSeaIce, LandfastBasalStress
 
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
@@ -24,6 +24,8 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, Componen
 
 include("freezing_limited_ocean_temperature.jl")
 include("sea_ice_simulation.jl")
+include("prescribed_sea_ice.jl")
+include("prescribed_sea_ice_radiation.jl")
 include("assemble_net_sea_ice_fluxes.jl")
 
 EarthSystemModels.default_sea_ice() = FreezingLimitedOceanTemperature()

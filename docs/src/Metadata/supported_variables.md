@@ -35,6 +35,8 @@ NumericalEarth currently ships connectors for the following data products:
 | `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
 | `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
 | `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
+| `PCMDIAMIPBoundaryConditions` | [Supported variables](@ref dataset-pcmdiamip-vars) | [input4MIPs PCMDI-AMIP](https://pcmdi.llnl.gov/mips/amip/) |
+| `PCMDIAMIPObservations` | [Supported variables](@ref dataset-pcmdiamip-vars) | [input4MIPs PCMDI-AMIP](https://pcmdi.llnl.gov/mips/amip/) |
 | **Land** |                                                    |                                                                                                     |
 | `ERA5HourlyLand`   | [Supported variables](@ref dataset-era5hourlyland-vars)   | [ERA5-Land hourly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land?tab=overview) |
 | `ERA5MonthlyLand`  | [Supported variables](@ref dataset-era5monthlyland-vars)  | [ERA5-Land monthly overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means?tab=overview) |
@@ -154,6 +156,15 @@ NumericalEarth currently ships connectors for the following data products:
 - `:snow_freshwater_flux` - Precipitation flux from snow/ice (kg m⁻² s⁻¹).
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).
+
+## [Supported variables for PCMDIAMIPBoundaryConditions and PCMDIAMIPObservations](@id dataset-pcmdiamip-vars)
+
+- `:sea_surface_temperature` - Sea surface temperature (K).
+- `:sea_ice_concentration` - Sea ice area fraction (0-1).
+
+`PCMDIAMIPBoundaryConditions` holds the mid-month values to interpolate linearly in time, which
+overshoot the observed monthly means of `PCMDIAMIPObservations`: clip the sea ice concentration to
+`[0, 1]` and the sea surface temperature to the freezing point after interpolating.
 
 ## [Supported variables for ERA5HourlyLand](@id dataset-era5hourlyland-vars)
 

@@ -987,6 +987,7 @@ struct HectogramPerCubicMeter end
 struct GramPerKilogram end
 struct DecigramPerKilogram end
 struct WeightPercent end            # mass fraction in % → kg/kg (soil texture)
+struct Percent end                  # area fraction in % → fraction
 
 struct InverseSign end
 struct InverseGravity end

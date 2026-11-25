@@ -77,6 +77,41 @@ end
                                                               radiation_exchanger_state)
 
     i, j = @index(Global, NTuple)
+
+    atmosphere_sea_ice_interface_state!(i, j,
+                                        interface_fluxes,
+                                        interface_temperature,
+                                        interface_specific_humidity,
+                                        grid,
+                                        clock,
+                                        interface_formulation,
+                                        interior_state,
+                                        atmosphere_state,
+                                        atmosphere_properties,
+                                        sea_ice_properties,
+                                        ocean_properties,
+                                        radiation_kernel_props,
+                                        radiation_exchanger_state)
+end
+
+# The body of `_compute_atmosphere_sea_ice_interface_state!` at cell `(i, j)`, a function of its own so that
+# its inferred types can be inspected on the host. Both branches below build an `AirIceInterfaceState{FT}`,
+# with `FT` the float type of `grid`.
+@inline function atmosphere_sea_ice_interface_state!(i, j,
+                                                     interface_fluxes,
+                                                     interface_temperature,
+                                                     interface_specific_humidity,
+                                                     grid,
+                                                     clock,
+                                                     interface_formulation,
+                                                     interior_state,
+                                                     atmosphere_state,
+                                                     atmosphere_properties,
+                                                     sea_ice_properties,
+                                                     ocean_properties,
+                                                     radiation_kernel_props,
+                                                     radiation_exchanger_state)
+
     kᴺ   = size(grid, 3) # index of the top ocean cell
     FT   = eltype(grid)
     time = Time(clock.time)
@@ -135,6 +170,6 @@ end
     ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Ψₐ.T)
     Tᵢ = convert_from_kelvin(sea_ice_properties.temperature_units, Ψⁱⁿ.temperature)
 
-    store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
-                            Ψⁱⁿ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_formulation)
+    return store_interface_fluxes!(interface_fluxes, interface_temperature, interface_specific_humidity, i, j,
+                                   Ψⁱⁿ, Ψₐ, ℂᵃᵗ, ℒⁱ, Tᵢ, interface_formulation)
 end

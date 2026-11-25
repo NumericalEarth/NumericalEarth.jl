@@ -99,6 +99,15 @@ net_fluxes(::Nothing) = nothing
 # surface optics the interfaces read from it.
 @inline kernel_radiation_properties(::Nothing, ::Nothing) = nothing
 
+"""
+    default_surface_radiation_properties(radiation, ocean, sea_ice, exchange_grid)
+
+Named tuple of the surface radiative properties (albedo and emissivity) of the `ocean` and `sea_ice`
+surfaces that the interfaces hold on behalf of `radiation`. Empty by default: no radiation, or one that
+carries the properties of its surfaces itself, such as `PrescribedRadiation`.
+"""
+default_surface_radiation_properties(radiation, ocean, sea_ice, exchange_grid) = (;)
+
 @inline function air_sea_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
     z = zero(eltype(grid))
     return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)

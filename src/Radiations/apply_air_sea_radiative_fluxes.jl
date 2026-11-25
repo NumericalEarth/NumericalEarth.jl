@@ -24,7 +24,8 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     isnothing(ao_interface) && return nothing
 
     radiation = coupled_model.radiation
-    interface_fluxes = radiation.interface_fluxes
+    radiation_exchanger = coupled_model.interfaces.exchanger.radiation
+    interface_fluxes = interface_radiation_fluxes(radiation, radiation_exchanger)
     isnothing(interface_fluxes) && return nothing
     haskey(interface_fluxes, :ocean) || return nothing
 
@@ -32,9 +33,12 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     arch = architecture(grid)
     clock = coupled_model.clock
 
+    # An ocean without net fluxes (e.g. `PrescribedOcean`) does not respond to radiation
     net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
-    radiation_state = coupled_model.interfaces.exchanger.radiation.state
-    rk = kernel_radiation_properties(radiation)
+    isnothing(net_ocean_fluxes) && return nothing
+
+    radiation_state = radiation_exchanger.state
+    rk = kernel_radiation_properties(radiation, radiation_exchanger)
 
     sea_ice = coupled_model.sea_ice
     ice_concentration = sea_ice_concentration(sea_ice)

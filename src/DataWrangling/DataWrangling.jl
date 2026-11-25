@@ -16,6 +16,7 @@ export DatasetRestoring, SurfaceFluxRestoring, ConservativeSurfaceFluxRestoring
 export update_restoring_flux!, ConservativeSurfaceFluxRestoringCallback
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export ERA5HourlyLand, ERA5MonthlyLand
+export PCMDIAMIPBoundaryConditions, PCMDIAMIPObservations
 export native_grid
 export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial
 export class_fractions, valid_area_mean!
@@ -433,6 +434,7 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("PCMDIAMIP/PCMDIAMIP.jl")
 include("GloFAS/GloFAS.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
@@ -457,6 +459,7 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .PCMDIAMIP
 using .GloFAS
 using .SoilGrids
 using .OpenLandMap
