@@ -72,45 +72,38 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         end
     end
 
-    @testset "era5cli_levels" begin
-        pl = ERA5HourlyPressureLevels(pressure_levels=[500, 850]hPa)
-        sl = ERA5HourlySingleLevel()
+    @testset "CDS client selection" begin
+        client = CopernicusClimateDataStoreClient()
 
-        # Pressure-level datasets pass their levels in hPa, sorted descending by the constructor
-        @test CDSExt.era5cli_levels(pl, "temperature") == [850, 500]
+        # Preferred whenever CopernicusClimateDataStore is loaded, whatever else is loaded and in which order
+        @test NumericalEarth.DataWrangling.default_cds_client() === client
+        @test NumericalEarth.DataWrangling.cds_retrieve(client) isa Function
 
-        # The single-level geopotential is ambiguous on CDS; :surface disambiguates it
-        @test CDSExt.era5cli_levels(sl, "geopotential") == :surface
-        @test CDSExt.era5cli_levels(sl, "2m_temperature") === nothing
+        mktempdir() do dir
+            metadata = Metadata(:temperature; dataset=ERA5HourlySingleLevel(), dates=[DateTime(2020, 1, 1)], dir)
+            @test_throws ArgumentError Downloads.download(metadata; client=nothing)
+
+            # Yearly and monthly products are only served by CopernicusClimateDataStore
+            yearly = Metadatum(:temperature; dataset=ERA5YearlySingleLevel(), date=DateTime(2020, 1, 1), dir)
+            @test_throws ArgumentError Downloads.download(yearly; client=CDSAPIClient())
+        end
     end
 
-    @testset "era5cli_request_area pads by two native cells" begin
+    @testset "era5_request_area pads by two native cells" begin
         sl = ERA5HourlySingleLevel()
-        bbox = NumericalEarth.DataWrangling.BoundingBox(
-            longitude = (0, 10),
-            latitude = (40, 50)
-        )
-
-        @test isnothing(CDSExt.era5cli_request_area(nothing, sl, :temperature))
 
         # Atmospheric single-level variables live on the 0.25° grid → 0.5° margin
-        area = CDSExt.era5cli_request_area(bbox, sl, :temperature)
-        @test area.lon == (-0.5, 10.5)
-        @test area.lat == (39.5, 50.5)
+        bbox = NumericalEarth.DataWrangling.BoundingBox(longitude = (0, 10), latitude = (40, 50))
+        @test CDSExt.era5_request_area(bbox, sl, [:temperature]) == [39.5, -0.5, 50.5, 10.5]
 
         # The margin never pushes latitude beyond the poles
-        polar = NumericalEarth.DataWrangling.BoundingBox(
-            longitude = (0, 10),
-            latitude = (85, 90)
-        )
-        area = CDSExt.era5cli_request_area(polar, sl, :temperature)
-        @test area.lat == (84.5, 90.0)
+        polar = NumericalEarth.DataWrangling.BoundingBox(longitude = (0, 10), latitude = (85, 90))
+        @test CDSExt.era5_request_area(polar, sl, [:temperature]) == [84.5, -0.5, 90.0, 10.5]
 
         # A longitude span that padding would push past 360° requests the full circle
         for (longitude, expected) in (((0, 360), (0, 360)), ((-180, 180), (-180, 180)), ((0, 359.5), (0, 360)))
             arctic = NumericalEarth.DataWrangling.BoundingBox(; longitude, latitude = (50, 90))
-            @test CDSExt.era5cli_request_area(arctic, sl, :temperature).lon == expected
-            @test CDSExt.era5_request_area(arctic, sl, :temperature) == [49.5, expected[1], 90.0, expected[2]]
+            @test CDSExt.era5_request_area(arctic, sl, [:temperature]) == [49.5, expected[1], 90.0, expected[2]]
         end
     end
 
