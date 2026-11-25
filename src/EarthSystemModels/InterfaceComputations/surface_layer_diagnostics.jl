@@ -5,7 +5,7 @@ using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using ..EarthSystemModels: DegreesKelvin
 
 # Per-cell scales re-derived from what the flux solve stored: the characteristic scales,
-# the Monin--Obukhov length, and the resolved roughness lengths.
+# the Monin--Obukhov length as bounded at the surface-layer height, and the resolved roughness lengths.
 @inline function local_similarity_scales(i, j, interface_state)
     ℱ = local_flux_formulation(interface_state.flux_formulation, i, j)
     ℂᵃᵗ = interface_state.thermodynamics_parameters
@@ -19,7 +19,8 @@ using ..EarthSystemModels: DegreesKelvin
     end
 
     b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, interface_state.gravitational_acceleration)
-    L★ = monin_obukhov_length(u★, b★, ℱ.von_karman_constant)
+    Δhᵈ = state2dindex(interface_state.surface_layer_height, i, j) - ℱ.zero_plane_displacement
+    L★ = bounded_obukhov_length(ℱ.stability_functions.momentum, Δhᵈ, monin_obukhov_length(u★, b★, ℱ.von_karman_constant))
 
     # The admissible roughness formulations do not read the bulk velocity.
     U = zero(u★)

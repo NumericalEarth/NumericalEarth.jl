@@ -38,7 +38,26 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    state               = default_al_interface_state(land),
                                    velocity_difference = RelativeVelocity())
     validate_surface_storage(land, state)
+    validate_massless_skin(temperature_formulation(state), land_surface_state(land).state, fluxes)
     return build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)
+end
+
+# A massless skin is solved for its stability between the finite bounds of the land stability functions, with a
+# friction velocity in closed form at each stability.
+validate_massless_skin(temperature, storage, fluxes) = nothing
+
+function validate_massless_skin(::EnergyBalanceTemperature, ::Nothing, fluxes)
+    fluxes isa SimilarityTheoryFluxes ||
+        throw(ArgumentError("a massless EnergyBalanceTemperature skin requires SimilarityTheoryFluxes, found $(summary(fluxes))"))
+    fluxes.stability_functions.momentum isa BoundedStabilityFunction ||
+        throw(ArgumentError("a massless EnergyBalanceTemperature skin requires atmosphere_land_stability_functions, found $(summary(fluxes.stability_functions))"))
+    fluxes.subgrid_velocities isa ClosedFormSubgridVelocity ||
+        throw(ArgumentError("a massless EnergyBalanceTemperature skin requires subgrid velocities of nothing, a Number, ConvectiveGustiness, or a SubgridVelocityCorrection of these with a static mesoscale part, found $(summary(fluxes.subgrid_velocities))"))
+    ψ = fluxes.stability_functions.momentum
+    ζᵐⁱⁿ, ζᵐᵃˣ = -ψ.unstable.maximum_stability_parameter, ψ.stable.maximum_stability_parameter
+    isfinite(ζᵐⁱⁿ) && isfinite(ζᵐᵃˣ) ||
+        throw(ArgumentError("a massless EnergyBalanceTemperature skin requires finite stability bounds, found [$ζᵐⁱⁿ, $ζᵐᵃˣ]"))
+    return nothing
 end
 
 function build_atmosphere_land_interface(grid, fluxes, state, velocity_difference)

@@ -89,6 +89,32 @@ end
 @inline vsgs²(sv::SubgridVelocityCorrection, u★, b★, h_bℓ) =
     vsgs²(sv.convective, u★, b★, h_bℓ) + vsgs²(sv.mesoscale, u★, b★, h_bℓ)
 
+const ClosedFormSubgridVelocity = Union{Nothing, Number, ConvectiveGustiness,
+                                        SubgridVelocityCorrection{<:Union{Nothing, Number, ConvectiveGustiness},
+                                                                  <:Union{Nothing, Number}}}
+
+# Friction velocity u★ = Ξu U of a surface layer whose stability parameter at the displaced height Δhᵈ
+# is ζ, given the resolved velocity difference ΔU. Its buoyancy flux Jᵇ = −ζ u★³ / (ϰ Δhᵈ) makes the
+# convective gustiness γ u★, γ = β (−ζ h_bℓ / ϰ Δhᵈ)^⅓, so U² = ΔU² + max(Uᴳ², γ² u★²) solves for u★
+# directly. Where Ξu γ ≥ 1 no stationary layer has stability ζ, and u★ is infinite.
+@inline similarity_friction_velocity(::Nothing, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ) = Ξu * ΔU
+@inline similarity_friction_velocity(v::Number, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ) = Ξu * sqrt(ΔU^2 + v^2)
+
+@inline similarity_friction_velocity(sv::SubgridVelocityCorrection, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ) =
+    similarity_friction_velocity(sv.convective, Ξu, sqrt(ΔU^2 + vsgs²(sv.mesoscale, zero(ΔU), zero(ΔU), h_bℓ)), ζ, Δhᵈ, h_bℓ, ϰ)
+
+@inline function similarity_friction_velocity(g::ConvectiveGustiness, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ)
+    FT = typeof(Ξu)
+    γ  = g.gustiness_parameter * cbrt(max(0, -ζ) * h_bℓ / (ϰ * Δhᵈ))
+    Uᴳ = convert(FT, g.minimum_gustiness)
+
+    floor_friction_velocity = Ξu * sqrt(ΔU^2 + Uᴳ^2)
+    s = 1 - (Ξu * γ)^2
+    convective_friction_velocity = ifelse(s > 0, Ξu * ΔU / sqrt(max(s, eps(FT))), convert(FT, Inf))
+
+    return ifelse(γ * floor_friction_velocity < Uᴳ, floor_friction_velocity, convective_friction_velocity)
+end
+
 """
 $(SIGNATURES)
 
@@ -319,15 +345,6 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     θ★ = approximate_interface_state.fluxes.θ★
     q★ = approximate_interface_state.fluxes.q★
 
-    # Stability functions for momentum, heat, and vapor
-    ψu = flux_formulation.stability_functions.momentum
-    ψθ = flux_formulation.stability_functions.temperature
-    ψq = flux_formulation.stability_functions.water_vapor
-
-    ℓu = flux_formulation.roughness_lengths.momentum
-    ℓθ = flux_formulation.roughness_lengths.temperature
-    ℓq = flux_formulation.roughness_lengths.water_vapor
-
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
     b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tⁱⁿ, qⁱⁿ, g)
 
@@ -342,23 +359,8 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
 
     U = sqrt(Δu^2 + Δv^2 + Uˢᵍ²)
 
-    # Compute roughness length scales (pass surface temperature for viscosity calculation)
-    ℓu₀ = roughness_length(ℓu, u★, U, ℂᵃᵗ, Tⁱⁿ)
-    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
-    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
-
-    # Tall roughness elements displace the similarity profiles upward by `d`.
-    d = flux_formulation.zero_plane_displacement
-    Δhᵈ = Δh - d
-
-    # Transfer coefficients at height `h`
-    ϰ = flux_formulation.von_karman_constant
-    L★ = monin_obukhov_length(u★, b★, ϰ)
-    form = flux_formulation.similarity_form
-
-    Ξu = ϰ / similarity_profile(form, ψu, Δhᵈ, ℓu₀, L★)
-    Ξθ = ϰ / similarity_profile(form, ψθ, Δhᵈ, ℓθ₀, L★)
-    Ξq = ϰ / similarity_profile(form, ψq, Δhᵈ, ℓq₀, L★)
+    L★ = monin_obukhov_length(u★, b★, flux_formulation.von_karman_constant)
+    Ξu, Ξθ, Ξq = similarity_transfer_coefficients(flux_formulation, u★, U, L★, Tⁱⁿ, Δh, ℂᵃᵗ)
 
     # Recompute
     u★ = Ξu * U
@@ -366,6 +368,28 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     q★ = Ξq * Δq
 
     return u★, θ★, q★, Ξθ, Ξq
+end
+
+# Transfer coefficients Ξ = ϰ / Π at Obukhov length `L`, with the roughness lengths evaluated at
+# `u★`, `U`, and the surface temperature `Tⁱⁿ` (which sets the viscosity).
+@inline function similarity_transfer_coefficients(flux_formulation::SimilarityTheoryFluxes, u★, U, L, Tⁱⁿ, Δh, ℂᵃᵗ)
+    ψ = flux_formulation.stability_functions
+    ℓ = flux_formulation.roughness_lengths
+    ℓu₀ = roughness_length(ℓ.momentum, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓq₀ = roughness_length(ℓ.water_vapor, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+    ℓθ₀ = roughness_length(ℓ.temperature, ℓu₀, u★, U, ℂᵃᵗ, Tⁱⁿ)
+
+    # Tall roughness elements displace the similarity profiles upward by `d`.
+    Δhᵈ = Δh - flux_formulation.zero_plane_displacement
+    L   = bounded_obukhov_length(ψ.momentum, Δhᵈ, L)
+
+    ϰ = flux_formulation.von_karman_constant
+    form = flux_formulation.similarity_form
+    Ξu = ϰ / similarity_profile(form, ψ.momentum, Δhᵈ, ℓu₀, L)
+    Ξθ = ϰ / similarity_profile(form, ψ.temperature, Δhᵈ, ℓθ₀, L)
+    Ξq = ϰ / similarity_profile(form, ψ.water_vapor, Δhᵈ, ℓq₀, L)
+
+    return Ξu, Ξθ, Ξq
 end
 
 """
@@ -876,7 +900,8 @@ unstable functions of [zeng1998intercomparison](@citet)
 ([`FreeConvectionMomentumStabilityFunction`](@ref), [`FreeConvectionScalarStabilityFunction`](@ref)),
 bounded at ``|ζ| ≤`` `maximum_stability_parameter`, and the linear stable function
 ``ψ = -5 ζ``, bounded at ``ζ ≤`` `stable_maximum_stability_parameter` (CLM4.5 bounds it at 2,
-CLM5 at 0.5, Noah-MP at 1).
+CLM5 at 0.5, Noah-MP at 1). The bounds limit the Obukhov length at the reference height, so every height
+of the profile sees the same length.
 """
 function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
                                              maximum_stability_parameter = 100,
@@ -891,6 +916,17 @@ function atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType;
                    FreeConvectionScalarStabilityFunction{FT}(; maximum_stability_parameter = ζᵐᵃˣ))
     return SimilarityScales(momentum, scalar, scalar)
 end
+
+const BoundedStabilityFunction = SplitStabilityFunction{<:LinearStableStabilityFunction,
+                                                        <:Union{FreeConvectionMomentumStabilityFunction,
+                                                                FreeConvectionScalarStabilityFunction}}
+
+# The Obukhov length bounded at the reference height h, which every height of the profile sees. The land
+# stability functions bound the stability parameter h / L through it, as CLM does.
+@inline bounded_obukhov_length(ψ, h, L) = L
+
+@inline bounded_obukhov_length(ψ::BoundedStabilityFunction, h, L) =
+    h / clamp(h / L, -ψ.unstable.maximum_stability_parameter, ψ.stable.maximum_stability_parameter)
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()
