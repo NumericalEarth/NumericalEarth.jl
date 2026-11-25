@@ -15,6 +15,16 @@ atmosphere_sea_ice_radiation_state(coupled_model) = begin
     return isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
 end
 
+"""
+    sea_ice_radiation_properties(sea_ice, radiation_properties)
+
+Return the radiation kernel properties the atmosphere–sea ice flux kernel reads.
+Sea ice components that carry their own surface optics (e.g. `PrescribedSeaIce`)
+overload this to put them in `radiation_properties.surface_properties.sea_ice`.
+Default: `radiation_properties`, unchanged.
+"""
+sea_ice_radiation_properties(sea_ice, radiation_properties) = radiation_properties
+
 function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
@@ -37,7 +47,8 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     atmosphere_properties = atmosphere_sea_ice_properties(coupled_model)
 
     radiation = coupled_model.radiation
-    radiation_kernel_props = kernel_radiation_properties(radiation, exchanger.radiation)
+    radiation_kernel_props = sea_ice_radiation_properties(coupled_model.sea_ice,
+                                                          kernel_radiation_properties(radiation, exchanger.radiation))
     radiation_state = atmosphere_sea_ice_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)
