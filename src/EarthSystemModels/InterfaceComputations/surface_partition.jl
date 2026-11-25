@@ -12,9 +12,9 @@ Fractional partition of each exchange-grid cell among the surface types the atmo
 couples to. `ocean_fraction` (ℵᵒᶜ) is the fraction of the cell covered by ocean, so the
 land fraction is `1 - ℵᵒᶜ`, and the sea ice concentration ℵˢⁱ further splits the ocean
 fraction into an open-ocean part `ℵᵒᶜ (1 - ℵˢⁱ)` and an ice-covered part `ℵᵒᶜ ℵˢⁱ`.
-`surface_temperature` is the partition-weighted skin temperature (K) — the single
-surface the atmosphere and radiation see; it is `nothing` unless the model carries
-both a land and an ocean interface and an atmosphere that feels the surface.
+`surface_temperature` is the partition-weighted skin temperature (K); it is `nothing`
+unless the model carries both a land and an ocean interface and an atmosphere that feels
+the surface.
 """
 struct SurfacePartition{F, T}
     ocean_fraction :: F
