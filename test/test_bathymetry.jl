@@ -108,6 +108,17 @@ end
 
         # Testing that multiple passes _do_ change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(interpolated_bottom_height)
+
+        # On a regional grid at the dataset's resolution, more passes do not smooth the bathymetry
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (60, 60, 10),
+                                     longitude = (-70, -69),
+                                     latitude = (39, 40),
+                                     z = (-6000, 0))
+
+        one_pass   = regrid_bathymetry(grid; cache = false)
+        ten_passes = regrid_bathymetry(grid; cache = false, interpolation_passes = 10)
+        @test Array(interior(ten_passes)) == Array(interior(one_pass))
     end
 end
 
