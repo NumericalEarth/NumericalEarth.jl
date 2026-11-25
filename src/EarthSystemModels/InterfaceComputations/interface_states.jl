@@ -782,8 +782,9 @@ end
 
 # The stability parameter of the massless skin with the roughness lengths at u★ʳ, Uʳ and Tʳ: the root of
 # r(ζ) = clamp(ζ★) − ζ nearest neutral, between neutral and the bound of the stability functions on the side the
-# neutral skin implies.
-@inline function massless_skin_stability(u★ʳ, Uʳ, Tʳ, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+# neutral skin implies, tried first at the guess ζ⁰. Also returns whether the root is the edge of the stationary
+# layers, which is located first where that is allowed and the neutral skin implies the unstable bound.
+@inline function massless_skin_stability(ζ⁰, edge_allowed, u★ʳ, Uʳ, Tʳ, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
     FT   = eltype(Ψⁱⁿ)
     stop_criteria = ℙⁱⁿ.turbulent_fluxes.solver_stop_criteria
     ψ    = ℙⁱⁿ.turbulent_fluxes.stability_functions.momentum
@@ -794,30 +795,57 @@ end
     neutral_residual = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ)
     unstable = neutral_residual < 0
 
-    ζᵃ = ifelse(unstable, ζᵐⁱⁿ, zero(FT))
-    ζᵇ = ifelse(unstable, zero(FT), ζᵐᵃˣ)
-    ζ  = ifelse(unstable, ζᵃ, ζᵇ)
+    # Where even the neutral skin implies the unstable bound, the root lies at the most unstable stationary layer
+    # or inside it. That edge depends on the transfer coefficients alone, and is bisected between ζᵉ⁻, which has
+    # no stationary layer, and ζᵉ⁺, which has one.
+    fluxes = ℙⁱⁿ.turbulent_fluxes
+    edge = edge_allowed & unstable & (neutral_residual == ζᵐⁱⁿ)
+    ζᵉ⁻, ζᵉ⁺ = ζᵐⁱⁿ, zero(FT)
+    iteration = 0
+    while edge & bracketing(ζᵉ⁻, ζᵉ⁺, iteration, stop_criteria)
+        ζ = (ζᵉ⁻ + ζᵉ⁺) / 2
+        Ξu, _, _ = similarity_transfer_coefficients(fluxes, u★ʳ, Uʳ, Δhᵈ / ζ, Tʳ, Ψₐ.z, ℙₐ.thermodynamics_parameters)
+        stationary = isfinite(similarity_friction_velocity(fluxes.subgrid_velocities, Ξu, ΔU, ζ, Δhᵈ, Ψₐ.h_bℓ,
+                                                           fluxes.von_karman_constant))
+        ζᵉ⁻ = ifelse(stationary, ζᵉ⁻, ζ)
+        ζᵉ⁺ = ifelse(stationary, ζ, ζᵉ⁺)
+        iteration += 1
+    end
+
+    # An end of the bracket: the unstable bound, or the edge of the stationary layers, or the stable bound.
+    ζ = ifelse(unstable, ifelse(edge, ζᵉ⁺, ζᵐⁱⁿ), ζᵐᵃˣ)
     Ψⁱⁿ, ζ★ = skin_state_at_stability(ζ, u★ʳ, Uʳ, Tʳ, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
-    r  = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζ
-    rᵃ = ifelse(unstable, r, neutral_residual) # r(ζᵃ) ≥ 0
-    rᵇ = ifelse(unstable, neutral_residual, r) # r(ζᵇ) ≤ 0
+    r = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζ
+    at_edge = edge & (r ≤ 0) # the root is the edge itself, bracketed by ζᵉ⁻ and ζᵉ⁺
+    ζᵃ = ifelse(unstable, ifelse(at_edge, ζᵉ⁻, ζ), zero(FT))
+    rᵃ = ifelse(unstable, ifelse(at_edge, -ζᵉ⁻, r), neutral_residual) # r(ζᵃ) ≥ 0
+    ζᵇ = ifelse(unstable, ifelse(at_edge, ζ, zero(FT)), ζᵐᵃˣ)
+    rᵇ = ifelse(unstable, ifelse(at_edge, r, neutral_residual), r)    # r(ζᵇ) ≤ 0
 
     # Where the stable bound implies itself the ends do not bracket a root, and ζᵃ steps to the stability
     # it implies until that reaches the bound. A step within the tolerance has converged.
     ζᵃ⁻, rᵃ⁻ = ζᵃ, rᵃ
+    sᵃ, sᵇ = rᵃ, rᵇ # the residuals weighting the regula falsi point
+    retained = 0    # the end the last trial kept: 1 for ζᵃ, -1 for ζᵇ
     iteration = 1
     while (rᵃ > 0) & bracketing(zero(FT), ifelse(unstable, rᵇ, rᵃ), iteration, stop_criteria) &
           ifelse(rᵇ < 0, bracketing(ζᵃ, ζᵇ, iteration, stop_criteria), (ζᵇ == ζᵐᵃˣ) & (ζᵃ + rᵃ < ζᵇ))
-        # The stability implied at the end nearer neutral, bisecting a bracket when it leaves it and every
-        # other step, so the bracket at least halves every two steps. Without a bracket every other step is
-        # the secant step through the last two trials below the root, while their residual shrinks.
-        ζ  = ifelse(unstable, ζᵇ + rᵇ, ζᵃ + rᵃ)
+        # Inside a bracket the regula falsi point with the Illinois weighting, bisecting where it leaves the
+        # bracket. Without one the stability implied at ζᵃ, and every other step the secant step through the last
+        # two trials below the root, while their residual shrinks. The first trial is ζ⁰ where it lies between.
+        ζ  = (ζᵃ * sᵇ - ζᵇ * sᵃ) / (sᵇ - sᵃ)
+        ζ  = ifelse((ζ > ζᵃ) & (ζ < ζᵇ), ζ, (ζᵃ + ζᵇ) / 2)
         ζˢ = ζᵃ + rᵃ * (ζᵃ - ζᵃ⁻) / (rᵃ⁻ - rᵃ)
-        ζ  = ifelse((rᵇ == 0) & iseven(iteration) & (ζᵃ > ζᵃ⁻) & (rᵃ < rᵃ⁻) & (ζˢ < ζᵇ), ζˢ, ζ)
-        ζ  = ifelse((rᵇ < 0) & (iseven(iteration) | (ζ ≤ ζᵃ) | (ζ ≥ ζᵇ)), (ζᵃ + ζᵇ) / 2, ζ)
+        ζˢ = ifelse(iseven(iteration) & (ζᵃ > ζᵃ⁻) & (rᵃ < rᵃ⁻) & (ζˢ < ζᵇ), ζˢ, ζᵃ + rᵃ)
+        ζ  = ifelse(rᵇ < 0, ζ, ζˢ)
+        ζ  = ifelse((iteration == 1) & (ζ⁰ > ζᵃ) & (ζ⁰ < ζᵇ), ζ⁰, ζ)
         Ψⁱⁿ, ζ★ = skin_state_at_stability(ζ, u★ʳ, Uʳ, Tʳ, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
         r = clamp(ζ★, ζᵐⁱⁿ, ζᵐᵃˣ) - ζ
         below_root = r > 0
+        # Illinois: an end kept twice in a row has its weighting residual halved.
+        sᵃ = ifelse(below_root, r, ifelse(retained == 1, sᵃ / 2, sᵃ))
+        sᵇ = ifelse(below_root, ifelse(retained == -1, sᵇ / 2, sᵇ), r)
+        retained = ifelse(below_root, -1, 1)
         ζᵃ⁻ = ifelse(below_root, ζᵃ, ζᵃ⁻)
         rᵃ⁻ = ifelse(below_root, rᵃ, rᵃ⁻)
         ζᵃ = ifelse(below_root, ζ, ζᵃ)
@@ -831,12 +859,13 @@ end
     converged = !bracketing(zero(FT), rᵃ, 0, stop_criteria)
     ζ = ifelse((rᵃ < -rᵇ) | ((rᵇ == 0) & (ζᵇ == ζᵐᵃˣ) & converged), ζᵃ, ζᵇ)
 
-    return ζ, Ψⁱⁿ
+    return ζ, Ψⁱⁿ, at_edge
 end
 
 # A massless skin is solved for the stability parameter ζ at which its fluxes imply ζ, and then for u★ at that ζ.
-# Each pass holds the roughness lengths at the friction velocity, bulk speed and temperature of the previous pass,
-# until the transfer coefficients they give stop changing.
+# Each pass holds the roughness lengths at a friction velocity u★ʳ and the bulk speed and temperature of the
+# previous pass, until the transfer coefficients they give stop changing. u★ʳ is the friction velocity of the
+# first pass, and after that the secant step on u★ − u★ʳ through the last two passes.
 @inline function land_interface_state(t::EnergyBalanceTemperature, ::Nothing, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ, Δt)
     FT     = eltype(Ψⁱⁿ)
     ℂᵃᵗ    = ℙₐ.thermodynamics_parameters
@@ -848,10 +877,13 @@ end
     ΔU     = sqrt(Δu^2 + Δv^2)
 
     u★ʳ, Uʳ, Tʳ = Ψⁱⁿ.fluxes.u★, ΔU, Ψⁱⁿ.temperature
+    u★ʳ⁻, Δu★⁻ = u★ʳ, zero(FT)
+    ζ     = convert(FT, NaN) # each pass after the first starts its search at the stability of the last
+    at_edge = true
     drift = zero(FT)
     pass  = 0
     while (pass == 0) | ((drift > 0) & bracketing(zero(FT), drift, pass, stop_criteria))
-        ζ, Ψⁱⁿ = massless_skin_stability(u★ʳ, Uʳ, Tʳ, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
+        ζ, Ψⁱⁿ, at_edge = massless_skin_stability(ζ, at_edge, u★ʳ, Uʳ, Tʳ, ΔU, Δhᵈ, t, ℙⁱⁿ, Ψⁱⁿ, Ψₐ, Ψˡᵃ, Ψᵣ, ℙₐ)
         Ξu, Ξθ, Ξq = similarity_transfer_coefficients(fluxes, u★ʳ, Uʳ, Δhᵈ / ζ, Tʳ, Ψₐ.z, ℂᵃᵗ)
 
         # u★ steps to Ξu U from the stationary friction velocity at ζ, where that is finite and positive, so it
@@ -877,9 +909,14 @@ end
             iteration += 1
         end
 
-        u★ʳ, Uʳ, Tʳ = Ψⁱⁿ.fluxes.u★, U, Ψⁱⁿ.temperature
-        Ξuⁿ, Ξθⁿ, Ξqⁿ = similarity_transfer_coefficients(fluxes, u★ʳ, Uʳ, Δhᵈ / ζ, Tʳ, Ψₐ.z, ℂᵃᵗ)
+        u★, Uʳ, Tʳ = Ψⁱⁿ.fluxes.u★, U, Ψⁱⁿ.temperature
+        Ξuⁿ, Ξθⁿ, Ξqⁿ = similarity_transfer_coefficients(fluxes, u★, Uʳ, Δhᵈ / ζ, Tʳ, Ψₐ.z, ℂᵃᵗ)
         drift = max(abs(Ξuⁿ - Ξu), abs(Ξθⁿ - Ξθ), abs(Ξqⁿ - Ξq))
+
+        Δu★ = u★ - u★ʳ
+        u★ˢ = u★ʳ - Δu★ * (u★ʳ - u★ʳ⁻) / (Δu★ - Δu★⁻)
+        u★ʳ⁻, Δu★⁻ = u★ʳ, Δu★
+        u★ʳ = ifelse((pass > 0) & (u★ˢ > 0) & (u★ˢ < 2 * max(u★, u★ʳ)), u★ˢ, u★)
         pass += 1
     end
 
