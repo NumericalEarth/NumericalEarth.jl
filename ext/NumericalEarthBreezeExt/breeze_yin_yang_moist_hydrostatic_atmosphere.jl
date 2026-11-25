@@ -43,6 +43,11 @@
 #####    Σ f ϵ, temperature (Σ f ϵ T⁴ / ϵ)^¼, albedo Σ f α, as `_update_radiative_surface!`), interpolated
 #####    bilinearly to the panels. Their downwelling fluxes at the ground go to the exchange grid, where the
 #####    surfaces absorb them with the kernels of `Radiations`.
+##### 5. Land. With a land component the mosaic and the net fluxes weight the land by `1 - ℵᵒᶜ`, the ocean
+#####    fraction of the coupled model's surface partition. The land radiates at its interface temperature
+#####    with the albedo and emissivity of the `land_surface` of the coupled model's radiation, which are those
+#####    it absorbs with. The precipitation that the land takes is a field on the panels that a driver fills
+#####    (`yin_yang_surface_precipitation`), averaged to the exchange grid with its global integral kept.
 #####
 
 using Oceananigans.Fields: interior
@@ -56,7 +61,7 @@ using Breeze.HydrostaticEquations: MoistHydrostaticModel, hydrostatic_water_fiel
                                    layer_pressure_thickness, warm_rain_column_physics!,
                                    column_physics_in_time_step!
 
-using NumericalEarth.YinYangRegridding: YinYangRegridder, UniformRedistribution, transfer_flux!,
+using NumericalEarth.YinYangRegridding: YinYangRegridder, GlobalRescaling, UniformRedistribution, transfer_flux!,
                                         interpolate_to_yin_yang!
 
 const MoistHydrostaticAtmosphere = MoistHydrostaticModel
@@ -407,14 +412,14 @@ function yin_yang_component_exchanger(atmosphere, exchange_grid, correction)
                q    = Oceananigans.CenterField(exchange_grid),
                ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
                ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
-               Jʳⁿ  = Oceananigans.CenterField(exchange_grid),   # zero: the prescribed surfaces take no precipitation
+               Jʳⁿ  = Oceananigans.CenterField(exchange_grid),   # the precipitation the land takes; zero without land
                Jˢⁿ  = Oceananigans.CenterField(exchange_grid))
 
     panel_column() = Field{Center, Center, Nothing}(grid)
     exchange_column() = Field{Center, Center, Nothing}(exchange_grid)
 
     yin_yang = (u = panel_column(), v = panel_column(), T = panel_column(), p = panel_column(), q = panel_column(),
-                height = panel_column())
+                height = panel_column(), precipitation = panel_column())
 
     latitude_longitude = (x_momentum = exchange_column(), y_momentum = exchange_column(),
                           sensible_heat = exchange_column(), water_vapor = exchange_column(),
@@ -497,10 +502,29 @@ function exchange_lowest_level_state!(exchanger, atmosphere, coupled_model)
         throw(DomainError(lowest, "the lowest level of the hydrostatic atmosphere is not above the ground: " *
                                   "its height must be positive in every column."))
 
+    exchange_precipitation!(coupled_model.interfaces.atmosphere_land_interface, state, regridder, yin_yang)
     exchange_downwelling_radiation!(exchange_of(atmosphere).radiation, coupled_model, regridder, latitude_longitude)
 
     return nothing
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the field on the grid of the Yin-Yang Breeze atmosphere of `coupled_model` that holds the precipitation
+reaching the ground (kg m⁻² s⁻¹, positive downward). The atmosphere does not fill it: a driver writes the
+rate of each coupling step into it after the atmosphere is stepped, for example from the column physics
+that the exchange applies. When the state is exchanged it is averaged onto the exchange grid, with its
+global integral kept, as the rain that the land takes. It is not read by a model without land.
+"""
+yin_yang_surface_precipitation(coupled_model) =
+    coupled_model.interfaces.exchanger.atmosphere.regridder.yin_yang.precipitation
+
+# Only the land takes precipitation: the ocean and the sea ice are prescribed
+exchange_precipitation!(::Nothing, state, regridder, yin_yang) = nothing
+
+exchange_precipitation!(land_interface, state, regridder, yin_yang) =
+    transfer_flux!(state.Jʳⁿ, regridder, yin_yang.precipitation; correction = GlobalRescaling())
 
 exchange_downwelling_radiation!(::Nothing, coupled_model, regridder, latitude_longitude) = nothing
 
@@ -574,41 +598,103 @@ end
 
 publish_radiative_surface!(::Nothing, coupled_model, regridder, latitude_longitude) = nothing
 
-@kernel function _mosaic_radiative_surface!(surface, sea, optics)
+# The land's radiating surface on the exchange grid: the interface temperature of the land, with the albedo
+# and emissivity that the land absorbs the downwelling radiation with. Without land its fraction is zero.
+mosaic_land_surface(::Nothing, coupled_model) = (temperature = 0, albedo = 0, emissivity = 0)
+
+function mosaic_land_surface(land_interface, coupled_model)
+    exchanger = coupled_model.interfaces.exchanger.radiation
+    properties = NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(coupled_model.radiation,
+                                                                                                       exchanger).surface_properties
+    land = get(properties, :land, nothing)
+    isnothing(land) &&
+        throw(ArgumentError("The radiation of the coupled model has no land surface, which the per-panel radiation " *
+                            "of a Breeze atmosphere on a Yin-Yang grid needs over land: build it with " *
+                            "`PrescribedRadiation(exchange_grid; land_surface = SurfaceRadiationProperties(albedo, emissivity))`."))
+
+    return radiative_surface(land_interface, land.albedo, land.emissivity)
+end
+
+@kernel function _mosaic_radiative_surface!(surface, sea, land, optics, ℐꜜˢʷ, grid, clock)
     i, j = @index(Global, NTuple)
+    kᴺ = size(grid, 3)
+    time = Time(clock.time)
+    location = (Center, Center, Center)
 
     @inbounds begin
         ℵᵒᶜ = clamp(sea.ocean_fraction[i, j, 1], 0, 1)
         ℵˢⁱ = clamp(sea.sea_ice_concentration[i, j, 1], 0, 1)
         Tᵒᶜ = convert_to_kelvin(sea.ocean_units, sea.ocean_temperature[i, j, 1])
         Tˢⁱ = convert_to_kelvin(sea.sea_ice_units, sea.sea_ice_temperature[i, j, 1])
+        ℐꜜˢʷᵢ = ℐꜜˢʷ[i, j, 1]
     end
 
+    # As the land absorbs: `_air_land_surface_radiation_state`
+    Tˡᵃ = stateindex(land.temperature, i, j, 1)
+    αˡᵃ = stateindex(land.albedo, i, j, kᴺ, grid, time, location, ℐꜜˢʷᵢ)
+    ϵˡᵃ = stateindex(land.emissivity, i, j, kᴺ, grid, time, location)
+
+    # The weights of `_assemble_centered_net_atmosphere_fluxes!`
+    land_fraction = 1 - ℵᵒᶜ
     ocean_fraction = ℵᵒᶜ * (1 - ℵˢⁱ)
     sea_ice_fraction = ℵᵒᶜ * ℵˢⁱ
-    covered = ocean_fraction + sea_ice_fraction
 
-    ϵ = ocean_fraction * optics.ocean_emissivity + sea_ice_fraction * optics.sea_ice_emissivity
-    ϵT⁴ = ocean_fraction * optics.ocean_emissivity * Tᵒᶜ^4 + sea_ice_fraction * optics.sea_ice_emissivity * Tˢⁱ^4
-    α = ocean_fraction * optics.ocean_albedo + sea_ice_fraction * optics.sea_ice_albedo
+    # Emissivity, and the temperature that emits the mosaic's longwave through it
+    ϵ = land_fraction * ϵˡᵃ + ocean_fraction * optics.ocean_emissivity + sea_ice_fraction * optics.sea_ice_emissivity
+    ϵT⁴ = land_fraction * ϵˡᵃ * Tˡᵃ^4 + ocean_fraction * optics.ocean_emissivity * Tᵒᶜ^4 +
+          sea_ice_fraction * optics.sea_ice_emissivity * Tˢⁱ^4
+    T⁴ = ifelse(ϵ > 0, ϵT⁴ / ϵ, land_fraction * Tˡᵃ^4 + ocean_fraction * Tᵒᶜ^4 + sea_ice_fraction * Tˢⁱ^4)
+    α = land_fraction * αˡᵃ + ocean_fraction * optics.ocean_albedo + sea_ice_fraction * optics.sea_ice_albedo
 
     @inbounds begin
-        surface.surface_temperature[i, j, 1] = sqrt(sqrt(ϵT⁴ / ϵ))
-        surface.surface_emissivity[i, j, 1] = ϵ / covered
-        surface.surface_albedo[i, j, 1] = α / covered
+        surface.surface_temperature[i, j, 1] = sqrt(sqrt(T⁴))
+        surface.surface_emissivity[i, j, 1] = ϵ
+        surface.surface_albedo[i, j, 1] = α
     end
 end
 
-# The lower boundary of the radiation: the mosaic of open ocean and sea ice on the exchange grid, at the
-# interface temperatures of this `update_state!`, interpolated to the panels. Land is not part of it: the
-# adapter is for coupled models without land (a land fraction makes `covered < 1` and is refused).
-function publish_radiative_surface!(radiation::YinYangGrayRadiation, coupled_model, regridder, latitude_longitude)
-    isnothing(coupled_model.interfaces.atmosphere_land_interface) ||
-        throw(ArgumentError("The per-panel radiation of a moist hydrostatic Breeze atmosphere has no land in its mosaic yet."))
+@kernel function _snow_proxy_land_albedo!(albedo, temperature, α⁰, Δα, Tᵐ, ΔT)
+    i, j = @index(Global, NTuple)
+    @inbounds albedo[i, j, 1] = α⁰ + Δα * clamp((Tᵐ - temperature[i, j, 1]) / ΔT, 0, 1)
+end
 
-    exchange_grid = coupled_model.interfaces.exchanger.grid
+"""
+$(TYPEDSIGNATURES)
+
+Set the land `albedo`, a field on the exchange grid, from the land `temperature` (K): `snow_free_albedo` at
+and above `melting_temperature`, rising linearly to `snow_albedo` at `melting_temperature - temperature_range`
+and below. The temperature stands in for snow and land ice, which a slab land does not carry: cold land,
+the ice sheets included, is bright. A driver calls this between coupling steps on the field it gave to the
+`land_surface` of the coupled model's radiation, so that the land absorbs and the mosaic reflects with the
+same albedo.
+"""
+function snow_proxy_land_albedo!(albedo, temperature; snow_free_albedo = 0.2, snow_albedo = 0.65,
+                                 melting_temperature = 273.15, temperature_range = 10)
+    grid = albedo.grid
+    FT = eltype(grid)
+    launch!(architecture(grid), grid, :xy, _snow_proxy_land_albedo!, albedo, temperature,
+            convert(FT, snow_free_albedo), convert(FT, snow_albedo - snow_free_albedo),
+            convert(FT, melting_temperature), convert(FT, temperature_range))
+    return nothing
+end
+
+# The lower boundary of the radiation: the mosaic of land, open ocean and sea ice on the exchange grid, at the
+# interface temperatures of this `update_state!`, interpolated to the panels. The fractions are those that
+# weight the net fluxes of the atmosphere, and the land's albedo and emissivity are those it absorbs with.
+function publish_radiative_surface!(radiation::YinYangGrayRadiation, coupled_model, regridder, latitude_longitude)
+    interfaces = coupled_model.interfaces
+    exchange_grid = interfaces.exchanger.grid
+    FT = eltype(exchange_grid)
+    optics = map(value -> convert(FT, value), radiation.surface_optics)
+
     launch!(architecture(exchange_grid), exchange_grid, :xy, _mosaic_radiative_surface!,
-            latitude_longitude, mosaic_sea_surface(coupled_model), radiation.surface_optics)
+            latitude_longitude,
+            mosaic_sea_surface(coupled_model),
+            mosaic_land_surface(interfaces.atmosphere_land_interface, coupled_model),
+            optics,
+            latitude_longitude.downwelling_shortwave,
+            exchange_grid,
+            coupled_model.clock)
 
     interpolate_to_yin_yang!(radiation.surface.temperature, regridder, latitude_longitude.surface_temperature)
     interpolate_to_yin_yang!(radiation.surface.emissivity, regridder, latitude_longitude.surface_emissivity)

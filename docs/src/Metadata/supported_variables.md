@@ -161,6 +161,7 @@ NumericalEarth currently ships connectors for the following data products:
 
 - `:sea_surface_temperature` - Sea surface temperature (K).
 - `:sea_ice_concentration` - Sea ice area fraction (0-1).
+- `:sea_area_fraction` - Fraction of each cell that is sea (0-1), a fixed field of the release (`sftof`).
 
 `PCMDIAMIPBoundaryConditions` holds the mid-month values to interpolate linearly in time, which
 overshoot the observed monthly means of `PCMDIAMIPObservations`: clip the sea ice concentration to

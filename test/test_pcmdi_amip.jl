@@ -74,3 +74,33 @@ for arch in test_architectures, dataset in (PCMDIAMIPBoundaryConditions(), PCMDI
         @test all(isapprox.(Array(interior(T)), 283.15 .+ φ ./ 10 .+ 1.5, rtol=1e-6))
     end
 end
+
+@testset "PCMDI-AMIP sea area fraction on $(typeof(arch))" for arch in test_architectures
+    sea_area_fraction = Metadatum(:sea_area_fraction; dataset=PCMDIAMIPBoundaryConditions(), dir)
+
+    @test dataset_variable_name(sea_area_fraction) == "sftof"
+    @test metadata_url(sea_area_fraction) == "https://esgf-node.ornl.gov/thredds/fileServer/user_pub_work/input4MIPs/CMIP7/CMIP/PCMDI/" *
+                                             "PCMDI-AMIP-1-1-10/ocean/fx/sftof/gn/v20250807/" *
+                                             "sftof_input4MIPs_SSTsAndSeaIce_CMIP_PCMDI-AMIP-1-1-10_gn.nc"
+
+    # A fixed field in percent, without a time dimension: sea in the western half, half sea along one meridian
+    longitude = 0.5:359.5
+    latitude = -89.5:89.5
+    percent = Float32[λ < 180 ? 100 : λ < 181 ? 50 : 0 for λ in longitude, φ in latitude]
+
+    NCDataset(metadata_path(sea_area_fraction), "c") do ds
+        defVar(ds, "lon", collect(longitude), ("lon",))
+        defVar(ds, "lat", collect(latitude), ("lat",))
+        defVar(ds, "sftof", percent, ("lon", "lat"))
+    end
+
+    grid = LatitudeLongitudeGrid(arch; size=(360, 180), longitude=(0, 360), latitude=(-90, 90),
+                                 topology=(Periodic, Bounded, Flat))
+    ocean_fraction = Field{Center, Center, Nothing}(grid)
+    set!(ocean_fraction, sea_area_fraction)
+    @test Array(interior(ocean_fraction))[:, :, 1] ≈ percent ./ 100
+
+    # The same field whatever the date
+    later = Metadatum(:sea_area_fraction; dataset=PCMDIAMIPBoundaryConditions(), date=DateTime(1990, 7, 1), dir)
+    @test metadata_path(later) == metadata_path(sea_area_fraction)
+end

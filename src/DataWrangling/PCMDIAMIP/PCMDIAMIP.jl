@@ -44,6 +44,9 @@ the input4MIPs PCMDI-AMIP product (`tosbcs`, `siconcbcs`): one value per month f
 global 1° grid. The keyword argument `release` selects a [`PCMDIAMIPRelease`](@ref); the default is
 PCMDI-AMIP 1.1.10, which ends in December 2022.
 
+`:sea_area_fraction` (`sftof`) is the fraction of each cell of that grid that is sea, the same at every
+date: the land-sea mask the two series were built with.
+
 The values are the mid-month nodes of [Taylor et al. (2000)](@cite taylor2000sea), constructed so that
 the monthly mean of the series interpolated linearly in time between them is the observed monthly
 mean of [`PCMDIAMIPObservations`](@ref). They are therefore not themselves observations and overshoot
@@ -75,11 +78,13 @@ const PCMDIAMIPMetadatum   = Metadatum{<:PCMDIAMIPDataset}
 const PCMDIAMIP_boundary_condition_variable_names = Dict(
     :sea_surface_temperature => "tosbcs",
     :sea_ice_concentration   => "siconcbcs",
+    :sea_area_fraction       => "sftof",
 )
 
 const PCMDIAMIP_observation_variable_names = Dict(
     :sea_surface_temperature => "tos",
     :sea_ice_concentration   => "siconc",
+    :sea_area_fraction       => "sftof",
 )
 
 DataWrangling.available_variables(::PCMDIAMIPBoundaryConditions) = PCMDIAMIP_boundary_condition_variable_names
@@ -110,9 +115,15 @@ function DataWrangling.conversion_units(metadatum::PCMDIAMIPMetadatum)
     end
 end
 
+# The sea area fraction of the grid (`sftof`) is a fixed field of the release: one record, whatever the date
+is_fixed_field(name) = name == :sea_area_fraction
+
 # One file per variable holds every month.
 function DataWrangling.metadata_filename(dataset::PCMDIAMIPDataset, name, date, region)
     release = dataset.release
+    is_fixed_field(name) &&
+        return string("sftof_input4MIPs_SSTsAndSeaIce_CMIP_PCMDI-AMIP-", release.source_version, "_gn.nc")
+
     return string(DataWrangling.available_variables(dataset)[name], "_input4MIPs_SSTsAndSeaIce_CMIP_PCMDI-AMIP-",
                   release.source_version, "_gn_187001-", Dates.format(release.last_date, "yyyymm"), ".nc")
 end
@@ -124,8 +135,9 @@ const PCMDIAMIP_url = "https://esgf-node.ornl.gov/thredds/fileServer/user_pub_wo
 
 function DataWrangling.metadata_url(metadata::PCMDIAMIPMetadata)
     release = metadata.dataset.release
-    realm = metadata.name == :sea_surface_temperature ? "ocean" : "seaIce"
-    return join((PCMDIAMIP_url, release.mip_era, "CMIP/PCMDI", "PCMDI-AMIP-" * release.source_version, realm, "mon",
+    realm = metadata.name == :sea_ice_concentration ? "seaIce" : "ocean"
+    frequency = is_fixed_field(metadata.name) ? "fx" : "mon"
+    return join((PCMDIAMIP_url, release.mip_era, "CMIP/PCMDI", "PCMDI-AMIP-" * release.source_version, realm, frequency,
                  dataset_variable_name(metadata), "gn", release.dataset_version, metadata.filename), "/")
 end
 
@@ -144,7 +156,8 @@ function DataWrangling.retrieve_data(metadatum::PCMDIAMIPMetadatum)
     record = 12 * (Dates.year(date) - 1870) + Dates.month(date)
 
     return Dataset(metadata_path(metadatum)) do ds
-        ds[dataset_variable_name(metadatum)][:, :, record]
+        variable = ds[dataset_variable_name(metadatum)]
+        is_fixed_field(metadatum.name) ? variable[:, :] : variable[:, :, record]
     end
 end
 
