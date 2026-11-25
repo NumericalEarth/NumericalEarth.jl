@@ -360,6 +360,9 @@ function default_ao_specific_humidity(ocean)
     return ImpureSaturationSpecificHumidity(phase, x_H₂O)
 end
 
+# `eltype` of an Oceananigans `Simulation` is `Any`; use the model's float type instead.
+default_ao_specific_humidity(ocean::Simulation) = default_ao_specific_humidity(ocean.model)
+
 """
 $(SIGNATURES)
 
