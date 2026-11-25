@@ -55,10 +55,8 @@ velocity, ``U² = Δu² + Δv² + Uᶜ² + Uᵐ²``:
   unresolved on coarse grids, e.g. [`mahrt_sun_subgrid_velocity`](@ref)`(Δx)`.
   Default `nothing` (no contribution).
 
-Either slot may be `nothing` or a `Number` [m/s]. The `convective` slot may also be a
-formulation implementing `vsgs²(correction, u★, b★, h_bℓ)` and, for a massless land skin,
-`similarity_friction_velocity`. The `mesoscale` slot may be a formulation implementing a
-`vsgs²` that does not depend on `u★` and `b★`.
+Either slot may be `nothing`, a `Number` [m/s], or a formulation implementing
+`vsgs²(correction, u★, b★, h_bℓ)`.
 """
 struct SubgridVelocityCorrection{C, M}
     convective :: C
@@ -91,10 +89,14 @@ end
 @inline vsgs²(sv::SubgridVelocityCorrection, u★, b★, h_bℓ) =
     vsgs²(sv.convective, u★, b★, h_bℓ) + vsgs²(sv.mesoscale, u★, b★, h_bℓ)
 
+const ClosedFormSubgridVelocity = Union{Nothing, Number, ConvectiveGustiness,
+                                        SubgridVelocityCorrection{<:Union{Nothing, Number, ConvectiveGustiness},
+                                                                  <:Union{Nothing, Number}}}
+
 # Friction velocity u★ = Ξu U of a surface layer whose stability parameter at the displaced height Δhᵈ
 # is ζ, given the resolved velocity difference ΔU. Its buoyancy flux Jᵇ = −ζ u★³ / (ϰ Δhᵈ) makes the
 # convective gustiness γ u★, γ = β (−ζ h_bℓ / ϰ Δhᵈ)^⅓, so U² = ΔU² + max(Uᴳ², γ² u★²) solves for u★
-# directly. Where Ξu γ ≥ 1 no stationary layer has stability ζ, and u★ diverges.
+# directly. Where Ξu γ ≥ 1 no stationary layer has stability ζ, and u★ is infinite.
 @inline similarity_friction_velocity(::Nothing, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ) = Ξu * ΔU
 @inline similarity_friction_velocity(v::Number, Ξu, ΔU, ζ, Δhᵈ, h_bℓ, ϰ) = Ξu * sqrt(ΔU^2 + v^2)
 
@@ -108,9 +110,9 @@ end
 
     floor_friction_velocity = Ξu * sqrt(ΔU^2 + Uᴳ^2)
     s = 1 - (Ξu * γ)^2
-    convective_friction_velocity = ifelse(s > 0, Ξu * ΔU / sqrt(max(s, eps(FT))), floor_friction_velocity / sqrt(eps(FT)))
+    convective_friction_velocity = ifelse(s > 0, Ξu * ΔU / sqrt(max(s, eps(FT))), convert(FT, Inf))
 
-    return ifelse(γ * floor_friction_velocity ≤ Uᴳ, floor_friction_velocity, convective_friction_velocity)
+    return ifelse(γ * floor_friction_velocity < Uᴳ, floor_friction_velocity, convective_friction_velocity)
 end
 
 """
@@ -159,8 +161,7 @@ Keyword Arguments
 - `von_karman_constant`: The von Karman constant. Default: 0.4.
 - `turbulent_prandtl_number`: The turbulent Prandtl number. Default: 1.
 - `subgrid_velocities`: Empirical subgrid velocity enhancement of the bulk velocity: `nothing`,
-                        a `Number` [m/s], a formulation implementing `vsgs²` (and
-                        `similarity_friction_velocity` for a massless land skin), or a
+                        a `Number` [m/s], a formulation implementing `vsgs²`, or a
                         [`SubgridVelocityCorrection`](@ref) composing several. Default:
                         [`ConvectiveGustiness`](@ref)`{FT}()`.
 - `stability_functions`: The stability functions. Default: `default_stability_functions(FT)` that follow the
