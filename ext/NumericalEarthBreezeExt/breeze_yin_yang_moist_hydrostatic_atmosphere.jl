@@ -55,7 +55,7 @@ using Oceananigans.Grids: Face, Center
 using Oceananigans.MultiRegion: YinYangGrid
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.TimeSteppers: update_state!, time_step!
-using Oceananigans.Utils: getregion
+using Oceananigans.Utils: getregion, @apply_regionally
 
 using Breeze.HydrostaticEquations: MoistHydrostaticModel, hydrostatic_water_fields, interface_pressure,
                                    layer_pressure_thickness, warm_rain_column_physics!,
@@ -87,8 +87,10 @@ Base.summary(exchange::MoistHydrostaticExchange) =
            ", column_physics_substeps = ", exchange.column_physics_substeps, ")")
 
 # Accumulated sources of each column, per unit area. Energies are enthalpies in Breeze's convention.
+# The totals are Float64 whatever the float type of the grid: over years of integration a total
+# grows until the spacing of Float32 is not small beside what one step adds to it.
 function surface_exchange_ledger(grid)
-    column() = Field{Center, Center, Nothing}(grid)
+    column() = Field{Center, Center, Nothing}(grid, Float64)
     return (evaporation = column(),             # kg m⁻²: vapor that entered through the ground
             refused_deposition = column(),      # kg m⁻²: deposition onto the surface beyond the vapor of the lowest layer
             sensible_heat = column(),           # J m⁻²
@@ -303,12 +305,12 @@ end
         ρθ[i, j, 1] = ρ[i, j, 1] * 𝓗⁺ / ((Δπ * cᵖᵈ + Wᵗ⁺ * cᵖᵛ) * Π⁺)
         ρqᵉ[i, j, 1] += evaporated / Δz
 
-        ledger.evaporation[i, j, 1] += evaporated
-        ledger.refused_deposition[i, j, 1] += evaporated - requested
-        ledger.sensible_heat[i, j, 1] += Δt * 𝒬ᵀ[i, j, 1]
-        ledger.vapor_enthalpy[i, j, 1] += evaporated * cᵖᵛ * T₁
-        ledger.surface_radiation[i, j, 1] += Δt * net_upward_radiation(i, j, 1, ℱ)
-        ledger.top_radiation[i, j, 1] += Δt * net_upward_radiation(i, j, Nz+1, ℱ)
+        ledger.evaporation[i, j, 1] += convert(eltype(ledger.evaporation), evaporated)
+        ledger.refused_deposition[i, j, 1] += convert(eltype(ledger.refused_deposition), evaporated - requested)
+        ledger.sensible_heat[i, j, 1] += convert(eltype(ledger.sensible_heat), Δt * 𝒬ᵀ[i, j, 1])
+        ledger.vapor_enthalpy[i, j, 1] += convert(eltype(ledger.vapor_enthalpy), evaporated * cᵖᵛ * T₁)
+        ledger.surface_radiation[i, j, 1] += convert(eltype(ledger.surface_radiation), Δt * net_upward_radiation(i, j, 1, ℱ))
+        ledger.top_radiation[i, j, 1] += convert(eltype(ledger.top_radiation), Δt * net_upward_radiation(i, j, Nz+1, ℱ))
     end
 end
 
@@ -719,8 +721,28 @@ Oceananigans.prognostic_state(exchange::MoistHydrostaticExchange) =
     Oceananigans.prognostic_state(exchange_restart_fields(exchange))
 
 function Oceananigans.restore_prognostic_state!(exchange::MoistHydrostaticExchange, from)
-    Oceananigans.restore_prognostic_state!(exchange_restart_fields(exchange), from)
+    restore_converted_fields!(exchange_restart_fields(exchange), from)
     return exchange
 end
+
+# Restore checkpointed fields, converting the saved data to the element type of each field:
+# checkpoints written before the ledger was Float64 hold it in the float type of the grid.
+function restore_converted_fields!(fields::NamedTuple, from)
+    for name in keys(fields)
+        restore_converted_field!(fields[name], from[name])
+    end
+    return fields
+end
+
+restore_converted_field!(field, ::Nothing) = nothing
+
+function restore_converted_field!(field, from)
+    FT = eltype(field)
+    @apply_regionally data = data_with_eltype(FT, from.data)
+    Oceananigans.restore_prognostic_state!(field, merge(from, (; data)))
+    return nothing
+end
+
+data_with_eltype(FT, data::AbstractArray) = FT.(data) # on the device that holds `data`
 
 Oceananigans.restore_prognostic_state!(exchange::MoistHydrostaticExchange, ::Nothing) = exchange

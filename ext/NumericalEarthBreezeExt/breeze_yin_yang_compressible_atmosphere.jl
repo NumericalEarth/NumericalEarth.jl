@@ -105,11 +105,11 @@ end
         evaporated = max(requested, -vapor)
         ρqᵉ[i, j, 1] += evaporated / Δz
 
-        ledger.evaporation[i, j, 1] += evaporated
-        ledger.refused_deposition[i, j, 1] += evaporated - requested
-        ledger.sensible_heat[i, j, 1] += Δt * 𝒬ᵀ[i, j, 1]
-        ledger.surface_radiation[i, j, 1] += Δt * net_upward_radiation(i, j, 1, ℱ)
-        ledger.top_radiation[i, j, 1] += Δt * net_upward_radiation(i, j, Nz+1, ℱ)
+        ledger.evaporation[i, j, 1] += convert(eltype(ledger.evaporation), evaporated)
+        ledger.refused_deposition[i, j, 1] += convert(eltype(ledger.refused_deposition), evaporated - requested)
+        ledger.sensible_heat[i, j, 1] += convert(eltype(ledger.sensible_heat), Δt * 𝒬ᵀ[i, j, 1])
+        ledger.surface_radiation[i, j, 1] += convert(eltype(ledger.surface_radiation), Δt * net_upward_radiation(i, j, 1, ℱ))
+        ledger.top_radiation[i, j, 1] += convert(eltype(ledger.top_radiation), Δt * net_upward_radiation(i, j, Nz+1, ℱ))
     end
 end
 
@@ -236,7 +236,7 @@ Oceananigans.prognostic_state(exchange::CompressibleExchange) =
     Oceananigans.prognostic_state(exchange_restart_fields(exchange))
 
 function Oceananigans.restore_prognostic_state!(exchange::CompressibleExchange, from)
-    Oceananigans.restore_prognostic_state!(exchange_restart_fields(exchange), from)
+    restore_converted_fields!(exchange_restart_fields(exchange), from)
     return exchange
 end
 

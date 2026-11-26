@@ -48,11 +48,11 @@ surface_vapor_field(grid) = get!(() -> Field{Center, Center, Nothing}(grid), sur
         evaporated = max(requested, -vapor)
         evaporation[i, j, 1] = evaporated
 
-        ledger.evaporation[i, j, 1] += evaporated
-        ledger.refused_deposition[i, j, 1] += evaporated - requested
-        ledger.sensible_heat[i, j, 1] += Δt * 𝒬ᵀ[i, j, 1]
-        ledger.surface_radiation[i, j, 1] += Δt * net_upward_radiation(i, j, 1, ℱ)
-        ledger.top_radiation[i, j, 1] += Δt * net_upward_radiation(i, j, Nz+1, ℱ)
+        ledger.evaporation[i, j, 1] += convert(eltype(ledger.evaporation), evaporated)
+        ledger.refused_deposition[i, j, 1] += convert(eltype(ledger.refused_deposition), evaporated - requested)
+        ledger.sensible_heat[i, j, 1] += convert(eltype(ledger.sensible_heat), Δt * 𝒬ᵀ[i, j, 1])
+        ledger.surface_radiation[i, j, 1] += convert(eltype(ledger.surface_radiation), Δt * net_upward_radiation(i, j, 1, ℱ))
+        ledger.top_radiation[i, j, 1] += convert(eltype(ledger.top_radiation), Δt * net_upward_radiation(i, j, Nz+1, ℱ))
     end
 end
 
