@@ -256,8 +256,8 @@ end
 
 # Whether `side` of a grid with topology `T` in its direction is a wall of the whole domain: a `Closed` or `Open`
 # side, not one `Connected` to another rank of a distributed grid.
-on_domain_boundary(::Type{TwoSided{L, R}}, side) where {L, R} = wall_side(ifelse(side ∈ (:west, :south), L, R))
-on_domain_boundary(T, side) = false
+domain_wall(::Type{TwoSided{L, R}}, side) where {L, R} = wall_side(ifelse(side ∈ (:west, :south), L, R))
+domain_wall(T, side) = false
 
 wall_side(::Type{<:Union{Closed, Open}}) = true
 wall_side(S) = false
@@ -271,7 +271,7 @@ sides of the local rank that lie on the edge of the global domain.
 function domain_boundary_sides(grid, sides)
     TX, TY, _ = topology(grid)
     side_topology(side) = boundary_dimension(side) == 1 ? TX : TY
-    return Tuple(side for side in sides if on_domain_boundary(side_topology(side), side))
+    return Tuple(side for side in sides if domain_wall(side_topology(side), side))
 end
 
 @kernel function _compute_wet_surface_cells!(wet, grid, Nz)
