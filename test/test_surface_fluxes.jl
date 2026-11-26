@@ -25,7 +25,8 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               compute_interface_humidity,
                                                               saturation_specific_humidity,
                                                               ImpureSaturationSpecificHumidity,
-                                                              GillSaturationEnhancement
+                                                              GillSaturationEnhancement,
+                                                              default_ao_specific_humidity
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Statistics: mean, std
 using Thermodynamics
@@ -455,4 +456,22 @@ end
 
     @test surface_specific_humidity(unenhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(pᵛ⁺)
     @test surface_specific_humidity(enhanced, ℂ, pᵃᵗ, Tⁱⁿ, Sₛ) ≈ qᵛ⁺(fᵛ * pᵛ⁺)
+end
+
+@testset "Default ocean specific humidity uses the grid float type" begin
+    for FT in (Float32, Float64)
+        grid = RectilinearGrid(CPU(), FT;
+                               size = (2, 2, 2),
+                             extent = (1, 1, 1),
+                           topology = (Periodic, Periodic, Bounded))
+
+        ocean = ocean_simulation(grid; momentum_advection = nothing,
+                                         tracer_advection = nothing,
+                                                 coriolis = nothing,
+                                                  closure = nothing,
+                                  bottom_drag_coefficient = 0)
+
+        @test default_ao_specific_humidity(ocean).water_mole_fraction isa FT
+        @test default_ao_specific_humidity(ocean.model).water_mole_fraction isa FT
+    end
 end
