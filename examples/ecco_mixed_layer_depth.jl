@@ -6,7 +6,6 @@ using Printf
 using Dates
 
 using SeawaterPolynomials: TEOS10EquationOfState
-using Oceananigans.Models: buoyancy_operation
 
 arch = CPU()
 Nx = 360
@@ -37,14 +36,10 @@ ht = FieldTimeSeries{Center, Center, Nothing}(grid, Tt.times)
 
 equation_of_state = TEOS10EquationOfState()
 sb = SeawaterBuoyancy(; equation_of_state)
-tracers = (T=Tt[1], S=St[1])
-h = MixedLayerDepthField(sb, grid, tracers)
 
 Nt = length(ht)
 for n = 1:Nt-1
-    local tracers
-    tracers = (T=Tt[n], S=St[n])
-    h.operand.buoyancy_perturbation = buoyancy_operation(sb, grid, tracers)
+    h = MixedLayerDepthField(sb, grid, (T=Tt[n], S=St[n]))
     @show n
     @time compute!(h)
     parent(ht[n]) .= parent(h)
