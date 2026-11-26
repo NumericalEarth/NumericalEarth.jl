@@ -92,9 +92,13 @@ to integrate to it.
 
 ## Inverse barometer
 
-With `inverse_barometer = true`, the Flather exterior sea level also includes the child's
-inverse-barometer response to the atmospheric pressure it is forced with. This is for a parent whose
-sea level has no such response.
+Ocean reanalyses such as GLORYS have no inverse-barometer response in their sea level, while a child
+forced with atmospheric pressure does. The Flather exterior sea level therefore adds the child's own
+inverse-barometer response to the parent's, so the pressure-driven sea level isn't read as a jump at the
+boundary. Whether a dataset's sea level already has the response comes from
+`sea_level_includes_inverse_barometer(dataset)`, which is `false` by default. For a parent that does
+have it, such as the output of an outer nest forced with pressure, pass
+`parent_includes_inverse_barometer = true`. Without atmospheric pressure the added sea level is zero.
 
 ## Sea ice
 

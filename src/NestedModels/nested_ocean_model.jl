@@ -14,7 +14,7 @@ using Oceananigans.ImmersedBoundaries: has_active_cells_map, has_active_z_column
 using ..Bathymetry: regrid_bathymetry
 using ..Oceans: hydrostatic_ocean_model, merge_boundary_conditions, estimate_maximum_Δt
 using ..DataWrangling: BoundingBox, Metadatum, default_download_directory, default_horizontal_padding,
-                       matching_bathymetry
+                       matching_bathymetry, sea_level_includes_inverse_barometer
 
 default_velocity_scheme() = ObliqueRadiation(inflow_timescale = 9hours, outflow_timescale = 360days)
 default_tracer_scheme() = TracerReservoir(inflow_length_scale = 20kilometers, outflow_length_scale = 0)
@@ -129,9 +129,10 @@ On a curvilinear `grid`, the parent's eastward and northward velocities are rota
 When the parent's seafloor `parent_bottom_height` (a bottom height `Field`) is known, the Flather exterior transport is
 the parent's depth-mean velocity over its own column times the child's wet depth, the boundary-normal velocity is
 corrected to integrate to it, and the child's bottom is blended toward the parent's within `bathymetry_blend_width`
-cells of each open side (default: 1/3°), but no shallower than `minimum_depth`. With `inverse_barometer = true`, the
-Flather exterior sea level also includes the child's inverse-barometer response to the atmospheric pressure it is
-forced with, for a parent without one, such as an ocean reanalysis.
+cells of each open side (default: 1/3°), but no shallower than `minimum_depth`. Unless
+`parent_includes_inverse_barometer = true`, the parent's sea level is taken to lack the inverse-barometer response to the
+atmospheric pressure, as in an ocean reanalysis, and the Flather exterior sea level adds the child's own response to the
+pressure it is forced with (zero when the child has no atmospheric pressure).
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child starts from
 `initial_state` (default: the parent, unless the parent knows only the boundaries) interpolated onto `grid`, and
@@ -149,7 +150,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
-                            inverse_barometer = false,
+                            parent_includes_inverse_barometer = false,
                             initial_state = default_initial_state(parent),
                             clock = Clock{Float64}(time = parent.clock.time, kernel_time_type = eltype(grid)),
                             boundary_conditions = NamedTuple(),
@@ -170,7 +171,7 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     validate_band_width(grid, open_sides, width, "relaxation_width")
     exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
 
-    inverse_barometer_sea_level = inverse_barometer ? Field{Center, Center, Nothing}(grid) : nothing
+    inverse_barometer_sea_level = parent_includes_inverse_barometer ? nothing : Field{Center, Center, Nothing}(grid)
 
     nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
                                                 inverse_barometer = inverse_barometer_sea_level,
@@ -200,8 +201,9 @@ Build a regional ocean on `grid` nested one-way in `parent_dataset` (e.g. `GLORY
 grid, on strips `relaxation_width` cells wide along the open sides padded by `parent_padding` degrees (default: the
 dataset's `default_horizontal_padding`), streaming `parent_time_indices_in_memory` samples at a time. The child starts
 from a snapshot of `parent_dataset` at `first(dates)`, and its bathymetry blends toward the dataset's own seafloor or,
-for a dataset without one, the seafloor its temperature marks with missing values. The remaining keyword arguments
-`kw` go to `nested_ocean_model(parent, grid; kw...)`.
+for a dataset without one, the seafloor its temperature marks with missing values. Whether the parent's sea level
+includes the inverse-barometer response comes from `sea_level_includes_inverse_barometer(parent_dataset)`. The remaining
+keyword arguments `kw` go to `nested_ocean_model(parent, grid; kw...)`.
 """
 function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
                             dir = default_download_directory(parent_dataset),
@@ -211,6 +213,7 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
                             bathymetry_blend_width = cells_spanning(grid, default_bathymetry_blend_degrees),
                             parent_bottom_height = nothing,
                             open_sides = open_boundary_sides(grid),
+                            parent_includes_inverse_barometer = sea_level_includes_inverse_barometer(parent_dataset),
                             kw...)
 
     validate_nested_ocean_grid(grid)
@@ -232,7 +235,7 @@ function nested_ocean_model(grid::AbstractGrid, parent_dataset; dates,
     snapshot = PrescribedOcean(region, [first(dates)], parent_dataset; architecture = architecture(grid), dir)
 
     return nested_ocean_model(parent, grid; open_sides, relaxation_width, bathymetry_blend_width,
-                              parent_bottom_height, initial_state = snapshot, kw...)
+                              parent_bottom_height, parent_includes_inverse_barometer, initial_state = snapshot, kw...)
 end
 
 """

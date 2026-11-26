@@ -56,7 +56,8 @@ function InverseBarometer(child, sea_level)
     potential = forcing_barotropic_potential(child)
 
     isnothing(potential) &&
-        throw(ArgumentError("inverse_barometer = true requires a child ocean forced by the atmospheric pressure."))
+        throw(ArgumentError("the inverse-barometer sea level needs a child with an atmospheric pressure potential; " *
+                            "pass `parent_includes_inverse_barometer = true` to leave it out."))
 
     area = Field{Center, Center, Nothing}(grid)
     launch!(architecture(grid), grid, :xy, _compute_wet_surface_area!, area, grid, size(grid, 3))

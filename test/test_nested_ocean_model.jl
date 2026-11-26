@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Bathymetry: bottom_height_from_mask
-using NumericalEarth.DataWrangling: bracketing_dates
+using NumericalEarth.DataWrangling: bracketing_dates, sea_level_includes_inverse_barometer
 using NumericalEarth.NestedModels: open_boundary_sides, parent_ocean_sources, relaxation_masks, sample_parent!,
                                    BoundaryTimeSeries, BarotropicBoundaryTransport, ConsistentBoundaryVelocity,
                                    OceanBoundaryExchanger
@@ -405,9 +405,7 @@ end
 
 @testset "Flather adds the child's inverse-barometer sea level to the parent's on $(arch)" for arch in test_architectures
     η₀ = 0.2
-    @test nested_ocean_model(nesting_test_parent(arch; η = η₀), nesting_test_child_grid(arch)).child_callbacks === ()
-
-    model = nested_ocean_model(nesting_test_parent(arch; η = η₀), nesting_test_child_grid(arch); inverse_barometer = true)
+    model = nested_ocean_model(nesting_test_parent(arch; η = η₀), nesting_test_child_grid(arch))
     child = model.child
     grid = child.grid
     Nx, Ny, Nz = size(grid)
@@ -453,6 +451,38 @@ end
     parent(forcing_barotropic_potential(child)) .*= 2
     update_state!(model)
     @test Array(interior(child.free_surface.displacement, :, :, 1)) == η_stepped
+end
+
+@testset "The inverse-barometer sea level follows the parent dataset and the child's pressure on $(arch)" for arch in test_architectures
+    @test !sea_level_includes_inverse_barometer(GLORYSDaily())
+
+    η₀ = 0.2
+
+    for parent_includes_inverse_barometer in (false, true), pressure in (false, true)
+        model = nested_ocean_model(nesting_test_parent(arch; η = η₀), nesting_test_child_grid(arch);
+                                   parent_includes_inverse_barometer)
+        child = model.child
+        grid = child.grid
+        _, Ny, Nz = size(grid)
+
+        pᵃ = Field{Center, Center, Nothing}(grid)
+        pressure && set!(pᵃ, (λ, φ) -> 10 * (φ - 29))
+        parent(forcing_barotropic_potential(child)) .= parent(pᵃ)
+        update_state!(model)
+
+        cpu_grid = on_architecture(CPU(), grid)
+        g = child.free_surface.gravitational_acceleration
+        p = Array(interior(pᵃ, 1, :, 1))
+        Az = [Azᶜᶜᶜ(1, j, Nz, cpu_grid) for j in 1:Ny]
+        ηᴵᴮ = (sum(p .* Az) / sum(Az) .- p) ./ g
+        expected = parent_includes_inverse_barometer ? fill(η₀, Ny) : η₀ .+ ηᴵᴮ
+
+        west = on_architecture(CPU(), child.free_surface.barotropic_velocities.U.boundary_conditions.west.condition)
+        η_west = [getbc(west, j, 1, cpu_grid, (; time = 0.0))[2] for j in 1:Ny]
+
+        @test length(model.child_callbacks) == !parent_includes_inverse_barometer
+        @test η_west ≈ expected
+    end
 end
 
 @testset "The atmosphere's surface pressure reaches a nested ocean's child on $(arch)" for arch in test_architectures

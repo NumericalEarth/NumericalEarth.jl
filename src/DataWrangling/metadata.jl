@@ -890,6 +890,14 @@ from `dataset`, providing margin for interpolation stencils at the boundary.
 function default_horizontal_padding end
 
 """
+    sea_level_includes_inverse_barometer(dataset)
+
+Return `true` when the sea level of `dataset` already includes the inverse-barometer response to the atmospheric
+pressure, and `false` (the default) when it does not, as for an ocean reanalysis such as GLORYS.
+"""
+sea_level_includes_inverse_barometer(dataset) = false
+
+"""
     matching_single_level_dataset(dataset)
 
 Return the single-level (surface) dataset sharing `dataset`'s product family and temporal
