@@ -1,20 +1,7 @@
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 """
-    nonhydrostatic_ocean_simulation(grid;
-                                    clock = Clock(grid),
-                                    stop_time = default_stop_time(grid, clock),
-                                    Δt = 1,
-                                    closure = nothing,
-                                    tracers = (:T, :S),
-                                    coriolis = nothing,
-                                    reference_density = 1020,
-                                    gravitational_acceleration = default_gravitational_acceleration,
-                                    equation_of_state = TEOS10EquationOfState(; reference_density),
-                                    advection = WENO(order=9),
-                                    forcing = NamedTuple(),
-                                    boundary_conditions::NamedTuple = NamedTuple(),
-                                    verbose = false)
+$(SIGNATURES)
 
 Construct and return a nonhydrostatic ocean simulation suitable for Large Eddy
 Simulation (LES). Called by `ocean_simulation(grid; model=:nonhydrostatic, ...)`.
@@ -25,10 +12,10 @@ timestepping is needed.
 
 ## Keyword Arguments
 
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`.
   Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
-  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since
   Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to `1` second.
 - `closure`: Turbulence closure. Defaults to `nothing` (implicit LES via WENO advection scheme).

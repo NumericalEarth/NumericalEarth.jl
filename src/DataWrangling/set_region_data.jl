@@ -16,15 +16,21 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives Float32 to Float64 promotion noise so the slice doesn't lose a
-# cell at each end when grid centers are compared against file centers.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
-    ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
-    i₁ = max(searchsortedfirst(hc, h₁ - ε),  1)
-    i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
+    i₁ = max(searchsortedfirst(hc, h₁ - bounding_index_tolerance(hc, h₁)),  1)
+    i₂ = min(searchsortedlast(hc, h₂ + bounding_index_tolerance(hc, h₂)), Nh)
     return i₁, i₂
+end
+
+# A quarter of the local spacing: above a Float32 node's accumulated rounding, below the half
+# spacing that decides which cell a coordinate belongs to.
+function bounding_index_tolerance(hc, h)
+    float_noise = eps(Float32) * max(one(eltype(hc)), abs(h))
+    length(hc) < 2 && return float_noise
+    i = clamp(searchsortedfirst(hc, h), 2, length(hc))
+    return max(float_noise, abs(hc[i] - hc[i-1]) / 4)
 end
 
 # Periodic only when the restricted span equals the full native span.
@@ -94,19 +100,30 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`, in double precision
+    # so the modulo against 360 does not run in Float32.
     if !isempty(λc)
-        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
-        λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
+        λmin = convert_to_λ₀_λ₀_plus360(Float64(λmin), Float64(λc[1]))
+        λmax = convert_to_λ₀_λ₀_plus360(Float64(λmax), Float64(λc[1]))
     end
 
     i₁, _ = compute_bounding_indices((λmin, λmax), λc)
     j₁, _ = compute_bounding_indices((φmin, φmax), φc)
 
     Nx, Ny, _ = size(target)
+    validate_region_coverage(length(λc), Nx, length(φc), Ny)
+
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
     return BoundingBoxOffset(di, dj)
+end
+
+function validate_region_coverage(Nλ, Nx, Nφ, Ny)
+    Nλ < Nx && throw(ArgumentError("The data file has $Nλ longitudes but the target region needs $Nx. " *
+                                   "The file was probably downloaded for a different or truncated region; delete it to download it again."))
+    Nφ < Ny - 1 && throw(ArgumentError("The data file has $Nφ latitudes but the target region needs $Ny. " *
+                                       "The file was probably downloaded for a different or truncated region; delete it to download it again."))
+    return nothing
 end
 
 function region_info(col::Column, target, λc, φc)
@@ -197,20 +214,14 @@ end
 # Fallback dispatch that assumes missing_val = missing
 blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, missing, FT)
 
-@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, FT)
+# `::Type{FT}` forces specialization on the element type; a bare `FT` argument is not specialized on and
+# dispatches dynamically for every element in CPU kernels.
+@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, ::Type{FT}) where {FT}
     i, j, k = @index(Global, NTuple)
     d = read_data(data, i, j, k, region, mangling, missing_val, FT)
     d = convert_units(d, conversion)
     @inbounds dst[i, j, k] = d
 end
-
-# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
-# `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
-# 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
-# reaches GPU kernels as CPU memory (kernel compilation failure).
-architecture_ready(arch, data) = on_architecture(arch, data)
-architecture_ready(arch, data::Base.ReshapedArray) =
-    reshape(on_architecture(arch, parent(data)), size(data))
 
 """
     set_region_data!(target, data, λc, φc, metadata)
@@ -227,7 +238,7 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
     FT          = eltype(target)
     grid        = target.grid
     arch        = architecture(grid)
-    data        = architecture_ready(arch, data)
+    data        = on_architecture(arch, data)
     missing_val = missing_value(metadata)
     # With `parameters`, a windowed field is then filled over its own indices.
     launch!(arch, grid, parameters, _set_region_kernel!, target, data, region, mangling, conversion, missing_val, FT)
@@ -243,7 +254,7 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     grid        = target.grid
     arch        = architecture(grid)
     FT          = eltype(target)
-    data        = architecture_ready(arch, data)
+    data        = on_architecture(arch, data)
     missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)

@@ -1,4 +1,5 @@
-using NumericalEarth.DataWrangling: metadata_path, download_with_retries
+using NCDatasets: NCDataset
+using NumericalEarth.DataWrangling: all_dates, metadata_path, download_with_retries
 
 const ARTIFACTS_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/data-v1/"
 const TEST_FIXTURES_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/test-fixtures-v1/"
@@ -29,6 +30,13 @@ function download_test_fixtures()
     end
 
     return true
+end
+
+# The repeat-year dates of `name` that its downloaded file holds: all of 1990, or the first days for a cropped fixture
+function fixture_dates(name)
+    dataset = NumericalEarth.JRA55.RepeatYearJRA55()
+    path = metadata_path(Metadatum(name; dataset))
+    return all_dates(dataset, name)[1:NCDataset(ds -> ds.dim["time"], path)]
 end
 
 function emit_ci_warning(title, message)

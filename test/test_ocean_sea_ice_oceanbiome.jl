@@ -20,8 +20,8 @@ using OceanBioME
         surface_PAR = PARFromShortwave(grid)
 
         biogeochemistry = ImplicitBiology(grid;
-                                          light_attenuation = PrescribedAttenuationPAR(grid, surface_PAR), 
-                                          oxygen = Oxygen(), 
+                                          light_attenuation = PrescribedAttenuationPAR(grid, surface_PAR),
+                                          oxygen = Oxygen(),
                                           inorganic_carbon=CarbonateSystem())
 
         @info "Testing timestepping on $arch"

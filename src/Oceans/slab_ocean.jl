@@ -12,12 +12,7 @@ struct SlabOcean{FT, G, Clk, T, F, H, ρ, C}
 end
 
 """
-    SlabOcean(grid;
-              FT = eltype(grid),
-              depth = 50,
-              density = 1025,
-              heat_capacity = 4000,
-              clock = Clock{FT}(time=0))
+$(SIGNATURES)
 
 A slab ocean component for `EarthSystemModel`. Represents the ocean as a single
 well-mixed layer of fixed depth, with temperature evolving in response to
@@ -127,7 +122,6 @@ end
 
 # No interpolation needed: the slab ocean IS on the exchange grid
 EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
-EarthSystemModels.InterfaceComputations.biogeochemical_interface(exchanger, ocean::SlabOcean; kwargs...) = NamedTuple()
 
 # Assemble net ocean fluxes from interface computations
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =

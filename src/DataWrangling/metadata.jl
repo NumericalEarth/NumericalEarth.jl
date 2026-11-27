@@ -17,30 +17,46 @@ Base.summary(bbox::BoundingBox) = string("BoundingBox(",
                                          latitude_summary(bbox.latitude), ")")
 
 """
-    BoundingBox(; longitude=nothing, latitude=nothing, z=nothing)
+$(SIGNATURES)
 
 Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere.
+A non-`nothing` `z = (z_bottom, z_top)` restricts both the download (for backends
+that support it, e.g. CopernicusMarine/GLORYS) and the vertical extent of the
+native grid built by [`native_grid`](@ref).
 """
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
 """
-    BoundingBox(grid; padding = 0)
+$(SIGNATURES)
 
 Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees). For a distributed grid the box spans the *global* domain,
-identically on every rank.
+side by `padding` (degrees), a number or a `(longitude, latitude)` pair. For a
+distributed grid the box spans the *global* domain, identically on every rank.
 """
 function BoundingBox(grid::AbstractGrid; padding = 0)
     # Domain endpoints, not node extrema: distributed grids window their node arrays
     # differently. Rank-local domains reduce to the global extent (`all_reduce` is the
     # identity on serial architectures).
+    δλ, δφ = axis_padding(padding)
     arch = architecture(grid)
     λ₁, λ₂ = x_domain(grid)
     φ₁, φ₂ = y_domain(grid)
-    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - padding, all_reduce(max, λ₂, arch) + padding),
-                       latitude  = (all_reduce(min, φ₁, arch) - padding, all_reduce(max, φ₂, arch) + padding))
+    return BoundingBox(longitude = (all_reduce(min, λ₁, arch) - δλ, all_reduce(max, λ₂, arch) + δλ),
+                       latitude  = (all_reduce(min, φ₁, arch) - δφ, all_reduce(max, φ₂, arch) + δφ))
 end
+
+function BoundingBox(grid::OrthogonalSphericalShellGrid; padding = 0)
+    δλ, δφ = axis_padding(padding)
+    Nx, Ny, _ = size(grid)
+    λ = grid.λᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    φ = grid.φᶠᶠᵃ[1:Nx+1, 1:Ny+1]
+    return BoundingBox(longitude = (minimum(λ) - δλ, maximum(λ) + δλ),
+                       latitude  = (minimum(φ) - δφ, maximum(φ) + δφ))
+end
+
+axis_padding(padding::Number) = (padding, padding)
+axis_padding(padding::Tuple{Any, Any}) = padding
 
 """
     bounding_box_intersects(bounds, bbox::BoundingBox)
@@ -93,8 +109,9 @@ When used as a `Metadata` region, `native_grid` returns a single-column
 Keyword Arguments
 =================
 
-- `z`: depth range tuple `(z_bottom, z_top)` for restricting downloads
-  (used by CopernicusMarine/GLORYS). Default: `nothing` (full depth).
+- `z`: depth range tuple `(z_bottom, z_top)` that restricts both the download
+  (used by CopernicusMarine/GLORYS) and the vertical extent of the native grid.
+  Default: `nothing` (full depth).
 - `interpolation`: method for extracting data from the surrounding grid
   cells. `Linear()` (default) bilinearly interpolates to the exact point;
   `Nearest()` selects the closest grid cell.
@@ -146,14 +163,7 @@ longitude_interfaces(md::Metadata) = longitude_interfaces(md.dataset)
 latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
 
 """
-    Metadata(variable_name;
-             dataset,
-             dates = all_dates(dataset, variable_name),
-             dir = default_download_directory(dataset),
-             region = default_region(dataset),
-             filename = nothing,
-             start_date = nothing,
-             end_date = nothing)
+$(SIGNATURES)
 
 Metadata holding a specific dataset information.
 
@@ -260,12 +270,7 @@ function Base.size(metadata::Metadata)
 end
 
 """
-    Metadatum(variable_name;
-              dataset,
-              region = default_region(dataset),
-              date = first_date(dataset, variable_name),
-              filename = nothing,
-              dir = default_download_directory(dataset))
+$(SIGNATURES)
 
 A specialized constructor for a [`Metadata`](@ref) object with a single date, representative of a snapshot in time.
 """
@@ -391,15 +396,7 @@ struct MetadataSet{V, D, R, N, F}
 end
 
 """
-    MetadataSet(variable_names::Symbol...;
-                dataset,
-                dates = all_dates(dataset, first(variable_names)),
-                date = nothing,
-                dir = default_download_directory(dataset),
-                region = default_region(dataset),
-                filenames = nothing,
-                start_date = nothing,
-                end_date = nothing)
+$(SIGNATURES)
 
 A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
 `region`, and `dir` — differing only in variable name.
@@ -609,7 +606,7 @@ function Fields.set!(fields::NamedTuple, mset::MetadataSet)
 end
 
 """
-    set!(model, mset::MetadataSet, names=keys(variable_glossary))
+$(SIGNATURES)
 
 Route variables from `mset` to `set!(model; kwargs...)`, translating verbose
 dataset names to short model field-names via [`variable_glossary`](@ref).
@@ -694,7 +691,7 @@ function Downloads.download(mset::MetadataSet; kwargs...)
 end
 
 """
-    native_times(metadata; start_time=first(metadata).dates)
+$(SIGNATURES)
 
 Extract the time values from the given `metadata`, calculate the time difference
 from the `start_time`, and return an array of time differences in seconds.
@@ -793,6 +790,62 @@ function uncovered_time_gaps(metadata)
     tail = comparable_datetime(last(averaging_window(last_metadatum))) - window_center(last_metadatum)
 
     return Dates.value(Dates.Millisecond(head)) / 1000, Dates.value(Dates.Millisecond(tail)) / 1000
+end
+
+"""
+    $(TYPEDSIGNATURES)
+
+Whether `dataset`'s whole record is one period of the seasonal cycle, so that `Cyclical`
+wrapping across its ends continues the cycle rather than splicing two unrelated dates.
+`false` by default; climatology datasets extend this.
+"""
+is_seasonal_climatology(dataset) = false
+
+"""
+    $(TYPEDSIGNATURES)
+
+Whether `metadata` covers every period of a seasonal climatology, in which case the half
+window `Cyclical` fills beyond each end node comes from the adjacent phase of the same
+cycle, and wrapping is exact.
+"""
+spans_whole_cycle(metadata) =
+    is_seasonal_climatology(metadata.dataset) &&
+    metadata.dates == all_dates(metadata.dataset, metadata.name)
+
+"""
+    $(TYPEDSIGNATURES)
+
+The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
+[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. They are the
+[`averaging_window`](@ref) edges, so they do not depend on where in its window a product
+places its stamp. Throws for a product of values at an instant, and for dates that skip
+the cadence.
+"""
+function window_bounds(metadata::Metadata)
+    Nt = length(metadata)
+    bounds = Vector{DateTime}(undef, Nt + 1)
+    previous_stop = nothing
+
+    for (n, metadatum) in enumerate(metadata)
+        window_start, window_stop = averaging_window(metadatum)
+        start = comparable_datetime(window_start)
+        stop = comparable_datetime(window_stop)
+
+        start < stop ||
+            throw(ArgumentError("window_bounds needs samples that span time, but " *
+                                "$(metadata.dataset) reports instantaneous samples."))
+
+        isnothing(previous_stop) || previous_stop == start ||
+            throw(ArgumentError("window_bounds needs samples that tile time, but the " *
+                                "$(metadata.dataset) sample ending $previous_stop is " *
+                                "followed by one starting $start."))
+
+        bounds[n] = start
+        previous_stop = stop
+    end
+
+    bounds[Nt + 1] = previous_stop
+    return bounds
 end
 
 ####
@@ -972,6 +1025,7 @@ Compute the range of `native_dates` that fall within the specified `start_date` 
 """
 comparable_datetime(date::Dates.AbstractDateTime) = DateTime(date)
 comparable_datetime(date::AbstractCFDateTime) = DateTime(date)
+comparable_datetime(date::Date) = DateTime(date)
 
 function compute_native_date_range(native_dates, start_date, end_date)
     start_datetime = comparable_datetime(start_date)

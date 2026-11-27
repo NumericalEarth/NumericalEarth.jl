@@ -25,21 +25,31 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Snap so the native cell *centers* bracket the bbox: include the cell whose
-# center is at or below the lower edge and the one whose center is at or above the
-# upper edge. This keeps the bbox inside the center hull so it stays interpolatable
-# at its edges (downscaling clamps outside the hull). Pads by 0 or 1 cell depending
-# on where the edge falls within a native cell (an edge in a cell's first half — or
-# exactly on a face — needs the extra cell; an edge past the center does not).
-function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+"""
+    native_cell_range(bounds, interfaces, N)
+
+The 1-based range of native cells covered by `bounds` on an axis spanning `interfaces` in
+`N` cells: the cells whose centers bracket `bounds`, including the cell whose center is at
+or below the lower edge and the one at or above the upper edge, so `bounds` stays inside
+the center hull and interpolatable at its edges.
+"""
+function native_cell_range(bounds, interfaces, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = clamp(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0, N)
-    i⁺ = clamp(ceil( Int, (bbox_interfaces[2] - left) / Δ + 1/2), 0, N)
+    i⁻ = clamp(floor(Int, (bounds[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bounds[2] - left) / Δ + 1/2), 0, N)
     if i⁺ ≤ i⁻
         i⁺ = min(i⁻ + 1, N)
         i⁻ = max(i⁺ - 1, 0)
     end
+    return (i⁻ + 1):i⁺
+end
+
+function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    cells = native_cell_range(bbox_interfaces, interfaces, N)
+    i⁻, i⁺ = first(cells) - 1, last(cells)
     return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
 end
 
@@ -84,7 +94,7 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
-    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+$(SIGNATURES)
 
 Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
 lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
@@ -104,7 +114,7 @@ function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 end
 
 """
-    native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
+$(SIGNATURES)
 
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
@@ -116,6 +126,13 @@ inpaints the whole dataset and then regrids onto its own subdomain.
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
     construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
 
+# A z-restricted download (`BoundingBox`/`Column` with `z`) yields a file with
+# fewer levels than the dataset's full water column. When `z_interfaces` returns
+# an explicit interface vector (read from that file), the vertical size is set by
+# the vector, not by the dataset's hard-coded full-column `Nz`.
+vertical_size(z::AbstractVector, Nz) = length(z) - 1
+vertical_size(z, Nz) = Nz
+
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)
     FT = eltype(metadata)
@@ -125,6 +142,7 @@ function construct_native_grid(metadata, ::Nothing, arch; halo)
 
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                      halo, longitude, latitude, z = z)
     else
@@ -159,6 +177,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
 
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                      halo, longitude, latitude, z = z,
                                      topology = (TX, Bounded, Bounded))
@@ -178,6 +197,7 @@ function construct_native_grid(metadata, col::Column, arch; halo)
     if is_three_dimensional(metadata)
         _, _, Nz, _ = size(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
                                x = x, y = y, z = z, topology = (Flat, Flat, Bounded))
     else
@@ -197,11 +217,7 @@ function retrieve_data(metadata::Metadatum)
 end
 
 """
-    Field(metadata::Metadatum, arch=CPU();
-          inpainting = default_inpainting(metadata),
-          mask = nothing,
-          halo = (3, 3, 3),
-          cache_inpainted_data = true)
+$(SIGNATURES)
 
 Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
@@ -288,12 +304,15 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
         elapsed = 1e-9 * (time_ns() - start_time)
         @info string(" ... (", prettytime(elapsed), ")")
 
-        # We cache the inpainted data to avoid recomputing it
-        @root if cache_inpainted_data
-            file = jldopen(inpainted_path, "w+")
-            file["data"] = on_architecture(CPU(), parent(field))
-            file["inpainting_maxiter"] = inpainting.maxiter
-            close(file)
+        # We cache the inpainted data to avoid recomputing it. Any rank may write it,
+        # so it is written in a temporary directory to avoid races then moved.
+        if cache_inpainted_data
+            temporary_path = tempname(dirname(inpainted_path)) * ".jld2"
+            jldopen(temporary_path, "w") do file
+                file["data"] = on_architecture(CPU(), parent(field))
+                file["inpainting_maxiter"] = inpainting.maxiter
+            end
+            mv(temporary_path, inpainted_path; force = true)
         end
     end
 
@@ -311,6 +330,8 @@ end
     @inbounds to_field[i, j, k] = interpolate(to_node, from_field, from_location, from_grid)
 end
 
+same_grid(a::AbstractGrid, b::AbstractGrid) = typeof(a) === typeof(b) && a == b
+
 """
     interpolate_physical!(to_field, from_field)
 
@@ -320,7 +341,7 @@ Interpolate `from_field` onto `to_field`. Identical to Oceananigans'
 `znode` rather than the reference `rnode`. `interpolate!` builds its target node
 from `_node`, whose vertical component is `rnode`, so it would place the source
 at the LAM's reference heights and ignore the terrain — putting the lowest cells
-below the (clipped) surface of a `PressureLevelGrid` source.
+below the surface of a `PressureLevelGrid` source.
 
 !!! note "TODO"
     Drop this once Oceananigans' `interpolate!` resolves the target vertical node
@@ -350,7 +371,7 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
+$(SIGNATURES)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
@@ -499,10 +520,7 @@ lower_bound(metadata, name) = -1f5
 higher_bound(metadata, name) = 1f5
 
 """
-    compute_mask(metadata::Metadatum, dataset_field,
-                 mask_value = default_mask_value(metadata),
-                 minimum_value = -1f5,
-                 maximum_value = 1f5)
+$(SIGNATURES)
 
 A boolean field where `true` represents a missing value in the dataset_field.
 """
@@ -535,7 +553,7 @@ end
 #####
 
 """
-    Field(mset::MetadataSet, arch=CPU(); kw...)
+$(SIGNATURES)
 
 Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
 verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.

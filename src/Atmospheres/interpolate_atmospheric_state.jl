@@ -35,7 +35,7 @@ function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::Presc
     space_fractional_indices = (i = regridder.i, j = regridder.j)
 
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
+    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
     atmosphere_data = unwrap_fields(atmosphere_fields)
 
     kernel_parameters = interface_kernel_parameters(grid)

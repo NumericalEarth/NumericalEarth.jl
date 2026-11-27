@@ -91,6 +91,8 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     regrid!(exchange_state.p,     from_atmosphere, pa)
     regrid!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
     regrid!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
+    parent(exchange_state.ℐꜜˢʷ) .*= -1
+    parent(exchange_state.ℐꜜˡʷ) .*= -1
     regrid!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
     isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
 
@@ -133,7 +135,7 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     𝒬ᵀᵃⁱ = ai_fluxes.sensible_heat
     Jᵛᵃᵒ = ao_fluxes.water_vapor
     Jᵛᵃⁱ = ai_fluxes.water_vapor
-    ℵ    = sea_ice_concentration(coupled_model.sea_ice)
+    ℵˢⁱ  = sea_ice_concentration(coupled_model.sea_ice)
 
 
     # All the location of these fluxes will change
@@ -145,11 +147,11 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
 
     # TODO: Figure out how we are going to deal with upwelling radiation
     # TODO: regrid longwave rather than a mixed surface temperature
-    tmp .= 𝒬ᵀᵃᵒ * (1 - ℵ) + ℵ * 𝒬ᵀᵃⁱ
+    tmp .= 𝒬ᵀᵃᵒ * (1 - ℵˢⁱ) + ℵˢⁱ * 𝒬ᵀᵃⁱ
     regrid!(𝒬ᵀ_speedy, to_atmosphere, tmp)
-    tmp .= Jᵛᵃᵒ * (1 - ℵ) + ℵ * Jᵛᵃⁱ
+    tmp .= Jᵛᵃᵒ * (1 - ℵˢⁱ) + ℵˢⁱ * Jᵛᵃⁱ
     regrid!(Jᵛ_speedy, to_atmosphere, tmp)
-    tmp .= To * (1 - ℵ) + ℵ * Ti + 273.15
+    tmp .= To * (1 - ℵˢⁱ) + ℵˢⁱ * Ti + 273.15
     regrid!(sst, to_atmosphere, tmp)
 
     return nothing

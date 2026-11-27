@@ -67,7 +67,7 @@ end
     time = Time(clock.time)
 
     @inbounds begin
-        ℵᵢ = ice_concentration[i, j, 1]
+        ℵˢⁱ = ice_concentration[i, j, 1]
         Ts = surface_temperature[i, j, kᴺ]
     end
     Ts = convert_to_kelvin(sea_ice_properties.temperature_units, Ts)
@@ -77,14 +77,14 @@ end
     ℐꜛˡʷ = emitted_longwave_radiation(Ts, rs.σ, rs.ϵ)
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
-    ΣQ  = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ℵᵢ
+    ΣQ  = (ℐꜛˡʷ + ℐₐˡʷ + ℐₜˢʷ) * ℵˢⁱ
 
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
         top_heat_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
-        interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
-        interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        interface_radiative_flux.downwelling_longwave[i, j, 1]  = ℐₐˡʷ
+        interface_radiative_flux.downwelling_shortwave[i, j, 1] = ℐₜˢʷ
     end
 end

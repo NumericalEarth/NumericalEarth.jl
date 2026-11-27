@@ -17,7 +17,7 @@ using Oceananigans.Grids: Face, Center
 using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
 
-using ...NumericalEarth: NumericalEarth
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
@@ -215,9 +215,7 @@ const ECCOMetadatum   = Metadatum{<:ECCODataset}
 DataWrangling.higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
 
 """
-    ECCOMetadatum(name;
-                  date = first_date(ECCO4Monthly(), name),
-                  dir = download_ECCO_cache)
+$(SIGNATURES)
 
 An alias to construct a [`Metadatum`](@ref) of `ECCO4Monthly()`.
 """
@@ -264,7 +262,7 @@ DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_data
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 DataWrangling.dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
 DataWrangling.dataset_location(::ECCODataset, name) = name in keys(ECCO_location) ? ECCO_location[name] : (Center, Center, Center)
-  
+
 DataWrangling.is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
     data.name == :salinity ||

@@ -218,6 +218,9 @@ end
 
     # The path the regrid took before tiling: materialize the whole window, then interpolate.
     native = Field(metadatum, arch)
+    copied = Field(metadatum, native.grid)
+    @test isequal(Array(interior(copied)), Array(interior(native)))
+
     untiled = Field{Center, Center, Center}(grid)
     NumericalEarth.DataWrangling.interpolate_physical!(untiled, native, metadatum)
 

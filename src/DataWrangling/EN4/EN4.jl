@@ -7,7 +7,7 @@ using Dates: Dates, DateTime, Month
 using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 
-using ...NumericalEarth: NumericalEarth
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
                        first_date, metadata_path, metadata_url, download_with_retries, unzip
 
@@ -103,9 +103,7 @@ DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum) =
     metadata.filename[1:end-3] * "_" * string(metadata.name) * "_inpainted.jld2"
 
 """
-    EN4Metadatum(name;
-                 date = first_date(EN4Monthly()),
-                 dir = download_EN4_cache)
+$(SIGNATURES)
 
 An alias to construct a [`Metadatum`](@ref) of `EN4Monthly`.
 """

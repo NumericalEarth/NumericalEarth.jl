@@ -48,17 +48,12 @@ end
 end
 
 """
-    PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
-                        clock = nothing,
-                        ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
-                        sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
-                        snow_surface = nothing,
-                        land_surface = nothing,
-                        stefan_boltzmann_constant = default_stefan_boltzmann_constant)
+$(SIGNATURES)
 
 Construct a `PrescribedRadiation` component from `FieldTimeSeries` of
 downwelling shortwave and longwave radiation. Grid + times are inferred from
-the shortwave FTS.
+the shortwave FTS. Inputs are positive downwelling magnitudes (W m⁻²);
+the exchanged radiation state uses positive-upward fluxes.
 
 Pass `*_surface = nothing` to omit that surface from `surface_properties`.
 """
@@ -97,7 +92,7 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
 end
 
 """
-    PrescribedRadiation(grid, times = [zero(grid)]; kwargs...)
+$(SIGNATURES)
 
 Construct a `PrescribedRadiation` with zero downwelling shortwave and longwave
 fields on `grid`. Useful for emission-only mode (the surface radiates ϵσT⁴ but
@@ -121,9 +116,9 @@ end
 end
 
 """
-    set!(radiation::PrescribedRadiation; downwelling_shortwave=nothing, downwelling_longwave=nothing)
+$(SIGNATURES)
 
-Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
+Set the prescribed downwelling shortwave and longwave magnitudes (positive downward, W m⁻²),
 then refresh the interpolated state. Omitted keywords are left untouched. A
 `Number` sets a constant in space and time.
 """

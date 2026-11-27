@@ -158,6 +158,10 @@ end
     for fts in ftses
         update_field_time_series!(fts, time)
     end
+
+    # A no-op unless the grid's vertical is a time-varying geopotential.
+    NumericalEarth.Grids.materialize_geopotential!(atmos.grid)
+
     return nothing
 end
 
@@ -180,19 +184,7 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = no
 EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmos, clock)
 
 """
-    PrescribedAtmosphere(grid, times=[zero(grid)];
-                         source = nothing,
-                         clock = Clock{Float64}(time = 0),
-                         surface_layer_height = 10, # meters
-                         boundary_layer_height = 512, # meters
-                         thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         velocities              = default_atmosphere_velocities(grid, times),
-                         temperature             = default_atmosphere_temperature(grid, times),
-                         specific_humidity       = default_atmosphere_specific_humidity(grid, times),
-                         microphysical_variables = default_atmosphere_microphysical_variables(grid, times),
-                         pressure                = default_atmosphere_pressure(grid, times),
-                         tracers                 = NamedTuple(),
-                         precipitation_flux      = default_precipitation_flux(grid, times))
+$(SIGNATURES)
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
@@ -208,7 +200,7 @@ in `microphysical_variables` instead).
 
 Surface (2D, `(Center, Center, Nothing)`) vs 3D (`(Center, Center, Center)`, adding `w`)
 default fields are inferred from the grid's vertical size: `Nz == 1` builds a surface atmosphere
-(ocean / sea-ice coupling), `Nz > 1` a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
+(ocean / sea-ice coupling), `Nz > 1` a 3D atmosphere (e.g. a [`NestedSimulation`](@ref NumericalEarth.NestedModels.NestedSimulation) parent).
 Pass any field explicitly to override; pass `precipitation_flux = nothing` to omit it.
 
 !!! compat "Radiation component"
@@ -218,7 +210,7 @@ Pass any field explicitly to override; pass `precipitation_flux = nothing` to om
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               source = nothing,
-                              clock = Clock{Float64}(time = 0),
+                              clock = Clock(grid),
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
@@ -275,7 +267,7 @@ Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) =
 #####
 
 """
-    set!(atmosphere::PrescribedAtmosphere; u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+$(SIGNATURES)
 
 Set the prescribed atmospheric velocities (`u`, `v`), air temperature (`T`),
 specific humidity (`q`), and surface pressure (`p`), then refresh
