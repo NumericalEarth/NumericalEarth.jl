@@ -106,6 +106,7 @@ current_figure()
 # We continue constructing a simulation.
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 
 wall_clock = Ref(time_ns())
 

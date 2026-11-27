@@ -215,6 +215,7 @@ coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation,
                                  atmosphere_sea_ice_interface_specific_humidity)
 
 simulation = Simulation(coupled_model; Δt=90minutes, stop_time=90days)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 
 # The salinity restoring flux, and with it its global mean, is recomputed from the ocean state every time step.
 

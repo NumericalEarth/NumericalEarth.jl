@@ -227,6 +227,7 @@ end
 Δt = 20minutes
 Δτ = 40days
 simulation = Simulation(coupled_model; Δt, stop_time = 2Δτ)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 
 freeze_phase = (T    = 253.15,
                 q    = 1.0e-4,

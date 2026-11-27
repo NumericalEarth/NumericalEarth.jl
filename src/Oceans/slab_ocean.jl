@@ -64,6 +64,7 @@ SlabOcean{FT}(grid, clock, T, tf, d, ρ, c) where FT =
 
 function Oceananigans.set!(ocean::SlabOcean; T=nothing)
     !isnothing(T) && set!(ocean.temperature, T)
+    fill_halo_regions!(ocean.temperature)
     return nothing
 end
 

@@ -129,6 +129,7 @@ earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 # But before we do, we add callbacks to write outputs to disk every 3 hours.
 
 earth = Oceananigans.Simulation(earth_model; Δt, stop_time)
+Oceananigans.Diagnostics.erroring_NaNChecker!(earth) #hide
 outputs = merge(ocean.model.velocities, ocean.model.tracers)
 sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliaries.fields,
                        (; h=sea_ice.model.ice_thickness, ℵ=sea_ice.model.ice_concentration))

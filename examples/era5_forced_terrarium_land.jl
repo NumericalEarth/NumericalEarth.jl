@@ -116,6 +116,7 @@ Nt = length(atmosphere.velocities.u.times)
 
 model      = AtmosphereLandModel(atmosphere, land; radiation)
 simulation = Oceananigans.Simulation(model; Δt = 1minute, stop_time = (Nt - 1) * hour)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 
 # ## Output and progress
 #

@@ -277,6 +277,7 @@ model = AtmosphereLandModel(atmos, slab_land; radiation,
 # caps the step during the quiescent cold-start (velocities ≈ 0 ⇒ unbounded
 # advective timescale).
 simulation = Simulation(model; Δt = 1e-6, stop_time = 3days)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 6)
 
 # ## Progress

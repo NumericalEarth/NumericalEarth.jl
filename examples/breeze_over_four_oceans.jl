@@ -165,6 +165,10 @@ prescribed_sim = Simulation(prescribed_model; Δt, stop_time)
 slab_sim       = Simulation(slab_model; Δt, stop_time)
 full_sim       = Simulation(full_model; Δt, stop_time)
 nh_sim         = Simulation(nh_model; Δt, stop_time)
+Oceananigans.Diagnostics.erroring_NaNChecker!(prescribed_sim) #hide
+Oceananigans.Diagnostics.erroring_NaNChecker!(slab_sim) #hide
+Oceananigans.Diagnostics.erroring_NaNChecker!(full_sim) #hide
+Oceananigans.Diagnostics.erroring_NaNChecker!(nh_sim) #hide
 
 # ## Progress callbacks
 

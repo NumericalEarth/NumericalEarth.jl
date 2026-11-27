@@ -284,6 +284,7 @@ atmosphere = Simulation(nest; Δt, verbose = false)   ## the coupled model manag
 model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction)
 
 simulation = Simulation(model; Δt, stop_time=duration)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt)
 
 # ## Output
