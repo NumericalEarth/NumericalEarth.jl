@@ -3,19 +3,18 @@ module GloBFP3D
 export GlobalBuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
-using Oceananigans: Center, CPU, Face
+
+using Oceananigans: Oceananigans, Center, CPU, Face
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.DistributedComputations: @root
 using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
-using Oceananigans.DistributedComputations: @root
 
-using ...NumericalEarth: NumericalEarth, SIGNATURES
-using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
-                       BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
-using ...Lands: Lands, building_morphometry
-
-import Oceananigans
+using NumericalEarth: NumericalEarth, SIGNATURES
+using NumericalEarth.DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
+                                    BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
+using NumericalEarth.Lands: Lands, building_morphometry
 
 download_GloBFP3D_cache::String = ""
 function __init__()

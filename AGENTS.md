@@ -45,8 +45,14 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 
 ### Imports
 
-- Source code: explicit imports (checked by tests). Never use `import` to extend functions;
-  always use `Module.function_name(...) = ...` or `function Module.function_name() ... end`
+- Source code: explicit imports (checked by tests). **Never write `import` in `src/` or `ext/`** —
+  not to extend functions (`import ..DataWrangling: foo`), not to bring in a module (`import Dates`).
+  Bring names in with `using Module: Module, name`, and extend with the qualified name:
+  `Module.function_name(...) = ...` or `function Module.function_name() ... end`
+  (e.g. `DataWrangling.metadata_filename(::GEBCO2026, ...) = ...`,
+  `Oceananigans.Fields.set!(nm::NestedModel, ...) = ...`)
+- Helpers shared by several dataset modules live in their common parent (e.g. `DataWrangling`),
+  never in one sibling that the others reach into (e.g. `using ..ERA5: is_zip` from another dataset)
 - Exports at the top of module files, before other code
 - Import Oceananigans/NumericalEarth names first, then external packages
 - Internal NumericalEarth imports use absolute paths, not relative

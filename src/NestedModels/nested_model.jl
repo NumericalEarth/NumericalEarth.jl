@@ -17,11 +17,11 @@
 # then advance the parent to match. Child-specific state (`velocities`, `grid`, `dynamics`, ...) is
 # reached explicitly through `nested.child`.
 
-import Oceananigans
-import Oceananigans: AbstractModel, fields, prognostic_state, restore_prognostic_state!, prognostic_fields, set!
-import Oceananigans.Architectures: architecture
-import Oceananigans.TimeSteppers: time_step!, update_state!
-import Oceananigans.Simulations: iteration
+using Oceananigans: Oceananigans, AbstractModel, fields, prognostic_state, restore_prognostic_state!, prognostic_fields, set!
+using Oceananigans.Advection: cell_advection_timescale
+using Oceananigans.Architectures: architecture
+using Oceananigans.Simulations: iteration
+using Oceananigans.TimeSteppers: time_step!, update_state!
 
 """
     NestedModel(parent, child::AbstractModel)
@@ -56,25 +56,24 @@ exchange_state!(exchanger, time) = nothing
 exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_state!(exchanger, time), exchangers)
 
 # Model-protocol dispatches, forwarded explicitly to the child.
-fields(nm::NestedModel)            = fields(nm.child)
-prognostic_fields(nm::NestedModel) = prognostic_fields(nm.child)
-architecture(nm::NestedModel)      = architecture(nm.child)
-iteration(nm::NestedModel)         = iteration(nm.child)
+Oceananigans.fields(nm::NestedModel)                     = fields(nm.child)
+Oceananigans.prognostic_fields(nm::NestedModel)          = prognostic_fields(nm.child)
+Oceananigans.Architectures.architecture(nm::NestedModel) = architecture(nm.child)
+Oceananigans.Simulations.iteration(nm::NestedModel)      = iteration(nm.child)
 
 # Adaptive Δt: the wizard's `AdvectiveCFL` queries the simulation model, which is the
 # `NestedModel` — forward to the child (the prognostic model whose grid/velocities set the CFL).
-Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) =
-    Oceananigans.Advection.cell_advection_timescale(nm.child)
+Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) = cell_advection_timescale(nm.child)
 
 # Refresh the parent-derived child state first so the child's boundary conditions / forcings see current
 # values. The child's own callbacks run alongside any passed in.
-function update_state!(nm::NestedModel, callbacks=[]; kwargs...)
+function Oceananigans.TimeSteppers.update_state!(nm::NestedModel, callbacks=[]; kwargs...)
     exchange_state!(nm.exchanger, nm.clock.time)
     return update_state!(nm.child, (callbacks..., nm.child_callbacks...); kwargs...)
 end
 
 # Setting the initial state targets the child's prognostics.
-set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
+Oceananigans.Fields.set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 
 # Ordering: refresh the exchanger FIRST — it advances the parent's own FTS windows and fills the
 # derived 2-level window — so the parent data the child interpolates over `[t, t+Δt]` is resident
@@ -85,7 +84,7 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 # crossing step (a 2-level window cannot span a parent interval). Then step the child, and bring the
 # parent to the child's new time (`advance_parent!`). `Simulation` calls
 # `time_step!(model, Δt; callbacks=...)`.
-function time_step!(nm::NestedModel, Δt; callbacks=())
+function Oceananigans.TimeSteppers.time_step!(nm::NestedModel, Δt; callbacks=())
     exchange_state!(nm.exchanger, nm.clock.time + Δt)
     time_step!(nm.child, Δt; callbacks = (callbacks..., nm.child_callbacks...))
     advance_parent!(nm.parent, nm.child.clock)
@@ -124,8 +123,8 @@ function copy_clock!(clock, source)
 end
 
 # Checkpointing: only the child has prognostic state.
-prognostic_state(nm::NestedModel) = prognostic_state(nm.child)
-restore_prognostic_state!(nm::NestedModel, state) = restore_prognostic_state!(nm.child, state)
+Oceananigans.prognostic_state(nm::NestedModel) = prognostic_state(nm.child)
+Oceananigans.restore_prognostic_state!(nm::NestedModel, state) = restore_prognostic_state!(nm.child, state)
 Base.summary(nm::NestedModel) = string("NestedModel(", summary(nm.parent), " → ", summary(nm.child), ")")
 
 function Base.show(io::IO, nm::NestedModel)

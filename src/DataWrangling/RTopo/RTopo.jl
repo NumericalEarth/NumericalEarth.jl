@@ -4,20 +4,11 @@ export RTopo2
 
 using Downloads: Downloads
 using NCDatasets: Dataset
+
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
-                       download_with_retries
-
-import ..DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    dataset_variable_name,
-    available_variables,
-    longitude_interfaces,
-    latitude_interfaces,
-    reversed_vertical_axis,
-    retrieve_bathymetry
+using NumericalEarth.DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry,
+                                    download_with_retries, dataset_variable_name
 
 download_RTopo_cache::String = ""
 function __init__()
@@ -48,23 +39,23 @@ const RTopoMetadatum = Metadatum{<:RTopo2}
 # and the two pole rows leaves those nodes at the centers of a periodic grid.
 const RTopo_Δ = 1 / 120
 
-default_download_directory(::RTopo2) = download_RTopo_cache
-reversed_vertical_axis(::RTopo2)     = false
-available_variables(::RTopo2)        = RTopo_variable_names
-longitude_interfaces(::RTopo2)       = (-180 - RTopo_Δ / 2, 180 - RTopo_Δ / 2)
-latitude_interfaces(::RTopo2)        = (-90 + RTopo_Δ / 2, 90 - RTopo_Δ / 2)
-Base.size(::RTopo2)                  = (43200, 21599, 1)
+DataWrangling.default_download_directory(::RTopo2) = download_RTopo_cache
+DataWrangling.reversed_vertical_axis(::RTopo2)     = false
+DataWrangling.available_variables(::RTopo2)        = RTopo_variable_names
+DataWrangling.longitude_interfaces(::RTopo2)       = (-180 - RTopo_Δ / 2, 180 - RTopo_Δ / 2)
+DataWrangling.latitude_interfaces(::RTopo2)        = (-90 + RTopo_Δ / 2, 90 - RTopo_Δ / 2)
+Base.size(::RTopo2)                                = (43200, 21599, 1)
 
-dataset_variable_name(metadata::RTopoMetadatum) = RTopo_variable_names[metadata.name]
+DataWrangling.dataset_variable_name(metadata::RTopoMetadatum) = RTopo_variable_names[metadata.name]
 
-metadata_filename(::RTopo2, name, date, bounding_box) =
+DataWrangling.metadata_filename(::RTopo2, name, date, bounding_box) =
     "RTopo-2.0.4_30sec_" * RTopo_variable_names[name] * ".nc"
 
 const RTopo_url = "https://web.lcrc.anl.gov/public/e3sm/mpas_standalonedata/mpas-ocean/bathymetry_database/"
 
 DataWrangling.metadata_url(metadata::RTopoMetadatum) = RTopo_url * metadata.filename
 
-function retrieve_bathymetry(metadata::RTopoMetadatum)
+function DataWrangling.retrieve_bathymetry(metadata::RTopoMetadatum)
     return Dataset(metadata_path(metadata), "r") do dataset
         dataset[dataset_variable_name(metadata)][1:end-1, 2:end-1]
     end
