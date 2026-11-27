@@ -132,7 +132,13 @@ corrected to integrate to it, and the child's bottom is blended toward the paren
 cells of each open side (default: 1/3°), but no shallower than `minimum_depth`. Unless
 `parent_includes_inverse_barometer = true`, the parent's sea level is taken to lack the inverse-barometer response to the
 atmospheric pressure, as in an ocean reanalysis, and the Flather exterior sea level adds the child's own response to the
-pressure it is forced with (zero when the child has no atmospheric pressure).
+pressure it is forced with (zero when the child has no atmospheric pressure). `net_inflow` (m³ s⁻¹,
+positive into the domain; a number, or a `Ref` to one that a callback may change) pins the net inflow through all open
+sides together at every barotropic substep and leaves its split between the sides to the Flather condition, as the
+volume constraints of NEMO and ROMS do; the parent's depth means are shifted by one common velocity so that the exterior
+transport carries the same net inflow. The pin shifts each column's transport in proportion to
+`H^net_inflow_depth_exponent`: `0` (default) uniformly per unit length, `1` as a uniform velocity, `1/2` as a uniform
+shift of the parent's free surface in the Flather condition.
 
 The child's `clock` starts at the parent's time; a `clock` passed in must already be there. The child starts from
 `initial_state` (default: the parent, unless the parent knows only the boundaries) interpolated onto `grid`, and
@@ -151,6 +157,8 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
                             minimum_depth = 10,
                             parent_bottom_height = nothing,
                             parent_includes_inverse_barometer = false,
+                            net_inflow = nothing,
+                            net_inflow_depth_exponent = 0,
                             initial_state = default_initial_state(parent),
                             clock = Clock{Float64}(time = parent.clock.time, kernel_time_type = eltype(grid)),
                             boundary_conditions = NamedTuple(),
@@ -169,12 +177,13 @@ function nested_ocean_model(parent::OceanParent, grid::AbstractGrid;
     grid = blend_parent_bathymetry(grid, parent_bottom_height, open_sides; width = bathymetry_blend_width, minimum_depth)
     width = isnothing(relaxation_rate) ? 1 : relaxation_width
     validate_band_width(grid, open_sides, width, "relaxation_width")
-    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height)
+    exchanger = OceanBoundaryExchanger(parent, grid, open_sides; width, time, parent_bottom_height, net_inflow)
 
     inverse_barometer_sea_level = parent_includes_inverse_barometer ? nothing : Field{Center, Center, Nothing}(grid)
 
     nested_bcs = ocean_open_boundary_conditions(grid, exchanger.bands; depth_means = exchanger.depth_means,
                                                 inverse_barometer = inverse_barometer_sea_level,
+                                                net_inflow, net_inflow_depth_exponent,
                                                 normal_velocity_scheme, tangential_velocity_scheme, tracer_scheme)
 
     relaxation = isnothing(relaxation_rate) ? NamedTuple() :
