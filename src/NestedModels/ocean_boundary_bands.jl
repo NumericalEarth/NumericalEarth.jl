@@ -208,13 +208,13 @@ end
 end
 
 # Whether `side` is `Closed` or `Open`, a wall of the whole domain rather than a seam with another rank
-on_domain_boundary(::Type{TwoSided{L, R}}, side) where {L, R} = (side ∈ (:west, :south) ? L : R) <: Union{Closed, Open}
-on_domain_boundary(T, side) = false
+domain_wall(::Type{TwoSided{L, R}}, side) where {L, R} = (side ∈ (:west, :south) ? L : R) <: Union{Closed, Open}
+domain_wall(T, side) = false
 
 function domain_boundary_sides(grid, sides)
     TX, TY, _ = topology(grid)
     side_topology(side) = boundary_dimension(side) == 1 ? TX : TY
-    return Tuple(side for side in sides if on_domain_boundary(side_topology(side), side))
+    return Tuple(side for side in sides if domain_wall(side_topology(side), side))
 end
 
 @kernel function _compute_wet_surface_cells!(wet, grid, Nz)
