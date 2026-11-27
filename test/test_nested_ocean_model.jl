@@ -526,6 +526,8 @@ end
     end
 end
 
+# TODO: drop the guard once an Oceananigans release has `NetInflow` (CliMA/Oceananigans.jl#6524)
+isdefined(Oceananigans.BoundaryConditions, :NetInflow) &&
 @testset "net_inflow pins the net inflow through the open sides together on $(arch)" for arch in test_architectures
     # The parent's u = 0.1 m/s brings about 22 Sv in through the west side; ask for 2 Sv in through both sides together,
     # then for 1 Sv out
