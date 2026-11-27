@@ -366,17 +366,7 @@ function remove_minor_orca_basins(bottom_height, major_basins)
 end
 
 """
-    ORCAGrid(arch = CPU(), FT::DataType = Float64;
-             dataset,
-             halo = (4, 4, 4),
-             z = (-6000, 0),
-             Nz = 50,
-             radius = Oceananigans.defaults.planet_radius,
-             with_bathymetry = true,
-             active_cells_map = true,
-             major_basins = Inf,
-             south_rows_to_remove = default_south_rows_to_remove(dataset),
-             dir = default_download_directory(dataset))
+$(SIGNATURES)
 
 Construct an `OrthogonalSphericalShellGrid` using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 The topology follows the north fold of the mesh: `(Periodic, RightFaceFolded, Bounded)` for the F-pivot eORCA1,
@@ -464,10 +454,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     fold_topology = Sides{Closed, fold}
 
     # The first kept column `ic + 1` aligns NEMO's fold mirror (i ↔ jpi + 1 - i for an F pivot,
-    # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one.
-    ic = pivot === FPivot ? 1 : 2
+    # i ↔ jpi + 2 - i for a T pivot) with the Oceananigans one. In a file without NEMO halos the kept
+    # columns wrap around the east edge and the top row is the fold itself.
+    nemo_halo = overlap ÷ 2
+    ic = pivot === FPivot ? nemo_halo : nemo_halo + 1
     jr = south_rows_to_remove
-    chop(data) = data[ic+1:ic+size(data, 1)-overlap, jr+1:end-1]
+    chop(data) = data[mod1.(ic+1:ic+size(data, 1)-overlap, size(data, 1)), jr+1:end-nemo_halo]
 
     λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
     φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)

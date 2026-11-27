@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using CDSAPI  # activates NumericalEarthCDSAPIExt (the EWDS request path)
 
 using NumericalEarth.DataWrangling: BoundingBox, metadata_path
-using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis
+using NumericalEarth.DataWrangling.GloFAS: GloFASReanalysis, GloFASStaticMaps
 
 # GloFAS v4 is global at 0.05°; a bounding box is sent as the CDS `area` key so the server
 # subsets before delivery. This window covers the lower Amazon, where discharge is large
@@ -14,6 +14,15 @@ const glofas_date = DateTime(2020, 6, 1)
 @testset "Downloading GloFAS river discharge" begin
     metadatum = Metadatum(:river_discharge; dataset=GloFASReanalysis(),
                           region=glofas_region, date=glofas_date)
+    filepath = metadata_path(metadatum)
+    isfile(filepath) && rm(filepath; force=true)
+
+    download(metadatum)
+    @test isfile(filepath)
+end
+
+@testset "Downloading the GloFAS drainage direction map" begin
+    metadatum = Metadatum(:drainage_direction; dataset=GloFASStaticMaps())
     filepath = metadata_path(metadatum)
     isfile(filepath) && rm(filepath; force=true)
 

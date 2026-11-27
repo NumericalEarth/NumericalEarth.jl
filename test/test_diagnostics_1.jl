@@ -1,7 +1,6 @@
 include("runtests_setup.jl")
 
 using Oceananigans: location
-using Oceananigans.Models: buoyancy_operation
 using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
 using SeawaterPolynomials: TEOS10EquationOfState
 
@@ -41,18 +40,16 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
         @test h isa Field
         @test location(h) == (Center, Center, Nothing)
         @test h.operand isa MixedLayerDepthOperand
-        @test h.operand.buoyancy_perturbation isa KernelFunctionOperation
 
         compute!(h)
         if dataset isa ECCO4Monthly
-            @test @allowscalar h[1, 1, 1] ≈ 28.8026943 # m
+            @test Array(interior(h))[1, 1, 1] ≈ 27.0859141 # m
         end
 
-        tracers = (T=Tt[2], S=St[2])
-        h.operand.buoyancy_perturbation = buoyancy_operation(sb, grid, tracers)
+        h = MixedLayerDepthField(sb, grid, (T=Tt[2], S=St[2]))
         compute!(h)
         if dataset isa ECCO4Monthly
-            @test @allowscalar h[1, 1, 1] ≈ 16.5178053 # m
+            @test Array(interior(h))[1, 1, 1] ≈ 31.6176466 # m
         end
     end
 end

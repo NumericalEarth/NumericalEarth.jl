@@ -12,7 +12,6 @@ export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
 using Dates: Dates, DateTime, Month, Hour
-using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
@@ -25,6 +24,7 @@ using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
 
+using NumericalEarth: SIGNATURES, TYPEDSIGNATURES
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity, prescribed_radiation,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
@@ -131,17 +131,6 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
     prefix = metadata_prefix(dataset, name, date, region)
     return string(prefix, ".nc")
 end
-
-
-
-
-#####
-##### Pure Julia CDS client (replaces Python era5cli)
-#####
-
-# CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
-# The extension exports: download_era5, read_cds_credentials
-# Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
 
 #####
 ##### Single-level and pressure-level specifics

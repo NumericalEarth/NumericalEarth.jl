@@ -40,13 +40,12 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.OutputReaders: Linear as LinearTimeIndexing
 using Oceananigans.Utils: launch!, prettytime, prettysummary
-using DocStringExtensions: SIGNATURES, TYPEDSIGNATURES
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 using ZipFile: ZipFile
 using Scratch: @get_scratch!
 
-using ..NumericalEarth: NumericalEarth, stateindex
+using ..NumericalEarth: NumericalEarth, stateindex, SIGNATURES, TYPEDSIGNATURES
 
 #####
 ##### Downloading utilities
@@ -153,7 +152,7 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir; verify_ssl = true)
+$(SIGNATURES)
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
 Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate, as
@@ -317,13 +316,25 @@ last_date(::AbstractStaticDataset,  args...) = nothing
 """
     AbstractStaticBathymetry <: AbstractStaticDataset
 
-Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO).
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO, RTopo).
 Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
 """
 abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
 
 z_interfaces(::AbstractStaticBathymetry) = (0, 1)
 Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the two-dimensional array of `metadata`'s variable on the dataset's native grid.
+Datasets whose file layout differs from their native grid extend this.
+"""
+function retrieve_bathymetry(metadata)
+    return Dataset(metadata_path(metadata), "r") do dataset
+        dataset[dataset_variable_name(metadata)][:, :]
+    end
+end
 
 # Fundamentals
 include("metadata.jl")
@@ -435,9 +446,11 @@ include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
+include("GEUS/GEUS.jl")
 include("SoilGrids/SoilGrids.jl")
 include("OpenLandMap/OpenLandMap.jl")
 include("IBCSO/IBCSO.jl")
+include("RTopo/RTopo.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
@@ -459,9 +472,11 @@ using .ORCA
 using .WOA
 using .JRA55
 using .GloFAS
+using .GEUS
 using .SoilGrids
 using .OpenLandMap
 using .IBCSO
+using .RTopo
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM

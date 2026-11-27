@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model, Interpolated, blend_parent_terrain!
 using NumericalEarth.DataWrangling: BoundingBox
 using Oceananigans
 using Oceananigans: prognostic_fields, instantiated_location
@@ -9,7 +9,7 @@ using Oceananigans.OutputReaders: interpolating_time_indices, memory_index, OnDi
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location, interpolate
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, Sides, Connected, Closed
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
                                        regularize_boundary_condition, LeftBoundary, RightBoundary, getbc
@@ -360,6 +360,34 @@ end
     @test isapprox(CUDA.@allowscalar((cy[4, 8, 2] + cy[4, 9, 2]) / 2), 2.0; atol = 1e-4)
 end
 
+# A halo fill without a clock reads the first snapshot in memory, wherever reading snapshots left the window.
+@testset "Interpolated Value BC filled without a clock reads a snapshot in memory on $(arch)" for arch in test_architectures
+    src_grid = RectilinearGrid(arch; size = (6, 6, 2), x = (-1, 5), y = (-1, 5), z = (-2, 0),
+                               topology = (Bounded, Bounded, Bounded))
+    grid = RectilinearGrid(arch; size = (4, 4, 2), x = (0, 4), y = (0, 4), z = (-2, 0),
+                           topology = (Bounded, Bounded, Bounded))
+
+    # Snapshots at noon of 4 days, cyclical: before the first noon the series wraps to the last day
+    times = (12:24:84) .* 3600
+    path = joinpath(mktempdir(), "c.jld2")
+    on_disk = FieldTimeSeries{Center, Center, Center}(src_grid, times; backend = OnDisk(), path, name = "c")
+    snapshot = CenterField(src_grid)
+    for n in eachindex(times)
+        set!(snapshot, n)
+        set!(on_disk, snapshot, n)
+    end
+    fts = FieldTimeSeries(path, "c"; grid = src_grid, backend = InMemory(2), time_indexing = Cyclical())
+
+    bcs = FieldBoundaryConditions(west = ValueBoundaryCondition(Interpolated(fts)))
+    model = HydrostaticFreeSurfaceModel(grid; tracers = :c, buoyancy = nothing, boundary_conditions = (; c = bcs))
+
+    # The window holds snapshots 2 and 3, while t = 0 lies between snapshots 4 and 1
+    fts[2]
+    c = model.tracers.c
+    fill_halo_regions!(c)
+    @test CUDA.@allowscalar c[0, 1, 1] == 4 # snapshot 2 on the west face, zero inside
+end
+
 @testset "breeze_prognostic_state derives (ρ, θˡⁱ, qᵗ)" begin
     constants = ThermodynamicConstants()
     Rᵈ   = dry_air_gas_constant(constants)
@@ -554,6 +582,18 @@ end
     @test moisture_prognostic_name(μ) == :ρqᵉ
 end
 
+@testset "nested child microphysics follows a Float32 child grid" begin
+    parent_grid = RectilinearGrid(size = (4, 4, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                                  topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1.0, 2.0])
+
+    child_grid = RectilinearGrid(Float32; size = (8, 8, 8), x = (-0.5, 0.5), y = (-0.5, 0.5), z = (0, 1),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    model = nested_atmosphere_model(parent, child_grid; parent_condensates = nothing, coriolis = nothing)
+    @test model.child.microphysics.solver.abstol isa Float32
+end
+
 @testset "state exchanger: Float32 parent, Float64 constants" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     constants = ThermodynamicConstants(Float64)
@@ -729,12 +769,16 @@ end
                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
 
+    default = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    breeze_damping = Breeze.SplitExplicitTimeDiscretization().damping
+    @test typeof(default.child.dynamics.time_discretization.damping) == typeof(breeze_damping)
+
     nested = nested_atmosphere_model(parent, child_grid;
-                                     time_discretization_kwargs = (; damping = ThermalDivergenceDamping()),
+                                     time_discretization_kwargs = (; damping = Breeze.NoDivergenceDamping()),
                                      parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
 
     time_discretization = nested.child.dynamics.time_discretization
-    @test time_discretization.damping isa ThermalDivergenceDamping
+    @test time_discretization.damping isa Breeze.NoDivergenceDamping
     @test time_discretization.sponge isa UpperSponge
 end
 
@@ -1200,6 +1244,68 @@ end
     for (name, field) in pairs(prognostic_fields(strip_model.child))
         @test maximum(abs, Field(prognostic_fields(rerun_model.child)[name] - field)) == 0
     end
+end
+
+# A side that borders another rank is interior to the nested domain: its source need not bracket it,
+# the terrain is not blended toward the parent there, and the boundary relaxation leaves it alone.
+@testset "A rank seam is interior to the nested domain on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 4.0]
+
+    function parent_atmosphere(longitude, latitude, times = times)
+        grid = LatitudeLongitudeGrid(arch; size = (6, 6, 8), longitude, latitude, z = (0, 16000),
+                                     halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, times)
+        set!(atmosphere.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z)
+        set!(atmosphere.specific_humidity, (λ, φ, z, t) -> 0.006)
+        set!(atmosphere.velocities.u,      (λ, φ, z, t) -> 8)
+        set!(atmosphere.velocities.v,      (λ, φ, z, t) -> 1)
+        set!(atmosphere.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+        return atmosphere
+    end
+
+    strips = BoundaryPrescribedComponent(west  = parent_atmosphere((-2, 0), (34.6, 38.6)),
+                                         east  = parent_atmosphere((0, 2),  (34.6, 38.6)),
+                                         south = parent_atmosphere((-2, 2), (34.6, 36.6)),
+                                         north = parent_atmosphere((-2, 2), (36.6, 38.6)))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Sides{Connected, Closed}, Bounded, Bounded))
+    Nx, Ny, _ = size(child_grid)
+    width = 3
+
+    nested = nested_atmosphere_model(strips, child_grid; relaxation_rate = 1/30, relaxation_width = width,
+                                     base_pressure = 1e5, coriolis = nothing, parent_condensates = nothing)
+
+    # A source wholly east of the west seam, which a domain boundary would reject.
+    east_of_seam = parent_atmosphere((-0.5, 0), (34.6, 38.6))
+    @test regularize_boundary_condition(Interpolated(east_of_seam.temperature), child_grid,
+                                        (Center(), Center(), Center()), 1, LeftBoundary) isa Interpolated
+
+    # The terrain blends toward the parent at the east wall but not at the west seam.
+    elevation        = Field{Center, Center, Nothing}(child_grid)
+    parent_elevation = Field{Center, Center, Nothing}(child_grid)
+    set!(elevation, 1)
+    blend_parent_terrain!(elevation, parent_elevation; width)
+    blended = Array(interior(elevation, :, Ny ÷ 2, 1))
+    @test blended[1] == 1
+    @test blended[Nx] == 0
+
+    # The relaxation adds no tendency in the west strip, while the south strip reaches the seam corner.
+    snapshot = parent_atmosphere((-2, 2), (34.6, 38.6), times[1:1])
+    prognostic = ext.child_prognostic_state(snapshot, nested.exchanger)
+    ext.initialize_nested_child!(nested, nothing, first(times), ""; balancer = false, prognostic)
+    set!(nested.child, θ = 300)
+
+    Gρθ = nested.child.timestepper.Gⁿ.ρθ
+    fill!(Gρθ, 0)
+    only(nested.child_callbacks)(nested.child)
+    G = Array(interior(Gρθ, :, :, 1))
+    @test all(iszero, G[1:width, width+1:Ny-width])
+    @test all(!iszero, G[Nx-width+1:Nx, :])
+    @test all(!iszero, G[1:width, 1:width])
 end
 
 @testset "StateExchanger: a single-time parent fills its derived state on $(arch)" for arch in test_architectures

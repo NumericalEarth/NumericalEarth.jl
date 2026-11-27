@@ -5,7 +5,7 @@ MPI.Init()
 
 using CFTime
 using Dates
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, all_dates, inpainted_metadata_path, metadata_path, BoundingBox
+using NumericalEarth.DataWrangling: metadata_path, inpainted_metadata_path, NearestNeighborInpainting, BoundingBox, all_dates
 using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!
