@@ -11,9 +11,12 @@ using NumericalEarth.DataWrangling.ORCA: ORCAOne
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: all_reduce, concatenate_local_sizes, local_size, reconstruct_global_grid
 using Oceananigans.Grids: Sides, Closed
+using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Operators: Azᶜᶜᶜ
 using NumericalEarth.Lands: build_flux_routing
+using NumericalEarth.NestedModels: default_velocity_scheme, open_boundary_sides, relaxation_masks
 using NumericalEarth.Oceans: river_mouth_vertical_diffusivity
+using NumericalEarth.SeaIces: sea_ice_dynamics, SplitExplicitSolver
 using Oceananigans.BoundaryConditions: regularize_boundary_condition, LeftBoundary
 using Oceananigans.Grids: topology
 
@@ -187,6 +190,134 @@ end
 
         river_mixing = river_mouth_vertical_diffusivity(local_grid, (; rivers = routing))
         @test count(>(0), interior(river_mixing.κ.parameters)) == length(routing.target_i)
+    end
+end
+
+@testset "Distributed nested ocean model" begin
+    function nested_parent()
+        grid = LatitudeLongitudeGrid(CPU(); size = (12, 12, 6), longitude = (-2, 2), latitude = (28, 32),
+                                     z = (-1000, 0), topology = (Bounded, Bounded, Bounded))
+        parent_ocean = PrescribedOcean(grid, [0.0, 864000.0])
+        set!(parent_ocean; T = (λ, φ, z, t) -> 15 + λ + (φ - 30) / 2 + z / 1000,
+                           S = (λ, φ, z, t) -> 35 + φ / 100,
+                           u = (λ, φ, z, t) -> 0.02φ - 0.5, v = (λ, φ, z, t) -> 0.05λ, η = 0)
+        return parent_ocean
+    end
+
+    function nested_child(arch)
+        underlying_grid = LatitudeLongitudeGrid(arch; size = (32, 32, 6), halo = (7, 7, 7), longitude = (-1, 1),
+                                                latitude = (29, 31), z = (-1000, 0),
+                                                topology = (Bounded, Bounded, Bounded))
+        bottom = PartialCellBottom((λ, φ) -> -900 + 100 * sin(3λ) * cos(3φ); minimum_fractional_cell_height = 0.2)
+        grid = ImmersedBoundaryGrid(underlying_grid, bottom; active_cells_map = true)
+        parent_bottom_height = Field{Center, Center, Nothing}(underlying_grid)
+        set!(parent_bottom_height, -700)
+        # ObliqueRadiation's tangential stencil differs across rank seams over an immersed bottom in Oceananigans itself
+        nested = nested_ocean_model(nested_parent(), grid; parent_bottom_height, relaxation_width = 4,
+                                    bathymetry_blend_width = 3,
+                                    normal_velocity_scheme = NormalRadiation(inflow_timescale = 3 * 86400, outflow_timescale = 360 * 86400),
+                                    tangential_velocity_scheme = default_velocity_scheme(),
+                                    free_surface = SplitExplicitFreeSurface(grid; substeps = 6))
+        for _ in 1:5
+            time_step!(nested, 60)
+        end
+        return nested.child
+    end
+
+    serial = nested_child(CPU())
+    serial_masks = relaxation_masks(serial.grid, open_boundary_sides(serial.grid), 4)
+
+    for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
+        arch = Distributed(CPU(); partition)
+        child = nested_child(arch)
+        grid = child.grid
+        Nx, Ny, _ = size(grid)
+        irange, jrange = rank_window(arch, size(serial.grid), size(grid))
+        window(field, serial_field) = (Array(interior(serial_field))[irange, jrange, :],
+                                       Array(interior(field))[1:Nx, 1:Ny, :])
+
+        Rx, Ry, _ = arch.ranks
+        rx, ry, _ = arch.local_index
+        walls = (west = rx == 1, east = rx == Rx, south = ry == 1, north = ry == Ry)
+        @test Set(open_boundary_sides(grid)) == Set(side for side in keys(walls) if walls[side])
+
+        @test ==(window(bottom_height_field(grid), bottom_height_field(serial.grid))...)
+
+        masks = relaxation_masks(grid, open_boundary_sides(grid), 4)
+        for name in (:c, :u, :v)
+            @test ==(window(masks[name], serial_masks[name])...)
+        end
+
+        fields = (u = child.velocities.u, v = child.velocities.v, T = child.tracers.T, S = child.tracers.S,
+                  η = child.free_surface.displacement)
+        serial_fields = (u = serial.velocities.u, v = serial.velocities.v, T = serial.tracers.T, S = serial.tracers.S,
+                         η = serial.free_surface.displacement)
+        for name in keys(fields)
+            expected, local_values = window(fields[name], serial_fields[name])
+            @test maximum(abs, local_values .- expected) < 1e-5
+        end
+    end
+end
+
+@testset "Distributed nested sea ice" begin
+    function nested_sea_ice_parent()
+        grid = LatitudeLongitudeGrid(CPU(); size = (12, 12, 6), longitude = (-2, 2), latitude = (28, 32),
+                                     z = (-1000, 0), topology = (Bounded, Bounded, Bounded))
+        parent_ocean = PrescribedOcean(grid, [0.0, 864000.0])
+        set!(parent_ocean; T = -1.5, S = 34, u = (λ, φ, z, t) -> 0.02φ - 0.5, v = (λ, φ, z, t) -> 0.05λ, η = 0)
+        return parent_ocean
+    end
+
+    function nested_sea_ice_child(arch)
+        grid = LatitudeLongitudeGrid(arch; size = (32, 32, 6), halo = (7, 7, 7), longitude = (-1, 1),
+                                     latitude = (29, 31), z = (-1000, 0), topology = (Bounded, Bounded, Bounded))
+        model = nested_ocean_model(nested_sea_ice_parent(), grid; relaxation_width = 4,
+                                   normal_velocity_scheme = NormalRadiation(inflow_timescale = 3 * 86400, outflow_timescale = 360 * 86400),
+                                   tangential_velocity_scheme = default_velocity_scheme(),
+                                   free_surface = SplitExplicitFreeSurface(grid; substeps = 6))
+        ocean = Simulation(model; Δt = 60)
+
+        times = [0.0, 864000.0]
+        series(LX, LY) = FieldTimeSeries{LX, LY, Nothing}(grid, times)
+        parent_ice = (h = series(Center, Center), ℵ = series(Center, Center),
+                      u = series(Center, Center), v = series(Center, Center))
+        for n in eachindex(times)
+            set!(parent_ice.h[n], (λ, φ) -> 1 + (λ + 1) / 4 + (φ - 29) / 8 + n / 10)
+            set!(parent_ice.ℵ[n], (λ, φ) -> φ > 30.5 ? NaN : 0.9)
+            set!(parent_ice.u[n], (λ, φ) -> 0.2 - 0.05λ)
+            set!(parent_ice.v[n], (λ, φ) -> 0.1φ - 3)
+        end
+
+        bcs = nested_sea_ice_boundary_conditions(ocean, parent_ice)
+        # A distributed split-explicit solver widens the halo to 2 substeps + 3, which must fit in a rank
+        dynamics = sea_ice_dynamics(grid, ocean; solver = SplitExplicitSolver(grid; substeps = 6))
+        sea_ice = sea_ice_simulation(grid, ocean; boundary_conditions = bcs, dynamics, Δt = 60)
+        set_parent_sea_ice!(sea_ice, parent_ice)
+
+        coupled = OceanSeaIceModel(ocean, sea_ice)
+        for _ in 1:5
+            time_step!(coupled, 60)
+        end
+        return sea_ice.model, ocean.model.child
+    end
+
+    serial_ice, serial_ocean = nested_sea_ice_child(CPU())
+
+    arch = Distributed(CPU(); partition = Partition(2, 2))
+    ice, ocean = nested_sea_ice_child(arch)
+    Nx, Ny, _ = size(ice.grid)
+    irange, jrange = rank_window(arch, size(serial_ice.grid), size(ice.grid))
+    window(field, serial_field) = (Array(interior(serial_field))[irange, jrange, :],
+                                   Array(interior(field))[1:Nx, 1:Ny, :])
+
+    fields = (h = ice.ice_thickness, ℵ = ice.ice_concentration, uᵢ = ice.velocities.u, vᵢ = ice.velocities.v,
+              u = ocean.velocities.u, T = ocean.tracers.T)
+    serial_fields = (h = serial_ice.ice_thickness, ℵ = serial_ice.ice_concentration,
+                     uᵢ = serial_ice.velocities.u, vᵢ = serial_ice.velocities.v,
+                     u = serial_ocean.velocities.u, T = serial_ocean.tracers.T)
+    for name in keys(fields)
+        expected, local_values = window(fields[name], serial_fields[name])
+        @test maximum(abs, local_values .- expected) < 1e-5
     end
 end
 

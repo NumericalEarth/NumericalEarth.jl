@@ -13,7 +13,7 @@ using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
                                             reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: Field, interior, interpolate!
-using Oceananigans.Grids: x_domain, y_domain, topology, λnode, φnode, Face, Center,
+using Oceananigans.Grids: x_domain, y_domain, topology, λnode, φnode, znode, Face, Center,
                           Flat, Periodic, Bounded, Sides, Closed,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
                           λnodes, φnodes
@@ -23,10 +23,11 @@ using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
 using ...NumericalEarth: SIGNATURES, TYPEDSIGNATURES
-using ..DataWrangling: Metadatum, native_grid,
+using ..DataWrangling: AbstractStaticBathymetry, Metadatum, compute_mask, is_three_dimensional, native_grid,
                        dataset_variable_name, validate_dataset_coverage,
                        FieldRegridding, load_field_cache, save_field_cache, retrieve_bathymetry
 using ..DataWrangling.ETOPO: ETOPO2022
+using ..DataWrangling.GLORYS: GLORYSStatic
 using ..DataWrangling.RTopo: RTopo2
 
 include("label_ocean_basins.jl")
@@ -34,6 +35,7 @@ include("regrid_bathymetry.jl")
 include("ocean_basin.jl")
 include("smooth_topography.jl")
 include("connect_basins.jl")
+include("bottom_height_from_mask.jl")
 include("orca_grid.jl")
 
 end # module

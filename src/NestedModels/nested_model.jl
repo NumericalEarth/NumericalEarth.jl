@@ -59,6 +59,7 @@ exchange_state!(exchangers::NamedTuple, time) = foreach(exchanger -> exchange_st
 fields(nm::NestedModel)            = fields(nm.child)
 prognostic_fields(nm::NestedModel) = prognostic_fields(nm.child)
 architecture(nm::NestedModel)      = architecture(nm.child)
+Base.eltype(nm::NestedModel)       = eltype(nm.child)
 iteration(nm::NestedModel)         = iteration(nm.child)
 
 # Adaptive Δt: the wizard's `AdvectiveCFL` queries the simulation model, which is the
