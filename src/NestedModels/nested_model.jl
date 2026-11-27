@@ -32,7 +32,7 @@ property access and integrator-protocol methods forward to the child, except
 for `time_step!`, which advances the child and then ticks the parent to
 match the child's new clock time.
 
-Construct via [`child_model`](@ref) plus this wrapper, or use the
+Construct from a `child` model directly, or use the
 [`NestedSimulation`](@ref) convenience that bundles model construction and
 `Simulation` wrapping.
 """

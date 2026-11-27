@@ -1,5 +1,6 @@
 include("runtests_setup.jl")
 
+using NumericalEarth.EarthSystemModels: surface_layer_velocities
 using NumericalEarth.SeaIces: LandfastBasalStress, sea_ice_dynamics, sea_ice_simulation,
                               sea_ice_velocity_boundary_conditions
 
@@ -108,5 +109,24 @@ end
     # The halo mirrors the interior about the boundary value, interpolated in time
     for j in 1:Ny
         @test h[Nx+1, j, 1] ≈ 2 * (j + 1.5) - h[Nx, j, 1]
+    end
+end
+
+@testset "Surface-layer drag velocities fold like the ocean velocities [$arch]" for arch in test_architectures
+    grid = TripolarGrid(arch; size = (20, 20, 4), z = (-100, 0), halo = (4, 4, 4))
+    model = HydrostaticFreeSurfaceModel(grid)
+    set!(model, u = (λ, φ, z) -> cosd(λ) * φ, v = (λ, φ, z) -> sind(λ) * φ)
+    ocean = Simulation(model; Δt = 1)
+
+    # A reference depth equal to the top cell thickness makes the surface layer the top cell itself
+    uˢˡ, vˢˡ = surface_layer_velocities(ocean, 25)
+
+    Nx, Ny, Nz = size(grid)
+    fold_rows = Ny:Ny+grid.Hy
+
+    for (ϕˢˡ, ϕ) in ((uˢˡ, model.velocities.u), (vˢˡ, model.velocities.v))
+        ϕˢˡ = on_architecture(CPU(), ϕˢˡ)
+        ϕ   = on_architecture(CPU(), ϕ)
+        @test [ϕˢˡ[i, j, 1] for i in 1:Nx, j in fold_rows] ≈ [ϕ[i, j, Nz] for i in 1:Nx, j in fold_rows]
     end
 end

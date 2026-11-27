@@ -453,3 +453,34 @@ end
     @test DataWrangling.nan_convert_missing(Float32, 1.0, -999) === 1f0
     @test DataWrangling.nan_convert_missing(Float32, Inf, -999) === Inf32
 end
+
+@testset "set_region_data! from a slice with missing values" begin
+    slice = convert(Array{Union{Missing, Float32}}, ones(Float32, 4, 4, 2))
+    slice[2, 3, 1] = missing
+
+    # On the CPU the slice stays as it is; the region kernel turns `missing` into NaN
+    @test on_architecture(CPU(), slice) === slice
+    reshaped = reshape(view(slice, :, :, :), 4, 4, 2)
+    @test isequal(on_architecture(CPU(), reshaped), reshaped)
+
+    grid = LatitudeLongitudeGrid(CPU(); size = (4, 4, 2), longitude = (0, 4), latitude = (0, 4), z = (0, 1))
+    field = CenterField(grid)
+    DataWrangling.set_region_data!(field, slice, nothing, nothing, nothing; mangling = nothing, conversion = nothing,
+                                   region = DataWrangling.BoundingBoxOffset(0, 0))
+    @test isnan(interior(field)[2, 3, 1])
+    @test count(isnan, interior(field)) == 1
+end
+
+@testset "region_info rejects files that do not cover the target" begin
+    grid = LatitudeLongitudeGrid(CPU(); size = (8, 4, 1), longitude = (0, 8), latitude = (0, 4), z = (0, 1))
+    field = CenterField(grid)
+    region = BoundingBox(longitude = (0, 8), latitude = (0, 4))
+
+    λc = collect(0.5:1:7.5)
+    φc = collect(0.5:1:3.5)
+    @test DataWrangling.region_info(region, field, λc, φc) isa DataWrangling.BoundingBoxOffset
+    @test DataWrangling.region_info(region, field, λc, φc[1:3]) isa DataWrangling.BoundingBoxOffset
+
+    @test_throws ArgumentError DataWrangling.region_info(region, field, λc[1:5], φc)
+    @test_throws ArgumentError DataWrangling.region_info(region, field, λc, φc[1:2])
+end

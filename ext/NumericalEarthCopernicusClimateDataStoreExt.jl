@@ -1,19 +1,17 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
-using NumericalEarth
 using CopernicusClimateDataStore: CopernicusClimateDataStore
-using DocStringExtensions: TYPEDSIGNATURES
-using Downloads: Downloads
 using Dates: Dates
+using Downloads: Downloads
+using NCDatasets: NCDatasets
 using Oceananigans.DistributedComputations: @root
 
-using NCDatasets: NCDatasets
-
+using NumericalEarth: NumericalEarth, SIGNATURES, TYPEDSIGNATURES
 using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
                                          ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
-                                         ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
+                                         ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
                                          ERA5Land_dataset_variable_names,
@@ -50,7 +48,7 @@ end
 #####
 
 """
-    Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, threads=nothing, kwargs...)
+$(SIGNATURES)
 
 Download ERA5 data for every date in `metadata` using `era5cli` through the
 CopernicusClimateDataStore package, one CDS request per calendar-month batch,
@@ -333,10 +331,7 @@ function Downloads.download(mset::NativeGranularityERA5MetadataSet; kwargs...)
 end
 
 """
-    Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union{ERA5YearlySingleLevel,
-                                                                             ERA5MonthlySingleLevel,
-                                                                             ERA5MonthlyPressureLevels}};
-                      skip_existing=true, threads=Threads.nthreads(), additional_kw...)
+$(SIGNATURES)
 
 Generic ERA5 download supporting yearly, monthly, and pressure-level datasets.
 (Land datasets have their own yearly-file download method, below.)
@@ -602,7 +597,9 @@ function padded_era5_region(bbox::BBOX, dataset, names::Vector{Symbol})
     Δφ = maximum(180 / size(dataset, name)[2] for name in names)
     lon = bbox.longitude
     lat = bbox.latitude
-    return BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+    # A padded span wider than 360° is wrapped by CDS into a sliver around the seam.
+    lon = lon[2] - lon[1] + 4Δλ < 360 ? (lon[1] - 2Δλ, lon[2] + 2Δλ) : (lon[1], lon[1] + 360)
+    return BBOX(longitude = lon,
                 latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
 end
 

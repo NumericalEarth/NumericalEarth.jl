@@ -39,6 +39,7 @@ export
     EarthSystemModel,
     OceanOnlyModel,
     OceanSeaIceModel,
+    TotalWaterNormalization,
     AtmosphereOceanModel,
     AtmosphereLandModel,
     NestedModel,
@@ -91,6 +92,8 @@ export
     JRA55PrescribedLand,
     GloFASPrescribedLand,
     GloFASReanalysis,
+    GEUSPrescribedLand,
+    GEUSSolidIceDischarge,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     FreezingLimitedOceanTemperature,
@@ -195,6 +198,7 @@ export
     visualize_nested_domain
 
 using DataDeps: DataDeps
+using DocStringExtensions: DocStringExtensions
 using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
@@ -202,6 +206,20 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries, TimeInterpolator
 
 import Oceananigans: location
+
+# These show default values with DocStringExtensions v0.10 and plain signatures with v0.9.
+# TODO: import from Oceananigans.Utils once CliMA/Oceananigans.jl#6490 is released.
+const SIGNATURES = if hasmethod(DocStringExtensions.MethodSignatures, Tuple{}, (:defaults,))
+    DocStringExtensions.MethodSignatures(; defaults = true)
+else
+    DocStringExtensions.SIGNATURES
+end
+
+const TYPEDSIGNATURES = if hasmethod(DocStringExtensions.TypedMethodSignatures, Tuple{}, (:defaults,))
+    DocStringExtensions.TypedMethodSignatures(; defaults = true)
+else
+    DocStringExtensions.TYPEDSIGNATURES
+end
 
 """
     natural_earth_lines(name; scale = 50)
@@ -306,6 +324,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
+using .DataWrangling.GEUS
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.ASTERGED

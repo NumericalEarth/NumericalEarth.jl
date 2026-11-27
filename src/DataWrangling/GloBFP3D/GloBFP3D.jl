@@ -10,12 +10,10 @@ using Oceananigans.Fields: Field, set!
 using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.Lands: Lands, building_morphometry
-
+using ...NumericalEarth: NumericalEarth, SIGNATURES
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, metadata_path,
                        BoundingBox, bounding_box_suffix, latitude_summary, native_region_grid
-
-using DocStringExtensions: TYPEDSIGNATURES
+using ...Lands: Lands, building_morphometry
 
 import Oceananigans
 
@@ -295,7 +293,7 @@ function morphometry_latitude_bands(target_grid, region, Δ, maximum_raster_cell
 end
 
 """
-$(TYPEDSIGNATURES)
+$(SIGNATURES)
 
 Per-cell building morphometry on `target_grid` (a `LatitudeLongitudeGrid`, coarser than the
 `dataset` rasterization resolution), aggregated from the fine 3D-GloBFP building-height raster
