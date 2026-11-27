@@ -36,7 +36,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = ".."}
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "dd4480a2f70590b10d6b304d3c9e513d51cf0ade"} # Terrarium main at our last green CI (25 Nov; 0.1.11-DEV): every released SpeedyWeather (≤ 0.25) allows only Terrarium 0.1
 
 [compat]
 ArchGDAL = "0.10"
@@ -50,5 +50,5 @@ Enzyme = "0.13.166"
 Literate = "2.2"
 Oceananigans = "0.117.2, 0.118"
 Reactant = "0.2.278"
-SpeedyWeather = "0.23, 0.24, 0.25, 0.26"
+SpeedyWeather = "0.23, 0.24"
 Terrarium = "0.1.10, 0.2"
