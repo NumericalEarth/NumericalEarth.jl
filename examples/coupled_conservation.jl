@@ -73,10 +73,10 @@ arch = CPU()
 Lx = Ly = 100kilometers
 
 grid = RectilinearGrid(arch;
-                       size     = (4, 4, 10),
-                       halo     = (4, 4, 4),
-                       x        = (0, Lx), y = (0, Ly),
-                       z        = MutableVerticalDiscretization((-100, 0)),
+                       size = (4, 4, 10),
+                       halo = (4, 4, 4),
+                       x = (0, Lx), y = (0, Ly),
+                       z = MutableVerticalDiscretization((-100, 0)),
                        topology = (Periodic, Periodic, Bounded))
 
 ocean = ocean_simulation(grid;
