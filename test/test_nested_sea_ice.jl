@@ -4,6 +4,7 @@ using NumericalEarth.NestedModels: SeaIceBoundarySeries, SeaIceBoundaryVelocity,
 using Oceananigans.BoundaryConditions: fill_halo_regions!, getbc, NormalFlow, TracerReservoir, Value
 using Oceananigans.Grids: halo_size
 using Oceananigans.Units: days, minutes
+using ClimaSeaIce: IncrementalRemapping
 
 function nested_sea_ice_test_ocean(arch)
     parent_grid = LatitudeLongitudeGrid(arch; size = (12, 12, 6),
@@ -56,17 +57,22 @@ end
     @test any(h .> 0)
 end
 
-@testset "boundary_ice_velocity: ice leaves, is not pulled in, and follows the interior without parent ice" begin
+@testset "boundary_ice_velocity: parent ice enters, ice leaves, is not pulled in, and follows the interior without parent ice" begin
     # inward = 1: a west or south side
-    @test boundary_ice_velocity(0.2, 0.9, 0.0, 0.05, 1) == 0.05    # parent inflow: copy the interior
+    @test boundary_ice_velocity(0.2, 0.9, 0.0, 0.05, 1) == 0.2     # parent inflow faster than the interior
+    @test boundary_ice_velocity(0.2, 0.9, 0.0, 0.0, 1) == 0.2      # parent inflow into an ice-free boundary cell
+    @test boundary_ice_velocity(0.2, 0.9, 0.0, 0.3, 1) == 0.3      # interior faster: no divergence on the boundary row
     @test boundary_ice_velocity(-0.2, 0.9, 0.0, 0.05, 1) == 0.0    # parent outflow, interior inward: clamp
     @test boundary_ice_velocity(-0.2, 0.9, 0.0, -0.05, 1) == -0.05 # parent outflow, interior outward: pass through
     @test boundary_ice_velocity(0.0, 0.9, -0.3, 0.05, 1) == 0.0    # free drift: the ocean decides the direction
+    @test boundary_ice_velocity(0.0, 0.9, 0.3, 0.0, 1) == 0.3
     @test boundary_ice_velocity(0.2, NaN, 0.0, -0.05, 1) == -0.05  # no parent ice
     @test boundary_ice_velocity(0.2, 0.0, 0.0, -0.05, 1) == -0.05
 
     # inward = -1: an east or north side
-    @test boundary_ice_velocity(-0.2, 0.9, 0.0, -0.05, -1) == -0.05
+    @test boundary_ice_velocity(-0.2, 0.9, 0.0, -0.05, -1) == -0.2
+    @test boundary_ice_velocity(-0.2, 0.9, 0.0, 0.0, -1) == -0.2
+    @test boundary_ice_velocity(-0.2, 0.9, 0.0, -0.3, -1) == -0.3
     @test boundary_ice_velocity(0.2, 0.9, 0.0, -0.05, -1) == 0.0
     @test boundary_ice_velocity(0.2, 0.9, 0.0, 0.05, -1) == 0.05
 end
@@ -179,4 +185,24 @@ end
 
     @test all(isfinite, Array(interior(sea_ice.model.ice_thickness)))
     @test all(isfinite, Array(interior(sea_ice.model.velocities.u)))
+end
+
+@testset "nested sea ice: parent ice flows into an ice-free boundary row on $(arch)" for arch in test_architectures
+    ocean = nested_sea_ice_test_ocean(arch)
+    grid = ocean.model.child.grid
+    parent_ice = nested_sea_ice_test_parent(grid)
+
+    sea_ice = nested_sea_ice_simulation(ocean, parent_ice; Δt = 10minutes, advection = IncrementalRemapping())
+    set!(sea_ice.model, h = 0, ℵ = 0)
+
+    coupled = OceanSeaIceModel(ocean, sea_ice)
+    for _ in 1:3
+        time_step!(coupled, 10minutes)
+    end
+
+    # The parent ice drifts east (u = 0.2) through the west side, where it covers the southern rows.
+    # The thickness import there needs CliMA/ClimaSeaIce.jl#222, so only the velocity is checked
+    u = Array(interior(sea_ice.model.velocities.u, 1, :, 1))
+    Ny = size(grid, 2)
+    @test all(>(0), u[1:Ny÷2])
 end

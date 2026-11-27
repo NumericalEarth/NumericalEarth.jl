@@ -30,7 +30,7 @@ Oceananigans.Architectures.on_architecture(to, b::SeaIceBoundarySeries{Dim}) whe
     return @inbounds zero_nan(b.series[i, j, 1, boundary_time(clock)])
 end
 
-# The boundary-normal ice velocity, which lets the ice leave through the side but not be pulled in
+# The boundary-normal ice velocity: the parent ice enters and the ice leaves through the side, but is not pulled in
 struct SeaIceBoundaryVelocity{Dim, U, A, O}
     ice_velocity   :: U
     concentration  :: A
@@ -56,7 +56,9 @@ Oceananigans.Architectures.on_architecture(to, b::SeaIceBoundaryVelocity{Dim}) w
 @inline function boundary_ice_velocity(uᵢ, ℵ, uₒ, uᴵ, inward)
     uᵉˣᵗ = ifelse(isnan(uᵢ) | iszero(uᵢ), uₒ, uᵢ)
     uᵒᵘᵗ = ifelse(inward * uᴵ > 0, zero(uᴵ), uᴵ)
-    uᵇ   = ifelse(inward * uᵉˣᵗ > 0, uᴵ, uᵒᵘᵗ)
+    # On inflow the faster of the parent ice and the interior, so that ice enters an ice-free boundary row
+    uⁱⁿ  = ifelse(inward * uᴵ > inward * uᵉˣᵗ, uᴵ, uᵉˣᵗ)
+    uᵇ   = ifelse(inward * uᵉˣᵗ > 0, uⁱⁿ, uᵒᵘᵗ)
     return ifelse(isnan(ℵ) | iszero(ℵ), uᴵ, uᵇ)
 end
 
@@ -109,8 +111,8 @@ $(TYPEDSIGNATURES)
 
 Return the open lateral boundary conditions of the sea ice over the nested `ocean` (a `Simulation` of a
 [`nested_ocean_model`](@ref)) from the parent's sea ice `parent_ice` (see [`parent_sea_ice`](@ref)): `h` and `ℵ` relax
-toward the parent with `tracer_scheme`, inflowing ice carries no snow, and the boundary-normal velocity lets the ice
-leave but not be pulled inward.
+toward the parent with `tracer_scheme`, inflowing ice carries no snow, and the boundary-normal velocity brings the
+parent ice in at the faster of its own and the interior velocity, and lets the ice leave but not be pulled inward.
 """
 function nested_sea_ice_boundary_conditions(ocean::Simulation, parent_ice::NamedTuple;
                                             tracer_scheme = default_tracer_scheme())
