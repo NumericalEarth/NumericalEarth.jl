@@ -3,7 +3,6 @@ module NumericalEarthBreezeExt
 using Breeze: Breeze
 using Breeze.BoundaryConditions: EnergyFluxBoundaryConditionFunction, StaticEnergyFluxBoundaryConditionFunction,
                                  ThetaFluxBoundaryConditionFunction
-using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
@@ -12,7 +11,7 @@ using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryCondi
 using Oceananigans.MultiRegion: MultiRegionField, MultiRegionGrids, MultiRegionObject
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: @apply_regionally, getregion, launch!
-using NumericalEarth: NumericalEarth
+using NumericalEarth: NumericalEarth, SIGNATURES, TYPEDSIGNATURES
 using NumericalEarth.EarthSystemModels: sea_ice_concentration
 using NumericalEarth.EarthSystemModels.InterfaceComputations: AtmosphereSurfaceFluxes, ComponentExchanger, computed_fluxes
 

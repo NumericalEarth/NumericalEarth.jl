@@ -95,7 +95,7 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
 end
 
 """
-    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
+$(SIGNATURES)
 
 Regular lat/lon raster of cell steps `Δλ`/`Δφ` (degrees) covering `region`, snapped to the global
 lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
@@ -115,7 +115,7 @@ function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 end
 
 """
-    native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
+$(SIGNATURES)
 
 Return the native grid corresponding to `metadata` with `halo` size.
 Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
@@ -127,6 +127,13 @@ inpaints the whole dataset and then regrids onto its own subdomain.
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
     construct_native_grid(metadata, metadata.region, child_architecture(arch); halo)
 
+# A z-restricted download (`BoundingBox`/`Column` with `z`) yields a file with
+# fewer levels than the dataset's full water column. When `z_interfaces` returns
+# an explicit interface vector (read from that file), the vertical size is set by
+# the vector, not by the dataset's hard-coded full-column `Nz`.
+vertical_size(z::AbstractVector, Nz) = length(z) - 1
+vertical_size(z, Nz) = Nz
+
 # 2D-only datasets (surface forcing like JRA55) skip the z dimension.
 function construct_native_grid(metadata, ::Nothing, arch; halo)
     FT = eltype(metadata)
@@ -136,6 +143,7 @@ function construct_native_grid(metadata, ::Nothing, arch; halo)
 
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                      halo, longitude, latitude, z = z)
     else
@@ -170,6 +178,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
 
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                      halo, longitude, latitude, z = z,
                                      topology = (TX, Bounded, Bounded))
@@ -189,6 +198,7 @@ function construct_native_grid(metadata, col::Column, arch; halo)
     if is_three_dimensional(metadata)
         _, _, Nz, _ = size(metadata)
         z = z_interfaces(metadata)
+        Nz = vertical_size(z, Nz)
         return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
                                x = x, y = y, z = z, topology = (Flat, Flat, Bounded))
     else
@@ -208,11 +218,7 @@ function retrieve_data(metadata::Metadatum)
 end
 
 """
-    Field(metadata::Metadatum, arch=CPU();
-          inpainting = default_inpainting(metadata),
-          mask = nothing,
-          halo = (3, 3, 3),
-          cache_inpainted_data = true)
+$(SIGNATURES)
 
 Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
@@ -299,12 +305,15 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
         elapsed = 1e-9 * (time_ns() - start_time)
         @info string(" ... (", prettytime(elapsed), ")")
 
-        # We cache the inpainted data to avoid recomputing it
-        @root if cache_inpainted_data
-            file = jldopen(inpainted_path, "w+")
-            file["data"] = on_architecture(CPU(), parent(field))
-            file["inpainting_maxiter"] = inpainting.maxiter
-            close(file)
+        # We cache the inpainted data to avoid recomputing it. Any rank may write it,
+        # so it is written in a temporary directory to avoid races then moved.
+        if cache_inpainted_data
+            temporary_path = tempname(dirname(inpainted_path)) * ".jld2"
+            jldopen(temporary_path, "w") do file
+                file["data"] = on_architecture(CPU(), parent(field))
+                file["inpainting_maxiter"] = inpainting.maxiter
+            end
+            mv(temporary_path, inpainted_path; force = true)
         end
     end
 
@@ -364,7 +373,7 @@ end
 interpolate_physical!(to_field, from_field, metadata) = interpolate_physical!(to_field, from_field)
 
 """
-    Field(metadata::Metadatum, grid::AbstractGrid; cache = false, overwrite_cache = false, kw...)
+$(SIGNATURES)
 
 Load `metadata` on its native grid and interpolate onto `grid` — the
 `Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
@@ -526,10 +535,7 @@ lower_bound(metadata, name) = -1f5
 higher_bound(metadata, name) = 1f5
 
 """
-    compute_mask(metadata::Metadatum, dataset_field,
-                 mask_value = default_mask_value(metadata),
-                 minimum_value = -1f5,
-                 maximum_value = 1f5)
+$(SIGNATURES)
 
 A boolean field where `true` represents a missing value in the dataset_field.
 """
@@ -562,7 +568,7 @@ end
 #####
 
 """
-    Field(mset::MetadataSet, arch=CPU(); kw...)
+$(SIGNATURES)
 
 Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
 verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.

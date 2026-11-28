@@ -15,7 +15,7 @@ over-capacity drip reach the soil as throughfall.
 
 `leaf_area_index` supplies the canopy λˡᵉᵃᶠ; use the same value or field for the canopy interface.
 `cover_fraction` supplies the vegetated fraction of the cell; on tiled land, use the same value or
-field for [`TiledLandInterface`](@ref). A `FieldTimeSeries` λˡᵉᵃᶠ or cover fraction runs on CPU only.
+field for [`TiledLandInterface`](@ref NumericalEarth.EarthSystemModels.InterfaceComputations.TiledLandInterface). A `FieldTimeSeries` λˡᵉᵃᶠ or cover fraction runs on CPU only.
 The store is kept per unit vegetated area. When the cover shrinks, the water on the removed
 leaves reaches the soil as throughfall; when it grows, the new leaves start dry. Interception
 and evaporation use the cover at the start of the step.

@@ -1,10 +1,5 @@
 """
-    FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
-                    time_indices_in_memory = 2,
-                    time_indexing = Cyclical(),
-                    inpainting = nothing,
-                    cache_inpainted_data = true,
-                    prefetch = false)
+$(SIGNATURES)
 
 Create a FieldTimeSeries from a dataset that corresponds to `metadata`.
 
@@ -19,7 +14,7 @@ Arguments
 Keyword Arguments
 =================
 
-- `time_indices_in_memory`: The number of time indices to keep in memory. Default: 2.
+- `time_indices_in_memory`: The number of time indices to keep in memory. Default: 3.
 
 - `time_indexing`: The time indexing scheme to use. Default: `Cyclical()`.
 
@@ -41,7 +36,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::Ab
 end
 
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
-                                                    time_indices_in_memory = 2,
+                                                    time_indices_in_memory = 3,
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
                                                     cache_inpainted_data = true,
