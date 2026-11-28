@@ -5,6 +5,7 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Advection: cell_advection_timescale
+using Oceananigans.Diagnostics: cell_diffusion_timescale
 using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: launch!
