@@ -48,9 +48,9 @@ using Oceananigans.OutputReaders: Clamp   # time-indexing scheme for the prescri
 using Breeze
 using CopernicusClimateDataStore          # activates NumericalEarthCopernicusClimateDataStoreExt (ERA5 + land-albedo downloads)
 using CloudMicrophysics                   # nested_atmosphere_model's default microphysics → 1-moment mixed-phase
-using RRTMGP                     # activates Breeze's radiative-transfer extension (RadiativeTransferModel)
-using CairoMakie                 # loads Makie → NumericalEarthMakieExt (`visualize_nested_domain`)
-using NaturalEarth, GeoInterface # together → NumericalEarthNaturalEarthExt (`natural_earth_lines`)
+using RRTMGP                              # activates Breeze's radiative-transfer extension (RadiativeTransferModel)
+using CairoMakie                          # loads Makie → NumericalEarthMakieExt (`visualize_nested_domain`)
+using NaturalEarth, GeoInterface          # together → NumericalEarthNaturalEarthExt (`natural_earth_lines`)
 using CUDA
 using Printf
 using Dates: DateTime, Second
@@ -284,6 +284,7 @@ atmosphere = Simulation(nest; Δt, verbose = false)   ## the coupled model manag
 model = EarthSystemModel(; atmosphere, land, ocean, radiation, ocean_fraction)
 
 simulation = Simulation(model; Δt, stop_time=duration)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt)
 
 # ## Output

@@ -73,10 +73,10 @@ arch = CPU()
 Lx = Ly = 100kilometers
 
 grid = RectilinearGrid(arch;
-                       size     = (4, 4, 10),
-                       halo     = (4, 4, 4),
-                       x        = (0, Lx), y = (0, Ly),
-                       z        = MutableVerticalDiscretization((-100, 0)),
+                       size = (4, 4, 10),
+                       halo = (4, 4, 4),
+                       x = (0, Lx), y = (0, Ly),
+                       z = MutableVerticalDiscretization((-100, 0)),
                        topology = (Periodic, Periodic, Bounded))
 
 ocean = ocean_simulation(grid;
@@ -227,6 +227,7 @@ end
 Δt = 20minutes
 Δτ = 40days
 simulation = Simulation(coupled_model; Δt, stop_time = 2Δτ)
+Oceananigans.Diagnostics.erroring_NaNChecker!(simulation) #hide
 
 freeze_phase = (T    = 253.15,
                 q    = 1.0e-4,
