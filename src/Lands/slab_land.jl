@@ -380,7 +380,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
-    launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
+    @apply_regionally launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
             P, E, Jv, Es, Pl, canopy_evaporation, interface_fluxes, Jʳⁿ)
     return nothing
 end

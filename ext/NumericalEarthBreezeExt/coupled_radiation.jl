@@ -51,6 +51,9 @@ struct CoupledRadiation{F, R}
     radiative_transfer_model :: R
 end
 
+# Each panel's tendency kernel reads its own flux divergence on a multi-region grid.
+Breeze.Utils.@regional CoupledRadiation
+
 CoupledRadiation() = CoupledRadiation(nothing, nothing)
 
 # From Breeze 0.14, `AtmosphereModel` validates `radiation.schedule` at construction

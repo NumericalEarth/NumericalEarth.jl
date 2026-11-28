@@ -44,7 +44,7 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     penetrating_radiation = get_radiative_forcing(ocean)
     compute_absorption_coefficient!(penetrating_radiation, Time(clock.time))
 
-    launch!(arch, grid, :xy,
+    @apply_regionally launch!(arch, grid, :xy,
             _apply_air_sea_radiative_fluxes!,
             net_ocean_fluxes,
             interface_fluxes.ocean,

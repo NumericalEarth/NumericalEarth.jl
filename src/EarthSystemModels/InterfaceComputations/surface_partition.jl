@@ -76,7 +76,7 @@ function update_surface_temperature!(partition::SurfacePartition, coupled_model)
     sea_ice_properties = interfaces.sea_ice_properties
     sea_ice_units = isnothing(sea_ice_properties) ? DegreesCelsius() : sea_ice_properties.temperature_units
 
-    launch!(arch, grid, :xy, _update_surface_temperature!,
+    @apply_regionally launch!(arch, grid, :xy, _update_surface_temperature!,
             partition.surface_temperature,
             partition.ocean_fraction,
             ℵˢⁱ,

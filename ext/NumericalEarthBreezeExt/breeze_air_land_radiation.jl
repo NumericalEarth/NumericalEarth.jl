@@ -58,7 +58,7 @@ end
 function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, rtm::BreezeRTM, coupled_model)
     state = exchanger.state
 
-    launch!(architecture(exchange_grid), exchange_grid, :xy,
+    @apply_regionally launch!(architecture(exchange_grid), exchange_grid, :xy,
             _interpolate_breeze_radiation_state!,
             state,
             rtm.downwelling_shortwave_flux,

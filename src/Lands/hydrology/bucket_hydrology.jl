@@ -57,7 +57,7 @@ end
 
 function time_step!(b::BucketHydrology, land, Δt)
     arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _bucket_hydrology_step!,
+    @apply_regionally launch!(arch, land.grid, :xy, _bucket_hydrology_step!,
             land.water_storage,
             land.fluxes.precipitation, land.fluxes.evaporation,
             Δt, b.maximum_water_storage)
@@ -79,7 +79,7 @@ end
 
 function update_diagnostics!(b::BucketHydrology, land)
     arch = architecture(land.grid)
-    launch!(arch, land.grid, :xy, _bucket_hydrology_saturation!,
+    @apply_regionally launch!(arch, land.grid, :xy, _bucket_hydrology_saturation!,
             land.saturation, land.water_storage,
             b.maximum_water_storage)
     return nothing

@@ -63,13 +63,13 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     if !isnothing(dynamics)
         kernel_parameters = interface_kernel_parameters(grid)
         τₛ = dynamics.external_momentum_stresses.bottom
-        launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
+        @apply_regionally launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
                 fluxes, grid, clock, hˢⁱ, ℵˢⁱ, uˢⁱ, vˢⁱ, τₛ)
     else
         τₛ = nothing
     end
 
-    launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
+    @apply_regionally launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tⁱⁿ, Sⁱⁿ, grid, clock,
             hˢⁱ, hc, ℵˢⁱ, Sˢⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt, mass_fluxes.ice, mass_fluxes.snow)

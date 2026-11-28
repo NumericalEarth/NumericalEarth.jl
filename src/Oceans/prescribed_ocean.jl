@@ -3,7 +3,8 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries, cpu_interpolating_time_indices
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
-using Oceananigans.Utils: launch!, prettysummary, prettytime
+using Oceananigans.MultiRegion: MultiRegionGrids
+using Oceananigans.Utils: @apply_regionally, construct_regionally, launch!, prettysummary, prettytime
 using KernelAbstractions: @kernel, @index
 using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 
@@ -54,19 +55,21 @@ mutable struct PrescribedOcean{FT, G, C, T, S, U, TI, R, HC} <: AbstractPrescrib
     end
 end
 
-function default_prescribed_sst(grid, times)
-    return FieldTimeSeries{Center, Center, Nothing}(grid, times)
-end
+# On a multi-region grid, a `MultiRegionObject` holding one series per region
+prescribed_field_time_series(grid, times) =
+    construct_regionally(FieldTimeSeries{Center, Center, Nothing}, grid, times)
+
+default_prescribed_sst(grid, times) = prescribed_field_time_series(grid, times)
 
 function default_prescribed_sss(grid, times)
-    sss = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    parent(sss) .= 35
+    sss = prescribed_field_time_series(grid, times)
+    @apply_regionally fill!(parent(sss), 35)
     return sss
 end
 
 function default_prescribed_velocities(grid, times)
-    u = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    v = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    u = prescribed_field_time_series(grid, times)
+    v = prescribed_field_time_series(grid, times)
     return (; u, v)
 end
 
@@ -96,10 +99,10 @@ end
 Grids.grid(ocean::PrescribedOcean) = ocean.grid
 
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
-    !isnothing(T) && set!(ocean.sea_surface_temperature, T)
-    !isnothing(S) && set!(ocean.sea_surface_salinity, S)
-    !isnothing(u) && set!(ocean.velocities.u, u)
-    !isnothing(v) && set!(ocean.velocities.v, v)
+    !isnothing(T) && @apply_regionally set!(ocean.sea_surface_temperature, T)
+    !isnothing(S) && @apply_regionally set!(ocean.sea_surface_salinity, S)
+    !isnothing(u) && @apply_regionally set!(ocean.velocities.u, u)
+    !isnothing(v) && @apply_regionally set!(ocean.velocities.v, v)
     fill_prescribed_halo_regions!(ocean)
     return nothing
 end
@@ -107,6 +110,9 @@ end
 # The exchanger reads the halo columns straight out of the time series (see
 # `interpolate_prescribed_state!`), so their halos must be valid. Fill them whenever the data is
 # set; a partly-in-memory series fills its own halos each time it loads a new window.
+# On a multi-region grid the exchanger fills the halos of the interpolated state instead.
+fill_prescribed_halo_regions!(::PrescribedOcean{<:Any, <:MultiRegionGrids}) = nothing
+
 function fill_prescribed_halo_regions!(ocean::PrescribedOcean)
     fill_halo_regions!(ocean.sea_surface_temperature)
     fill_halo_regions!(ocean.sea_surface_salinity)
@@ -191,13 +197,15 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, co
 # the atmosphere's face-centered momentum fluxes average them into the first interior face, so the
 # interpolation covers those columns rather than leaving them at zero (#754).
 function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
-    Tᵒ = ocean.sea_surface_temperature
-    Sᵒ = ocean.sea_surface_salinity
     uᵒ, vᵒ = ocean.velocities
+    @apply_regionally interpolate_prescribed_state!(state, ocean.grid, ocean.clock.time,
+                                                    ocean.sea_surface_temperature, ocean.sea_surface_salinity, uᵒ, vᵒ)
+    fill_multi_region_halos!(state, ocean.grid)
+    return nothing
+end
 
-    grid = ocean.grid
+function interpolate_prescribed_state!(state, grid, t, Tᵒ, Sᵒ, uᵒ, vᵒ)
     arch = architecture(grid)
-    t = ocean.clock.time
     interpolator(fts) = cpu_interpolating_time_indices(arch, fts.times, fts.time_indexing, t)
 
     launch!(arch, grid, interface_kernel_parameters(grid), _interpolate_prescribed_ocean_state!,
@@ -205,6 +213,17 @@ function interpolate_prescribed_state!(state, ocean::PrescribedOcean)
             Tᵒ, Sᵒ, uᵒ, vᵒ,
             interpolator(Tᵒ), interpolator(Sᵒ), interpolator(uᵒ), interpolator(vᵒ))
 
+    return nothing
+end
+
+# The halo columns of a single region series cannot hold the neighboring regions' data, so on a
+# multi-region grid the halos of the interpolated state are filled from it instead.
+fill_multi_region_halos!(state, grid) = nothing
+
+function fill_multi_region_halos!(state, ::MultiRegionGrids)
+    fill_halo_regions!(state.T)
+    fill_halo_regions!(state.S)
+    fill_halo_regions!((state.u, state.v))
     return nothing
 end
 
@@ -233,10 +252,10 @@ end
 
 function Oceananigans.TimeSteppers.update_state!(ocean::PrescribedOcean)
     time = Time(ocean.clock.time)
-    update_field_time_series!(ocean.sea_surface_temperature, time)
-    update_field_time_series!(ocean.sea_surface_salinity, time)
-    update_field_time_series!(ocean.velocities.u, time)
-    update_field_time_series!(ocean.velocities.v, time)
+    @apply_regionally update_field_time_series!(ocean.sea_surface_temperature, time)
+    @apply_regionally update_field_time_series!(ocean.sea_surface_salinity, time)
+    @apply_regionally update_field_time_series!(ocean.velocities.u, time)
+    @apply_regionally update_field_time_series!(ocean.velocities.v, time)
     return nothing
 end
 

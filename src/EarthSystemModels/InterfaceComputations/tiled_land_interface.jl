@@ -103,7 +103,7 @@ function blend_tiles!(coupled_model, interface)
     cover_fraction, cover_fraction_time_interpolator = kernel_surface_field(interface.cover_fraction, arch, clock.time)
     radiation_state = isnothing(exchanger.radiation) ? nothing : exchanger.radiation.state
 
-    launch!(arch, grid, :xy, _blend_tiled_land_fluxes!,
+    @apply_regionally launch!(arch, grid, :xy, _blend_tiled_land_fluxes!,
             interface.fluxes, interface.temperature,
             interface.vegetated.fluxes, interface.vegetated.temperature,
             interface.bare.fluxes, interface.bare.temperature, ground_conductance(interface.bare), exchanger.land.state.T,

@@ -41,7 +41,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
-    launch!(arch, grid, kernel_parameters,
+    @apply_regionally launch!(arch, grid, kernel_parameters,
             _compute_atmosphere_ocean_interface_state!,
             interface_fluxes,
             interface_temperature,

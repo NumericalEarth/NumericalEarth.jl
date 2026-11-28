@@ -43,13 +43,13 @@ function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::Breez
     if grid isa TerrainFollowingGrid
         # Terrain makes the AGL first-cell height vary per column → a 2-D field.
         z₁ = Oceananigans.Field{Center, Center, Nothing}(exchange_grid)
-        launch!(architecture(exchange_grid), exchange_grid, interface_kernel_parameters(exchange_grid),
+        @apply_regionally launch!(architecture(exchange_grid), exchange_grid, interface_kernel_parameters(exchange_grid),
                 _fill_surface_layer_height!, z₁, grid)
         return z₁
     else
         # Horizontally uniform → one scalar. Read once here (cached, not per step), so the
         # single host index into a possibly-stretched device Δz array is fine under @allowscalar.
-        return @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+        return @allowscalar Oceananigans.zspacing(1, 1, 1, getregion(grid, 1), Center(), Center(), Center()) / 2
     end
 end
 
@@ -134,7 +134,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)
-    launch!(arch, exchange_grid, kernel_parameters,
+    @apply_regionally launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
             state, u, v, T, qᵛ, p)
 
@@ -150,10 +150,21 @@ NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, at
 ##### Net fluxes: extract coupling flux fields from Breeze boundary conditions
 #####
 
+# The bottom flux condition of `field`, unwrapped by `unwrap` from its bottom boundary condition. On a
+# multi-region grid each region holds its part of the coupling field, reassembled here into one field.
+bottom_flux_condition(field, unwrap = identity) = unwrap(field.boundary_conditions.bottom.condition)
+
+function bottom_flux_condition(field::MultiRegionField, unwrap = identity)
+    conditions = map(bcs -> unwrap(bcs.bottom.condition), field.boundary_conditions.regional_objects)
+    first(conditions) isa Oceananigans.Field || return first(conditions)
+    data = MultiRegionObject(map(condition -> condition.data, conditions))
+    return Oceananigans.Field{Center, Center, Nothing}(field.grid; data)
+end
+
 function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmosphere::BreezeAtmosphere)
     # Momentum flux fields (direct FluxBoundaryCondition on ρu, ρv)
-    ρu = atmosphere.momentum.ρu.boundary_conditions.bottom.condition
-    ρv = atmosphere.momentum.ρv.boundary_conditions.bottom.condition
+    ρu = bottom_flux_condition(atmosphere.momentum.ρu)
+    ρv = bottom_flux_condition(atmosphere.momentum.ρv)
 
     # BulkDrag bottoms would break the extraction below and double-count the coupler's stress.
     ρu isa Oceananigans.Field || throw(ArgumentError(
@@ -161,10 +172,10 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
         "flux field, so its surface stress cannot come from the coupler. Build the atmosphere " *
         "without `bottom_drag_coefficient` (Breeze `BulkDrag`) when coupling to land or ocean."))
 
-    ρE = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
+    ρE = bottom_flux_condition(thermodynamic_density(atmosphere.formulation), condition -> condition.condition)
 
     # Moisture flux field
-    ρqᵛᵉ = atmosphere.moisture_density.boundary_conditions.bottom.condition
+    ρqᵛᵉ = bottom_flux_condition(atmosphere.moisture_density)
 
     return (; ρu, ρv, ρE, ρqᵛᵉ)
 end
@@ -204,6 +215,12 @@ end
     end
 end
 
+# The face-centered momentum fluxes average the center stress of the halo columns on the first
+# interior face; on a multi-region grid those columns belong to the neighboring region.
+fill_stress_halos!(fluxes, grid) = nothing
+fill_stress_halos!(fluxes::AtmosphereSurfaceFluxes, ::MultiRegionGrids) =
+    fill_halo_regions!((fluxes.x_momentum, fluxes.y_momentum))
+
 NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::BreezeAtmosphereSim) =
     NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, component_model(atmos))
 
@@ -222,7 +239,14 @@ function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmo
     ℵᵒᶜ = interfaces.surface_partition.ocean_fraction
     ℵˢⁱ = sea_ice_concentration(coupled_model.sea_ice)
 
-    launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!,
+    for fluxes in (ao_fluxes, ai_fluxes, al_fluxes)
+
+        fill_stress_halos!(fluxes, grid)
+
+    end
+
+
+    @apply_regionally launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!,
             net, ao_fluxes, ai_fluxes, al_fluxes, ℵᵒᶜ, ℵˢⁱ, grid)
 
     return nothing
