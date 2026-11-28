@@ -237,3 +237,9 @@ Oceananigans.Advection.cell_advection_timescale(model::NumericalEarth.EarthSyste
 
 Oceananigans.Advection.cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphereSim}) =
     cell_advection_timescale(component_model(model.atmosphere))
+
+Oceananigans.Diagnostics.cell_diffusion_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphere}) =
+    cell_diffusion_timescale(model.atmosphere)
+
+Oceananigans.Diagnostics.cell_diffusion_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphereSim}) =
+    cell_diffusion_timescale(component_model(model.atmosphere))

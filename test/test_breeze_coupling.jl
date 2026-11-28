@@ -14,7 +14,7 @@ NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBree
 @test !isnothing(NumericalEarthBreezeExt)
 
 # Helper to build a fresh atmosphere + slab ocean model
-function build_test_model(arch)
+function build_test_model(arch; closure = nothing)
     grid = RectilinearGrid(arch,
                            size = (16, 16), halo = (5, 5),
                            x = (-10kilometers, 10kilometers),
@@ -23,7 +23,7 @@ function build_test_model(arch)
 
     θ₀ = 285
 
-    atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+    atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀, closure)
     set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=1)
 
     sst_grid = RectilinearGrid(arch,
@@ -178,6 +178,19 @@ end
             @test model.atmosphere isa Simulation
             @test model.atmosphere.model isa Breeze.AtmosphereModel
             @test model.architecture isa typeof(arch)
+        end
+
+        @testset "Diffusion time scale forwards to the atmosphere on $A" begin
+            model = build_test_model(arch; closure = SmagorinskyLilly())
+            atmosphere = model.atmosphere.model
+            @test Oceananigans.Diagnostics.cell_diffusion_timescale(model) ==
+                  Oceananigans.Diagnostics.cell_diffusion_timescale(atmosphere)
+
+            # The wizard calls `cell_diffusion_timescale(model)` once `diffusive_cfl` is finite
+            simulation = Simulation(model, Δt=10, stop_iteration=1)
+            conjure_time_step_wizard!(simulation; cfl=0.5, diffusive_cfl=0.5, max_Δt=10)
+            run!(simulation)
+            @test simulation.model.clock.iteration == 1
         end
 
         @testset "Time stepping on $A" begin
