@@ -121,8 +121,8 @@ boundary-normal and tangential velocities (`normal_velocity_scheme`, `tangential
 parent over 9 hours on inflow and 360 days on outflow), tracer reservoirs on the tracers (`tracer_scheme`; relaxing
 toward the parent over 20 km on inflow), Flather on the barotropic transport, and Chapman on the free surface. Each
 scheme may also be a `NamedTuple` keyed by side. Over the outermost `relaxation_width` cells of each open side (default:
-2/3°), `T`, `S` and the baroclinic parts of `u` and `v` relax toward the parent at `relaxation_rate` (s⁻¹; default
-1/6 hours), leaving the barotropic flow to Flather. `relaxation_rate = nothing` disables the relaxation, and
+2/3°), `T`, `S`, the tangential velocity and the baroclinic part of the normal velocity relax toward the parent at
+`relaxation_rate` (s⁻¹; default 1/6 hours), leaving the barotropic normal transport to Flather. `relaxation_rate = nothing` disables the relaxation, and
 `relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes `T` and `S` only where the flow enters through the side.
 On a curvilinear `grid`, the parent's eastward and northward velocities are rotated onto the grid's own axes.
 

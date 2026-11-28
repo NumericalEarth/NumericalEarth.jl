@@ -45,7 +45,7 @@ end
     return ψᵖ - @inbounds ψ[i, j, k]
 end
 
-# The baroclinic anomaly, which leaves the barotropic flow to Flather
+# The baroclinic anomaly, which leaves the barotropic transport to Flather
 @inline function band_anomaly(i, j, k, grid, loc, ψ, r, time, ::Val{true})
     iᵇ, jᵇ = nearest_band_indices(r, i, j)
     ψ̄, ψ̄ᵖ = column_means(i, j, grid, loc, ψ, r, time)
@@ -53,29 +53,35 @@ end
     return (ψᵖ - ψ̄ᵖ) - (@inbounds(ψ[i, j, k]) - ψ̄)
 end
 
+# Only the boundary-normal velocity has a Flather condition on its barotropic part
+@inline relaxes_baroclinic_part(::BandRelaxation{1}, ::Val{:u}) = Val(true)
+@inline relaxes_baroclinic_part(::BandRelaxation{2}, ::Val{:v}) = Val(true)
+@inline relaxes_baroclinic_part(r, name) = Val(false)
+
 @inline band_rate(i, j, k, grid, rate::Number, fields, loc) = rate
 @inline band_rate(i, j, k, grid, rate::InflowOutflowRate, fields, loc) = evaluate_rate(i, j, k, grid, rate, fields, loc)
 
-@inline function band_relaxation(i, j, k, grid, loc, ψ, fields, r, time, baroclinic)
+@inline function band_relaxation(i, j, k, grid, loc, ψ, fields, r, time, name)
+    baroclinic = relaxes_baroclinic_part(r, name)
     δ = band_rate(i, j, k, grid, r.rate, fields, loc) * band_anomaly(i, j, k, grid, loc, ψ, r, time, baroclinic)
     return ifelse(inside(r, i, j), δ, zero(δ))
 end
 
-@inline total_band_relaxation(i, j, k, grid, loc, ψ, fields, ::Tuple{}, time, baroclinic) = 0
-@inline total_band_relaxation(i, j, k, grid, loc, ψ, fields, relaxations::Tuple, time, baroclinic) =
-    band_relaxation(i, j, k, grid, loc, ψ, fields, first(relaxations), time, baroclinic) +
-    total_band_relaxation(i, j, k, grid, loc, ψ, fields, Base.tail(relaxations), time, baroclinic)
+@inline total_band_relaxation(i, j, k, grid, loc, ψ, fields, ::Tuple{}, time, name) = 0
+@inline total_band_relaxation(i, j, k, grid, loc, ψ, fields, relaxations::Tuple, time, name) =
+    band_relaxation(i, j, k, grid, loc, ψ, fields, first(relaxations), time, name) +
+    total_band_relaxation(i, j, k, grid, loc, ψ, fields, Base.tail(relaxations), time, name)
 
 @inline relaxed_field(fields, ::Val{name}) where name = getproperty(fields, name)
 
 @inline function relaxation_tendency(i, j, k, grid, clock, fields, p)
     μ = @inbounds p.mask[i, j, 1]
     ψ = relaxed_field(fields, p.name)
-    return μ * total_band_relaxation(i, j, k, grid, p.location, ψ, fields, p.relaxations, Time(clock.time), p.baroclinic)
+    return μ * total_band_relaxation(i, j, k, grid, p.location, ψ, fields, p.relaxations, Time(clock.time), p.name)
 end
 
 # An `(; inflow, outflow)` rate is flow dependent for the tracers; the velocities relax at the inflow rate.
-side_rate(rate::Number, side, baroclinic, FT) = convert(FT, rate)
+side_rate(rate::Number, side, velocity, FT) = convert(FT, rate)
 side_rate(rate::NamedTuple, side, ::Val{true}, FT) = convert(FT, rate.inflow)
 side_rate(rate::NamedTuple, side, ::Val{false}, FT) =
     InflowOutflowRate{side}(inflow_rate = convert(FT, rate.inflow), outflow_rate = convert(FT, rate.outflow))
@@ -146,14 +152,14 @@ function ocean_boundary_relaxation(grid, bands; rate, width)
 
     function relaxation_forcing(name)
         loc = boundary_location(name)
-        baroclinic = Val(name ∈ (:u, :v))
+        velocity = Val(name ∈ (:u, :v))
         relaxations = map(sides) do side
             irange, jrange = band_relaxation_ranges(grid, loc, side, width, sides)
             BandRelaxation{boundary_dimension(side)}(bands[side][name], irange, jrange,
-                                                     side_rate(rate, side, baroclinic, eltype(grid)))
+                                                     side_rate(rate, side, velocity, eltype(grid)))
         end
         mask = name === :u ? masks.u : name === :v ? masks.v : masks.c
-        parameters = (; name = Val(name), mask, location = loc, relaxations, baroclinic)
+        parameters = (; name = Val(name), mask, location = loc, relaxations)
         return Forcing(relaxation_tendency; discrete_form = true, parameters)
     end
 

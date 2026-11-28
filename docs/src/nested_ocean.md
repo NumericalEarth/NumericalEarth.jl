@@ -76,9 +76,10 @@ keyed by side, to set a scheme per side.
 
 ## Relaxation band
 
-Over the outermost `relaxation_width` cells of each open side (default: 2/3°), the temperature, salinity
-and the baroclinic part of the velocity relax toward the parent at `relaxation_rate` (default: 1/6 hours).
-The barotropic flow is left to Flather. `relaxation_rate = nothing` turns the band off, and
+Over the outermost `relaxation_width` cells of each open side (default: 2/3°), the temperature, salinity,
+tangential velocity and the baroclinic part of the normal velocity relax toward the parent at `relaxation_rate`
+(default: 1/6 hours). The barotropic normal transport is left to Flather, but no boundary condition holds the
+barotropic tangential flow, so the band relaxes all of it. `relaxation_rate = nothing` turns the band off, and
 `relaxation_rate = (inflow = 1/6hours, outflow = 0)` relaxes the tracers only where the flow enters.
 
 ## Bathymetry at the boundaries
