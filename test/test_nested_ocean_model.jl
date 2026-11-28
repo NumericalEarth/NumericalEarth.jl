@@ -685,7 +685,7 @@ end
     @test h[Nx÷2, Ny-2] ≈ -1000
 end
 
-@testset "Boundary relaxation: cos² masks, and velocities relax only their baroclinic part" begin
+@testset "Boundary relaxation: cos² masks, and the normal velocity relaxes only its baroclinic part" begin
     grid = nesting_test_child_grid(CPU())
     width = 4
     masks = relaxation_masks(grid, lateral_sides, width)
@@ -712,6 +712,12 @@ end
     column = [forcing(2, 10, k, grid, child.clock, model_fields) for k in 1:size(grid, 3)]
     @test maximum(abs, column) > 0
     @test abs(sum(column)) < 1e-12 * maximum(abs, column)   # uniform levels: the depth integral is the sum
+
+    # A depth-uniform tangential current the parent lacks: no Flather condition holds it, so it relaxes in full
+    set!(model, u = 0.1, v = 0.05, T = 15, S = 35)
+    column = [child.forcing.v(2, 10, k, grid, child.clock, model_fields) for k in 1:size(grid, 3)]
+    @test all(<(0), column)
+    @test maximum(column) ≈ minimum(column)
 end
 
 @testset "Boundary relaxation: flow-dependent tracer rates" begin
