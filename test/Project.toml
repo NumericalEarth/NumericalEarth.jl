@@ -43,11 +43,11 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "4d11d5d0495564efebee2d355d9420fb35e5b77c"} # TODO: remove once a Breeze release includes NumericalEarth/Breeze.jl#1246
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "e785e560f966006ee42c1eae2985abafd3b2dd99"} # TODO: remove once a Breeze release includes NumericalEarth/Breeze.jl#1246 and #1283
 ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "2bf196a81b986b99cd4e00e1dedda4fda5b66d32"} # TODO: remove once a ClimaSeaIce release supports Oceananigans 0.118
 NumericalEarth = {path = ".."}
 OceanBioME = {url = "https://github.com/OceanBioME/OceanBioME.jl", rev = "e826a8ebcbf1fdebbedf7af7b92aeacdd9b37e0a"} # TODO: remove once an OceanBioME release supports Oceananigans 0.118
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.1.11 is released with Oceananigans 0.117 compat
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "5009effc28"} # TODO: use registered Terrarium 0.2 once a SpeedyWeather release allows it
 
 [compat]
 ArchGDAL = "0.10"
