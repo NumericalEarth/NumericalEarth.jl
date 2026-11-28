@@ -15,7 +15,7 @@ Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
 NumericalEarth = {path = ".."}
-Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "main"} # TODO: remove once Terrarium 0.2 is released
+Terrarium = {url = "https://github.com/NumericalEarth/Terrarium.jl", rev = "5009effc28"} # TODO: use registered Terrarium 0.2 once a SpeedyWeather release allows it
 
 [compat]
 Breeze = "0.15"
